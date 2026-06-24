@@ -1,0 +1,65 @@
+{
+	"newRecording": {
+		"title": "Torna al registratore",
+		"description": "La sessione corrente è stata salvata.",
+		"cancel": "Annulla",
+		"confirm": "Conferma"
+	},
+	"loadingVideo": "Caricamento video...",
+	"errors": {
+		"noVideoLoaded": "Nessun video caricato",
+		"videoNotReady": "Video non pronto",
+		"unableToDetermineSourcePath": "Impossibile determinare il percorso del video sorgente",
+		"failedToSaveGif": "Impossibile salvare la GIF",
+		"gifExportFailed": "Esportazione GIF fallita",
+		"failedToSaveVideo": "Impossibile salvare il video",
+		"exportFailed": "Esportazione fallita",
+		"exportFailedWithError": "Esportazione fallita: {{error}}",
+		"exportBackgroundLoadFailed": "Esportazione fallita: impossibile caricare l'immagine di sfondo ({{url}})",
+		"failedToSaveExport": "Impossibile salvare l'esportazione",
+		"failedToSaveExportedVideo": "Impossibile salvare il video esportato",
+		"failedToRevealInFolder": "Errore durante la visualizzazione nella cartella: {{error}}"
+	},
+	"export": {
+		"canceled": "Esportazione annullata",
+		"exportedSuccessfully": "{{format}} esportato con successo"
+	},
+	"project": {
+		"saveCanceled": "Salvataggio progetto annullato",
+		"failedToSave": "Impossibile salvare il progetto",
+		"savedTo": "Progetto salvato in {{path}}",
+		"failedToLoad": "Impossibile caricare il progetto",
+		"invalidFormat": "Formato file progetto non valido",
+		"loadedFrom": "Progetto caricato da {{path}}"
+	},
+	"recording": {
+		"failedCameraAccess": "Impossibile richiedere l'accesso alla fotocamera.",
+		"cameraBlocked": "L'accesso alla fotocamera è bloccato. Abilita nelle impostazioni di sistema l'utilizzo della webcam.",
+		"systemAudioUnavailable": "Audio di sistema non disponibile. Registrazione senza audio di sistema.",
+		"microphoneDenied": "Accesso al microfono negato. La registrazione continuerà senza audio.",
+		"cameraDenied": "Accesso alla fotocamera negato. La registrazione continuerà senza webcam.",
+		"cameraDisconnected": "Webcam disconnessa.",
+		"cameraNotFound": "Fotocamera non trovata.",
+		"permissionDenied": "Autorizzazione di registrazione negata. Consenti la registrazione dello schermo.",
+		"accessibilityAllowAndRetry": "Consenti l'accesso all'accessibilità per Guide Studio, poi premi di nuovo registra per avviare il conto alla rovescia."
+	},
+	"autoCaptions": {
+		"button": "Sottotitoli automatici",
+		"dialogTitle": "Sottotitoli automatici",
+		"dialogDescription": "Scegli all'incirca quante parole mostrare per ogni sottotitolo. La temporizzazione viene distribuita tra le parole della frase.",
+		"minWords": "Numero minimo di parole per sottotitolo",
+		"maxWords": "Numero massimo di parole per sottotitolo",
+		"wordsCount": "{{count}} parole",
+		"generate": "Genera",
+		"dialogCancel": "Annulla",
+		"generating": "Generazione dei sottotitoli dall'audio…",
+		"loadingModel": "Caricamento del modello vocale (al primo utilizzo vengono scaricati ~75 MB)…",
+		"transcribing": "Trascrizione del parlato…",
+		"busy": "La generazione dei sottotitoli è già in corso.",
+		"done": "Aggiunti {{count}} sottotitoli.",
+		"noneHeard": "Nessun parlato rilevato.",
+		"noAudio": "Questo video non contiene audio utilizzabile per la trascrizione.",
+		"failed": "Impossibile generare i sottotitoli.",
+		"truncated": "Sono stati trascritti solo i primi {{minutes}} minuti."
+	}
+}

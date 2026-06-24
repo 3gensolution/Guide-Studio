@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Required for Electron's V8 JIT compilation -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+
+    <!-- Required for Electron's native module loading -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+
+    <!-- Required for loading Electron's bundled frameworks/dylibs -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!-- Audio input (microphone / system audio capture) -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+
+    <!-- Camera (webcam capture) -->
+    <key>com.apple.security.device.camera</key>
+    <true/>
+
+    <!-- Screen recording (required for desktopCapturer.getSources() on macOS 10.15+) -->
+    <key>com.apple.security.device.screen-capture</key>
+    <true/>
+</dict>
+</plist>

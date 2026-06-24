@@ -1,0 +1,81 @@
+{
+	"newRecording": {
+		"title": "返回录屏",
+		"description": "当前会话已保存。",
+		"cancel": "取消",
+		"confirm": "确认"
+	},
+	"loadingVideo": "正在加载视频...",
+	"loadingEditor": "正在加载编辑器...",
+	"errors": {
+		"noVideoLoaded": "未加载视频",
+		"videoNotReady": "视频未就绪",
+		"unableToDetermineSourcePath": "无法确定源视频路径",
+		"failedToSaveGif": "保存 GIF 失败",
+		"gifExportFailed": "GIF 导出失败",
+		"failedToSaveVideo": "保存视频失败",
+		"exportFailed": "导出失败",
+		"exportFailedWithError": "导出失败：{{error}}",
+		"exportBackgroundLoadFailed": "导出失败：无法加载背景图片（{{url}}）",
+		"failedToSaveExport": "保存导出文件失败",
+		"failedToSaveExportedVideo": "保存导出的视频失败",
+		"failedToRevealInFolder": "在文件夹中显示时出错：{{error}}"
+	},
+	"export": {
+		"canceled": "导出已取消",
+		"exportedSuccessfully": "{{format}} 导出成功"
+	},
+	"project": {
+		"saveCanceled": "项目保存已取消",
+		"failedToSave": "保存项目失败",
+		"savedTo": "项目已保存至 {{path}}",
+		"failedToLoad": "加载项目失败",
+		"invalidFormat": "无效的项目文件格式",
+		"loadedFrom": "项目已从 {{path}} 加载"
+	},
+	"recording": {
+		"failedCameraAccess": "请求摄像头权限失败。",
+		"cameraBlocked": "摄像头权限已被阻止。请在系统设置中启用以使用摄像头。",
+		"systemAudioUnavailable": "系统音频不可用。将在无系统音频的情况下录制。",
+		"microphoneDenied": "麦克风权限被拒绝。录制将继续，但不包含音频。",
+		"cameraDenied": "摄像头权限被拒绝。录制将继续，但不包含摄像头画面。",
+		"cameraDisconnected": "摄像头已断开连接。",
+		"cameraNotFound": "未找到摄像头。",
+		"permissionDenied": "录屏权限被拒绝。请允许屏幕录制。",
+		"accessibilityAllowAndRetry": "允许 Guide Studio 使用辅助功能权限，然后再次按录制以开始倒计时。"
+	},
+	"autoCaptions": {
+		"button": "自动字幕",
+		"dialogTitle": "自动字幕",
+		"dialogDescription": "大致选择每条字幕一次显示多少个字词。时间会在该语句内的字词之间分配。",
+		"minWords": "每条字幕的最少字数",
+		"maxWords": "每条字幕的最多字数",
+		"wordsCount": "{{count}} 个词",
+		"generate": "生成",
+		"dialogCancel": "取消",
+		"generating": "正在从音频生成字幕…",
+		"loadingModel": "正在加载语音模型（首次使用将下载约 75 MB）…",
+		"transcribing": "正在转写语音…",
+		"busy": "字幕生成已在进行中。",
+		"done": "已添加 {{count}} 条字幕。",
+		"noneHeard": "未检测到语音。",
+		"noAudio": "此视频没有可用于转写的音频。",
+		"failed": "无法生成字幕。",
+		"truncated": "仅转写了最前 {{minutes}} 分钟。"
+	},
+	"emptyState": {
+		"title": "未打开任何项目",
+		"description": "导入视频开始编辑，或加载已有的 Guide Studio 项目。",
+		"importVideoButton": "导入视频文件…",
+		"loadProjectButton": "加载项目…",
+		"supportedFormats": "支持的格式：MP4、MOV、WebM、MKV、AVI、M4V、WMV",
+		"dragDropHint": "或将 .guidestudio 项目文件拖放到此处",
+		"dropOverlay": "将项目文件拖放至此以打开",
+		"dropErrors": {
+			"unsupportedFormatTitle": "不支持的格式",
+			"unsupportedFormatMessage": "此处只能拖放 .guidestudio 项目文件。要导入视频，请使用\"导入视频文件...\"按钮。",
+			"couldNotOpenTitle": "无法打开文件",
+			"couldNotOpenMessage": "无法打开项目文件。它引用的视频可能已被移动或删除。"
+		}
+	}
+}

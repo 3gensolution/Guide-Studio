@@ -1,0 +1,104 @@
+.glassContainer {
+	background: linear-gradient(145deg, rgba(13, 14, 17, 0.94) 0%, rgba(8, 9, 12, 0.9) 100%);
+	backdrop-filter: blur(24px) saturate(150%);
+	-webkit-backdrop-filter: blur(24px) saturate(150%);
+	border-radius: 24px;
+	corner-shape: squircle;
+	/*
+		Removed box-shadow here because electron doesn't round corners of the shadow, thereby leaving a square border shadow conflicting with the rounded corners of the SourceSelector.
+		The result is easily visible when you place a white window just behind the SourceSelector
+	*/
+	/* box-shadow:
+		0 0px 16px 0 rgba(0, 0, 0, 0.32),
+		0 1px 3px 0 rgba(0, 0, 0, 0.18) inset; */
+	border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sourceCard {
+	corner-shape: squircle;
+	border-radius: 13px;
+	background: rgba(255, 255, 255, 0.045);
+	border: 1px solid rgba(255, 255, 255, 0.07);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+	transition:
+		box-shadow 0.2s ease,
+		border-color 0.2s ease,
+		background-color 0.2s ease,
+		transform 0.2s ease;
+	cursor: pointer;
+}
+
+.sourceCard:hover {
+	background: rgba(255, 255, 255, 0.065);
+	border-color: rgba(255, 255, 255, 0.14);
+	transform: translateY(-1px);
+	box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.selected {
+	border-color: rgba(0, 184, 255, 0.68);
+	background: linear-gradient(145deg, rgba(0, 184, 255, 0.13), rgba(255, 255, 255, 0.045));
+	box-shadow:
+		0 0 0 1px rgba(0, 184, 255, 0.18) inset,
+		0 12px 28px rgba(0, 0, 0, 0.22);
+}
+
+.selected:hover {
+	transform: translateY(0);
+}
+
+.icon {
+	width: 12px;
+	height: 12px;
+	color: #c7d2fe;
+}
+
+.name {
+	font-size: 0.72rem;
+	color: #e4e4e7;
+	font-weight: 500;
+	letter-spacing: 0;
+}
+
+.cardText {
+	color: #a1a1aa;
+	font-size: 0.75rem;
+}
+
+/* Checkmark badge */
+.checkBadge {
+	width: 17px;
+	height: 17px;
+	background: #00B8FF;
+	border-radius: 9999px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
+}
+
+/* scrollbar */
+
+.sourceGridScroll::-webkit-scrollbar {
+	width: 3px;
+}
+
+.sourceGridScroll::-webkit-scrollbar-track {
+	background: rgba(30, 30, 38, 0.3);
+	border-radius: 4px;
+}
+
+.sourceGridScroll::-webkit-scrollbar-thumb {
+	background: rgba(0, 184, 255, 0.5);
+	border-radius: 10px;
+}
+
+.sourceGridScroll::-webkit-scrollbar-thumb:hover {
+	background: rgba(0, 184, 255, 0.6);
+	cursor: grab;
+}
+
+.sourceGridScroll::-webkit-scrollbar-thumb:active {
+	background: rgba(0, 184, 255, 0.8);
+	cursor: grabbing;
+}

@@ -1,0 +1,81 @@
+{
+	"newRecording": {
+		"title": "Return to Recorder",
+		"description": "Your current session has been saved.",
+		"cancel": "Cancel",
+		"confirm": "Confirm"
+	},
+	"loadingVideo": "Loading video...",
+	"loadingEditor": "Loading editor...",
+	"errors": {
+		"noVideoLoaded": "No video loaded",
+		"videoNotReady": "Video not ready",
+		"unableToDetermineSourcePath": "Unable to determine source video path",
+		"failedToSaveGif": "Failed to save GIF",
+		"gifExportFailed": "GIF export failed",
+		"failedToSaveVideo": "Failed to save video",
+		"exportFailed": "Export failed",
+		"exportFailedWithError": "Export failed: {{error}}",
+		"exportBackgroundLoadFailed": "Export failed: could not load background image ({{url}})",
+		"failedToSaveExport": "Failed to save export",
+		"failedToSaveExportedVideo": "Failed to save exported video",
+		"failedToRevealInFolder": "Error revealing in folder: {{error}}"
+	},
+	"export": {
+		"canceled": "Export canceled",
+		"exportedSuccessfully": "{{format}} exported successfully"
+	},
+	"project": {
+		"saveCanceled": "Project save canceled",
+		"failedToSave": "Failed to save project",
+		"savedTo": "Project saved to {{path}}",
+		"failedToLoad": "Failed to load project",
+		"invalidFormat": "Invalid project file format",
+		"loadedFrom": "Project loaded from {{path}}"
+	},
+	"recording": {
+		"failedCameraAccess": "Failed to request camera access.",
+		"cameraBlocked": "Camera access is blocked. Enable it in system settings to use the webcam.",
+		"systemAudioUnavailable": "System audio not available. Recording without system audio.",
+		"microphoneDenied": "Microphone access denied. Recording will continue without audio.",
+		"cameraDenied": "Camera access denied. Recording will continue without webcam.",
+		"cameraDisconnected": "Webcam disconnected.",
+		"cameraNotFound": "Camera not found.",
+		"permissionDenied": "Recording permission denied. Please allow screen recording.",
+		"accessibilityAllowAndRetry": "Allow Accessibility access for Guide Studio, then press record again to start the countdown."
+	},
+	"autoCaptions": {
+		"button": "Auto captions",
+		"dialogTitle": "Auto captions",
+		"dialogDescription": "Choose roughly how many words each caption shows at once. Timing is spread across the words in that phrase.",
+		"minWords": "Minimum words per caption",
+		"maxWords": "Maximum words per caption",
+		"wordsCount": "{{count}} words",
+		"generate": "Generate",
+		"dialogCancel": "Cancel",
+		"generating": "Generating captions from audio…",
+		"loadingModel": "Loading speech model (first use downloads ~75 MB)…",
+		"transcribing": "Transcribing speech…",
+		"busy": "Caption generation is already in progress.",
+		"done": "Added {{count}} captions.",
+		"noneHeard": "No speech was detected.",
+		"noAudio": "This video has no usable audio to transcribe.",
+		"failed": "Could not generate captions.",
+		"truncated": "Only the first {{minutes}} minutes were transcribed."
+	},
+	"emptyState": {
+		"title": "No project open",
+		"description": "Import a video to start editing, or load an existing Guide Studio project.",
+		"importVideoButton": "Import Video File…",
+		"loadProjectButton": "Load Project…",
+		"supportedFormats": "Supported formats: MP4, MOV, WebM, MKV, AVI, M4V, WMV",
+		"dragDropHint": "or drag & drop a .guidestudio project file here",
+		"dropOverlay": "Drop project file to open",
+		"dropErrors": {
+			"unsupportedFormatTitle": "Unsupported Format",
+			"unsupportedFormatMessage": "Only .guidestudio project files can be dropped here. To import a video file, use the \"Import Video File…\" button on this screen.",
+			"couldNotOpenTitle": "Could Not Open File",
+			"couldNotOpenMessage": "The project file could not be opened. The video it references may have been moved or deleted."
+		}
+	}
+}

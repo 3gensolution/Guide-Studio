@@ -1,0 +1,297 @@
+
+name: Build Electron App
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: 'Architecture to build'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - arm64
+          - x64
+          - both
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Cache the downloaded caption model so we don't re-fetch from HuggingFace every run
+      # (and to avoid 429s when the platform matrix builds hit it at once).
+      - name: Cache caption assets
+        uses: actions/cache@v4
+        with:
+          path: caption-assets
+          key: caption-assets-${{ hashFiles('scripts/fetch-caption-model.mjs') }}
+
+      - name: Build Windows app
+        run: npm run build:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: release/**/*.exe
+          retention-days: 30
+
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: ${{ github.event.inputs.arch == 'both' && fromJSON('["arm64", "x64"]') || fromJSON(format('["{0}"]', github.event.inputs.arch)) }}
+    
+    steps:
+      # ─── Checkout ─────────────────────────────────────────────
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ─── Setup Node.js ────────────────────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # ─── Setup Python (needed by some native deps) ────────────
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # ─── Install Dependencies ─────────────────────────────────
+      - name: Install dependencies
+        run: npm ci
+
+      # ─── Ensure sharp prebuilt binary (+ bundled libvips) ─────
+      # `npm ci` can leave sharp without its prebuilt binary/vendored libvips,
+      # which makes electron-builder's native rebuild fail ("vips-cpp.42 not
+      # found"). Re-fetch the prebuilt (never compile from source).
+      - name: Ensure sharp prebuilt
+        run: npm rebuild sharp
+        env:
+          npm_config_build_from_source: "false"
+
+      # ─── Cache caption assets ─────────────────────────────────
+      # Avoid re-fetching the Whisper model from HuggingFace every run (and 429s under the matrix).
+      - name: Cache caption assets
+        uses: actions/cache@v4
+        with:
+          path: caption-assets
+          key: caption-assets-${{ hashFiles('scripts/fetch-caption-model.mjs') }}
+
+      # ─── Import Code Signing Certificate ──────────────────────
+      # This is the KEY step that makes CI signing work.
+      # We create a temporary keychain, import the .p12 cert into it,
+      # and set it as the default so codesign can find it.
+      - name: Import code signing certificate
+        env:
+          MAC_CERTIFICATE_P12: ${{ secrets.MAC_CERTIFICATE_P12 }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+        run: |
+          # Create a temporary keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          # Create and configure keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Decode and import certificate
+          echo "$MAC_CERTIFICATE_P12" | base64 --decode > $RUNNER_TEMP/certificate.p12
+          security import $RUNNER_TEMP/certificate.p12 \
+            -k "$KEYCHAIN_PATH" \
+            -P "$MAC_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+
+          # Allow codesign to access the keychain without UI prompt
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Add to keychain search path (makes it the default)
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+          # Verify the identity is available
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+          # Clean up the .p12 file
+          rm -f $RUNNER_TEMP/certificate.p12
+
+      # ─── Build Vite + Electron ────────────────────────────────
+      - name: Build Vite + Electron
+        run: npx tsc && npx vite build
+
+      # ─── Build native macOS helpers ───────────────────────────
+      # The package step below calls electron-builder directly (not `npm run build:mac`),
+      # so the Swift screencapturekit + cursor helpers must be compiled here first or the
+      # packaged app ships without them (no recording, "cursor helper couldn't be found").
+      # Build the matrix arch into electron/native/bin/darwin-<arch> so each DMG gets its
+      # own native binary.
+      - name: Build native macOS helpers
+        run: npm run build:native:mac
+        env:
+          GUIDESTUDIO_MAC_HELPER_ARCHS: ${{ matrix.arch }}
+
+      # ─── Package with electron-builder ────────────────────────
+      # electron-builder handles deep codesigning the .app bundle
+      # "notarize: false" in electron-builder.json5 prevents it from
+      # trying its own notarization flow
+      - name: Package .app bundle
+        run: npx electron-builder --mac --${{ matrix.arch }} --dir
+        env:
+          CSC_NAME: "Samir Patil (N26FZ4GW28)"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ─── Read version from package.json ───────────────────────
+      - name: Get version
+        id: version
+        run: echo "version=$(node -p 'require(\"./package.json\").version')" >> $GITHUB_OUTPUT
+
+      # ─── Locate the .app bundle ───────────────────────────────
+      - name: Find .app bundle
+        id: find_app
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          echo "=== Release directory contents ==="
+          ls -laR "release/${VERSION}/" || echo "release/${VERSION}/ not found"
+          echo "=== Searching for .app bundle ==="
+          APP_BUNDLE=$(find "release/${VERSION}" -maxdepth 4 -name "*.app" -type d | head -n1)
+          if [ -z "$APP_BUNDLE" ]; then
+            echo "::error::No .app bundle found in release/${VERSION}/"
+            exit 1
+          fi
+          echo "app_bundle=$APP_BUNDLE" >> $GITHUB_OUTPUT
+          echo "Found: $APP_BUNDLE"
+
+      # ─── Verify .app signature ────────────────────────────────
+      - name: Verify .app code signature
+        run: codesign --verify --deep --strict "${{ steps.find_app.outputs.app_bundle }}"
+
+      # ─── Create DMG ───────────────────────────────────────────
+      - name: Create DMG
+        id: dmg
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          ARCH="${{ matrix.arch }}"
+          DMG_NAME="GuideStudio-Mac-${ARCH}-${VERSION}.dmg"
+          RELEASE_DIR="release/${VERSION}"
+          DMG_OUTPUT="${RELEASE_DIR}/${DMG_NAME}"
+          STAGING="${RELEASE_DIR}/dmg-staging"
+
+          mkdir -p "$STAGING"
+          cp -R "${{ steps.find_app.outputs.app_bundle }}" "$STAGING/"
+          ln -s /Applications "$STAGING/Applications"
+
+          hdiutil create \
+            -srcfolder "$STAGING" \
+            -volname "GuideStudio" \
+            -fs HFS+ \
+            -fsargs "-c c=64,a=16,e=16" \
+            -format UDBZ \
+            "$DMG_OUTPUT"
+
+          rm -rf "$STAGING"
+
+          echo "dmg_path=$DMG_OUTPUT" >> $GITHUB_OUTPUT
+          echo "dmg_name=$DMG_NAME" >> $GITHUB_OUTPUT
+
+      # ─── Sign DMG ─────────────────────────────────────────────
+      - name: Sign DMG
+        run: |
+          codesign --force \
+            --sign "Developer ID Application: Samir Patil (N26FZ4GW28)" \
+            --timestamp \
+            "${{ steps.dmg.outputs.dmg_path }}"
+
+      # ─── Notarize DMG ────────────────────────────────────────
+      # On CI we can't use keychain profiles for notarytool, so we
+      # pass credentials directly via env vars / flags
+      - name: Notarize DMG
+        run: |
+          xcrun notarytool submit "${{ steps.dmg.outputs.dmg_path }}" \
+            --apple-id "${{ secrets.APPLE_ID }}" \
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" \
+            --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" \
+            --wait
+        timeout-minutes: 15
+
+      # ─── Staple ───────────────────────────────────────────────
+      - name: Staple notarization ticket
+        run: xcrun stapler staple "${{ steps.dmg.outputs.dmg_path }}"
+
+      # ─── Validate ─────────────────────────────────────────────
+      - name: Validate stapled DMG
+        run: |
+          xcrun stapler validate "${{ steps.dmg.outputs.dmg_path }}"
+          spctl -a -vv -t install "${{ steps.dmg.outputs.dmg_path }}"
+
+      # ─── Upload Artifact ──────────────────────────────────────
+      - name: Upload notarized DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: guidestudio-mac-${{ matrix.arch }}
+          path: ${{ steps.dmg.outputs.dmg_path }}
+          retention-days: 30
+
+      # ─── Cleanup Keychain ─────────────────────────────────────
+      - name: Cleanup keychain
+        if: always()
+        run: security delete-keychain $RUNNER_TEMP/build.keychain-db || true
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # bsdtar (from libarchive-tools) is required by fpm to build pacman
+      # packages. AppImage and deb don't need it; ubuntu-latest doesn't ship it.
+      - name: Install pacman build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libarchive-tools
+
+      # Cache the downloaded caption model so we don't re-fetch from HuggingFace every run
+      # (and to avoid 429s when the platform matrix builds hit it at once).
+      - name: Cache caption assets
+        uses: actions/cache@v4
+        with:
+          path: caption-assets
+          key: caption-assets-${{ hashFiles('scripts/fetch-caption-model.mjs') }}
+
+      - name: Build Linux app
+        run: npm run build:linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux build
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-installer
+          path: |
+            release/**/*.AppImage
+            release/**/*.zsync
+            release/**/*.deb
+            release/**/*.pacman
+          retention-days: 30

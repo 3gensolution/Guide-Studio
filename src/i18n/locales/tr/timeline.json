@@ -1,0 +1,55 @@
+{
+	"buttons": {
+		"addZoom": "Yakınlaştırma Ekle (Z)",
+		"suggestZooms": "İmleçten Yakınlaştırma Öner",
+		"addTrim": "Kırpma Ekle (T)",
+		"addAnnotation": "Açıklama Ekle (A)",
+		"addSpeed": "Hız Ekle (S)",
+		"addBlur": "Bulanık ekle (B)"
+	},
+	"hints": {
+		"pressZoom": "Yakınlaştırma eklemek için Z tuşuna basın",
+		"pressTrim": "Kırpma eklemek için T tuşuna basın",
+		"pressAnnotation": "Açıklama eklemek için A tuşuna basın",
+		"pressSpeed": "Hız eklemek için S tuşuna basın",
+		"pressBlur": "Bulanık bölge eklemek için B tuşuna basın"
+	},
+	"labels": {
+		"pan": "Kaydır",
+		"zoom": "Yakınlaştır",
+		"trim": "Kırp",
+		"speed": "Hız",
+		"zoomItem": "Yakınlaştırma {{index}}",
+		"trimItem": "Kırpma {{index}}",
+		"speedItem": "Hız {{index}}",
+		"annotationItem": "Açıklama",
+		"imageItem": "Görüntü",
+		"emptyText": "Boş metin",
+		"blurItem": "Bulanık {{index}}"
+	},
+	"emptyState": {
+		"noVideo": "Video Yüklenmedi",
+		"dragAndDrop": "Düzenlemeye başlamak için bir video sürükleyip bırakın"
+	},
+	"errors": {
+		"cannotPlaceZoom": "Buraya yakınlaştırma yerleştirilemiyor",
+		"zoomExistsAtLocation": "Bu konumda zaten bir yakınlaştırma var veya yeterli alan yok.",
+		"zoomSuggestionUnavailable": "Yakınlaştırma öneri işleyicisi kullanılamıyor",
+		"noCursorTelemetry": "İmleç telemetrisi mevcut değil",
+		"noCursorTelemetryDescription": "İmleç tabanlı öneriler oluşturmak için önce bir ekran kaydı yapın.",
+		"noUsableTelemetry": "Kullanılabilir imleç telemetrisi yok",
+		"noUsableTelemetryDescription": "Kayıt yeterli imleç hareketi verisi içermiyor.",
+		"noDwellMoments": "Belirgin imleç bekleme anları bulunamadı",
+		"noDwellMomentsDescription": "Önemli işlemlerde daha yavaş imleç duraklamaları olan bir kayıt deneyin.",
+		"noAutoZoomSlots": "Otomatik yakınlaştırma alanı yok",
+		"noAutoZoomSlotsDescription": "Algılanan bekleme noktaları mevcut yakınlaştırma bölgeleriyle çakışıyor.",
+		"cannotPlaceTrim": "Buraya kırpma yerleştirilemiyor",
+		"trimExistsAtLocation": "Bu konumda zaten bir kırpma var veya yeterli alan yok.",
+		"cannotPlaceSpeed": "Buraya hız yerleştirilemiyor",
+		"speedExistsAtLocation": "Bu konumda zaten bir hız bölgesi var veya yeterli alan yok."
+	},
+	"success": {
+		"addedZoomSuggestions": "{{count}} imleç tabanlı yakınlaştırma önerisi eklendi",
+		"addedZoomSuggestionsPlural": "{{count}} imleç tabanlı yakınlaştırma önerisi eklendi"
+	}
+}

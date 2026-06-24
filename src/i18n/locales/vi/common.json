@@ -1,0 +1,50 @@
+{
+	"actions": {
+		"cancel": "Hủy",
+		"save": "Lưu",
+		"delete": "Xóa",
+		"close": "Đóng",
+		"share": "Chia sẻ",
+		"done": "Hoàn tất",
+		"open": "Mở",
+		"upload": "Tải lên",
+		"export": "Xuất",
+		"showInFolder": "Hiển thị trong thư mục",
+		"file": "Tệp",
+		"edit": "Chỉnh sửa",
+		"view": "Xem",
+		"window": "Cửa sổ",
+		"quit": "Thoát",
+		"stopRecording": "Dừng ghi hình",
+		"undo": "Hoàn tác",
+		"redo": "Làm lại",
+		"cut": "Cắt",
+		"copy": "Sao chép",
+		"paste": "Dán",
+		"selectAll": "Chọn tất cả",
+		"minimize": "Thu nhỏ",
+		"reload": "Tải lại",
+		"forceReload": "Buộc tải lại",
+		"toggleDevTools": "Bật/tắt công cụ nhà phát triển",
+		"actualSize": "Kích thước thực",
+		"zoomIn": "Phóng to",
+		"zoomOut": "Thu nhỏ",
+		"toggleFullScreen": "Bật/tắt toàn màn hình",
+		"recordingStatus": "Đang ghi: {{source}}",
+		"about": "Giới thiệu Guide Studio",
+		"services": "Dịch vụ",
+		"hide": "Ẩn Guide Studio",
+		"hideOthers": "Ẩn ứng dụng khác",
+		"unhide": "Hiển thị tất cả"
+	},
+	"playback": {
+		"play": "Phát",
+		"pause": "Tạm dừng",
+		"fullscreen": "Toàn màn hình",
+		"exitFullscreen": "Thoát toàn màn hình"
+	},
+	"locale": {
+		"name": "Tiếng Việt",
+		"short": "VI"
+	}
+}

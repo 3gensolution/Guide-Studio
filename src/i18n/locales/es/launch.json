@@ -1,0 +1,49 @@
+{
+	"tooltips": {
+		"hideHUD": "Ocultar HUD",
+		"closeApp": "Cerrar aplicación",
+		"restartRecording": "Reiniciar grabación",
+		"cancelRecording": "Cancelar grabación",
+		"pauseRecording": "Pausar grabación",
+		"resumeRecording": "Reanudar grabación",
+		"openVideoFile": "Abrir archivo de video",
+		"openProject": "Abrir proyecto",
+		"useVerticalTray": "Usar bandeja vertical",
+		"useHorizontalTray": "Usar bandeja horizontal"
+	},
+	"audio": {
+		"enableSystemAudio": "Activar audio del sistema",
+		"disableSystemAudio": "Desactivar audio del sistema",
+		"enableMicrophone": "Activar micrófono",
+		"disableMicrophone": "Desactivar micrófono",
+		"defaultMicrophone": "Micrófono predeterminado"
+	},
+	"webcam": {
+		"enableWebcam": "Activar cámara web",
+		"disableWebcam": "Desactivar cámara web",
+		"defaultCamera": "Cámara predeterminada",
+		"searching": "Buscando...",
+		"noneFound": "No se encontró cámara",
+		"unavailable": "Cámara no disponible"
+	},
+	"cursor": {
+		"useEditableCursor": "Usar cursor editable",
+		"useSystemCursor": "Usar cursor del sistema"
+	},
+	"sourceSelector": {
+		"loading": "Cargando fuentes...",
+		"screens": "Pantallas ({{count}})",
+		"windows": "Ventanas ({{count}})",
+		"defaultSourceName": "Pantalla"
+	},
+	"recording": {
+		"selectSource": "Por favor selecciona una fuente para grabar"
+	},
+	"language": "Idioma",
+	"systemLanguagePrompt": {
+		"title": "¿Usar el idioma del sistema?",
+		"description": "Detectamos {{language}} como idioma de tu sistema. ¿Quieres cambiar Guide Studio a {{language}}?",
+		"switch": "Cambiar a {{language}}",
+		"keepDefault": "Mantener idioma actual"
+	}
+}

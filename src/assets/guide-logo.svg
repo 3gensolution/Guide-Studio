@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="g" x1="0.3" y1="1" x2="0.7" y2="0">
+      <stop offset="0%" stop-color="#00D4FF"/>
+      <stop offset="35%" stop-color="#6366F1"/>
+      <stop offset="70%" stop-color="#A855F7"/>
+      <stop offset="100%" stop-color="#C026D3"/>
+    </linearGradient>
+  </defs>
+  <!-- Left arm of triangle going up from bottom-left to top-center -->
+  <path d="M200 800 Q180 840 220 840 L520 840 Q540 840 530 810 L530 810 L260 200"
+        stroke="url(#g)" stroke-width="110" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Right short stroke -->
+  <path d="M680 460 L790 740"
+        stroke="url(#g)" stroke-width="110" stroke-linecap="round" fill="none"/>
+  <!-- Dot near top right -->
+  <circle cx="620" cy="290" r="62" fill="url(#g)"/>
+</svg>

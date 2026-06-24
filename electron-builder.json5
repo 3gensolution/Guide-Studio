@@ -1,0 +1,123 @@
+// @see - https://www.electron.build/configuration/configuration
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "com.guidestudio.app",
+  "asar": true,
+  // .node binaries can't be dlopen'd from inside an asar — must live unpacked.
+  // Remotion's compositor package ships native binaries (ffmpeg, ffprobe, remotion).
+  "asarUnpack": [
+    "**/*.node",
+    "node_modules/@remotion/compositor-*/**/*"
+  ],
+  "productName": "Guide Studio",
+  // Fetch the auto-caption model + ORT wasm into caption-assets/ before packaging (idempotent).
+  "beforePack": "scripts/before-pack.cjs",
+  "npmRebuild": true,
+  "buildDependenciesFromSource": false,
+  "compression": "normal",
+  "directories": {
+    "output": "release/${version}"
+  },
+  "files": [
+    "dist",
+    "dist-electron",
+    "!*.png",
+    "!preview*.png",
+    "!*.md",
+    "!README.md",
+    "!CONTRIBUTING.md",
+    "!LICENSE"
+  ],
+  "extraResources": [
+    {
+      "from": "public/wallpapers",
+      "to": "wallpapers"
+    },
+    {
+      "from": "public/cursors",
+      "to": "cursors"
+    },
+    {
+      "from": "caption-assets",
+      "to": "caption-assets"
+    },
+    {
+      "from": "dist-remotion",
+      "to": "remotion-bundle"
+    }
+  ],
+
+  "mac": {
+    "notarize": false,
+    "hardenedRuntime": true,
+    "entitlements": "macos.entitlements",
+    "entitlementsInherit": "macos.entitlements",
+    "target": [
+      {
+        "target": "dmg",
+        "arch": ["x64", "arm64"]
+      }
+    ],
+    "icon": "icons/icons/mac/icon.icns",
+    "artifactName": "${productName}-Mac-${arch}-${version}-Installer.${ext}",
+    "extraResources": [
+      {
+        "from": "electron/native/bin",
+        "to": "electron/native/bin",
+        "filter": ["darwin-*/*"]
+      }
+    ],
+    "extendInfo": {
+      "NSAudioCaptureUsageDescription": "Guide Studio needs audio capture permission to record system audio.",
+      "NSMicrophoneUsageDescription": "Guide Studio needs microphone access to record voice audio.",
+      "NSCameraUsageDescription": "Guide Studio needs camera access to record webcam video.",
+      "NSScreenCaptureUsageDescription": "Guide Studio needs screen recording permission to detect and capture windows.",
+      "NSCameraUseContinuityCameraDeviceType": true,
+      "com.apple.security.device.audio-input": true
+    }
+  },
+  "linux": {
+    "target": [
+      "AppImage",
+      "deb",
+      "pacman"
+    ],
+    "icon": "icons/icons/png",
+    "artifactName": "${productName}-Linux-${version}.${ext}",
+    "category": "AudioVideo"
+  },
+  "win": {
+    "target": [
+      "nsis"
+    ],
+    "icon": "icons/icons/win/icon.ico",
+    "extraResources": [
+      {
+        "from": "electron/native/bin",
+        "to": "electron/native/bin",
+        "filter": ["win32-*/*"]
+      }
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "uninstallDisplayName": "Guide Studio",
+    "installerIcon": "icons/icons/win/icon.ico",
+    "uninstallerIcon": "icons/icons/win/icon.ico"
+  },
+  "protocols": [
+    {
+      "name": "Guide Studio",
+      "schemes": ["guide-studio"]
+    }
+  ],
+  "fileAssociations": [
+    {
+      "ext": "gstudio",
+      "name": "Guide Studio Project",
+      "description": "Guide Studio Project",
+      "role": "Editor"
+    }
+  ]
+}

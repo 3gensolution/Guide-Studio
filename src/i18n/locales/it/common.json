@@ -1,0 +1,50 @@
+{
+	"actions": {
+		"cancel": "Annulla",
+		"save": "Salva",
+		"delete": "Elimina",
+		"close": "Chiudi",
+		"share": "Condividi",
+		"done": "Fatto",
+		"open": "Apri",
+		"upload": "Carica",
+		"export": "Esporta",
+		"showInFolder": "Mostra nella cartella",
+		"file": "File",
+		"edit": "Modifica",
+		"view": "Visualizza",
+		"window": "Finestra",
+		"quit": "Esci",
+		"stopRecording": "Interrompi registrazione",
+		"undo": "Annulla",
+		"redo": "Ripeti",
+		"cut": "Taglia",
+		"copy": "Copia",
+		"paste": "Incolla",
+		"selectAll": "Seleziona tutto",
+		"minimize": "Riduci a icona",
+		"reload": "Ricarica",
+		"forceReload": "Forza ricarica",
+		"toggleDevTools": "Attiva/disattiva strumenti sviluppatore",
+		"actualSize": "Dimensione effettiva",
+		"zoomIn": "Ingrandisci",
+		"zoomOut": "Riduci",
+		"toggleFullScreen": "Attiva/disattiva schermo intero",
+		"recordingStatus": "Registrazione: {{source}}",
+		"about": "Info su Guide Studio",
+		"services": "Servizi",
+		"hide": "Nascondi Guide Studio",
+		"hideOthers": "Nascondi gli altri",
+		"unhide": "Mostra tutto"
+	},
+	"playback": {
+		"play": "Riproduci",
+		"pause": "Pausa",
+		"fullscreen": "Schermo intero",
+		"exitFullscreen": "Esci dallo schermo intero"
+	},
+	"locale": {
+		"name": "Italiano",
+		"short": "IT"
+	}
+}

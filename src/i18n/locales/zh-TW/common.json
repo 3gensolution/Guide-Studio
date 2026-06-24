@@ -1,0 +1,50 @@
+{
+	"actions": {
+		"cancel": "取消",
+		"save": "儲存",
+		"delete": "刪除",
+		"close": "關閉",
+		"share": "分享",
+		"done": "完成",
+		"open": "開啟",
+		"upload": "上傳",
+		"export": "匯出",
+		"showInFolder": "在資料夾中顯示",
+		"file": "檔案",
+		"edit": "編輯",
+		"view": "檢視",
+		"window": "視窗",
+		"quit": "退出",
+		"stopRecording": "停止錄製",
+		"undo": "復原",
+		"redo": "重做",
+		"cut": "剪下",
+		"copy": "複製",
+		"paste": "貼上",
+		"selectAll": "全選",
+		"minimize": "最小化",
+		"reload": "重新載入",
+		"forceReload": "強制重新載入",
+		"toggleDevTools": "切換開發者工具",
+		"actualSize": "實際大小",
+		"zoomIn": "放大",
+		"zoomOut": "縮小",
+		"toggleFullScreen": "切換全螢幕",
+		"recordingStatus": "錄製中：{{source}}",
+		"about": "關於 Guide Studio",
+		"services": "服務",
+		"hide": "隱藏 Guide Studio",
+		"hideOthers": "隱藏其他",
+		"unhide": "全部顯示"
+	},
+	"playback": {
+		"play": "播放",
+		"pause": "暫停",
+		"fullscreen": "全螢幕",
+		"exitFullscreen": "退出全螢幕"
+	},
+	"locale": {
+		"name": "繁體中文",
+		"short": "繁中"
+	}
+}

@@ -1,0 +1,49 @@
+{
+	"tooltips": {
+		"hideHUD": "Kontrol panelini gizle",
+		"closeApp": "Uygulamayı kapat",
+		"restartRecording": "Kaydı yeniden başlat",
+		"cancelRecording": "Kaydı iptal et",
+		"pauseRecording": "Kaydı duraklat",
+		"resumeRecording": "Kayda devam et",
+		"openVideoFile": "Video dosyası aç",
+		"openProject": "Proje aç",
+		"useVerticalTray": "Dikey araç çubuğunu kullan",
+		"useHorizontalTray": "Yatay araç çubuğunu kullan"
+	},
+	"audio": {
+		"enableSystemAudio": "Sistem sesini etkinleştir",
+		"disableSystemAudio": "Sistem sesini devre dışı bırak",
+		"enableMicrophone": "Mikrofonu etkinleştir",
+		"disableMicrophone": "Mikrofonu devre dışı bırak",
+		"defaultMicrophone": "Varsayılan Mikrofon"
+	},
+	"webcam": {
+		"enableWebcam": "Kamerayı etkinleştir",
+		"disableWebcam": "Kamerayı devre dışı bırak",
+		"defaultCamera": "Varsayılan Kamera",
+		"searching": "Aranıyor...",
+		"noneFound": "Kamera bulunamadı",
+		"unavailable": "Kamera kullanılamıyor"
+	},
+	"cursor": {
+		"useEditableCursor": "Düzenlenebilir imleci kullan",
+		"useSystemCursor": "Sistem imlecini kullan"
+	},
+	"sourceSelector": {
+		"loading": "Kaynaklar yükleniyor...",
+		"screens": "Ekranlar ({{count}})",
+		"windows": "Pencereler ({{count}})",
+		"defaultSourceName": "Ekran"
+	},
+	"recording": {
+		"selectSource": "Lütfen kayıt için bir kaynak seçin"
+	},
+	"language": "Dil",
+	"systemLanguagePrompt": {
+		"title": "Sistem dilinizi kullanmak ister misiniz?",
+		"description": "Sistem diliniz {{language}} olarak algılandı. Guide Studio'yu {{language}} diline geçirmek ister misiniz?",
+		"switch": "{{language}} diline geç",
+		"keepDefault": "Mevcut dili koru"
+	}
+}

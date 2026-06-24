@@ -1,0 +1,227 @@
+{
+	"zoom": {
+		"previewHold": "Tieni premuto per vedere l'anteprima dell'effetto zoom",
+		"level": "Livello zoom",
+		"customScale": "Zoom personalizzato",
+		"selectRegion": "Seleziona una regione zoom da regolare",
+		"deleteZoom": "Elimina zoom",
+		"focusMode": {
+			"title": "Modalità messa a fuoco",
+			"manual": "Manuale",
+			"auto": "Automatico",
+			"autoDescription": "La fotocamera segue la posizione del cursore registrato"
+		},
+		"threeD": {
+			"title": "Rotazione 3D",
+			"preset": {
+				"iso": "Iso",
+				"left": "Sinistra",
+				"right": "Destra"
+			}
+		},
+		"position": {
+			"title": "Posizione messa a fuoco",
+			"x": "X (%)",
+			"y": "Y (%)",
+			"hint": "0 = più a sinistra / in alto, 100 = più a destra / in basso"
+		}
+	},
+	"speed": {
+		"playbackSpeed": "Velocità di riproduzione",
+		"selectRegion": "Seleziona una regione velocità da regolare",
+		"deleteRegion": "Elimina regione velocità",
+		"customPlaybackSpeed": "Velocità di riproduzione personalizzata",
+		"maxSpeedError": "La velocità non può superare 16×"
+	},
+	"trim": {
+		"deleteRegion": "Elimina regione taglio"
+	},
+	"layout": {
+		"title": "Layout",
+		"preset": "Predefinito",
+		"selectPreset": "Seleziona predefinito",
+		"pictureInPicture": "Immagine nell'immagine",
+		"verticalStack": "Pila verticale",
+		"dualFrame": "Doppio frame",
+		"noWebcam": "Nessuna webcam",
+		"webcamShape": "Forma fotocamera",
+		"webcamSize": "Dimensione webcam",
+		"mirrorWebcam": "Specchia webcam",
+		"reactiveWebcam": "Riduci con lo zoom",
+		"reactiveWebcamDescription": "La webcam si riduce dolcemente durante lo zoom, così non intralcia."
+	},
+	"effects": {
+		"title": "Effetti video",
+		"blurBg": "Sfuma sfondo",
+		"motionBlur": "Sfocatura movimento",
+		"off": "spento",
+		"on": "acceso",
+		"shadow": "Ombra",
+		"roundness": "Arrotondamento",
+		"padding": "Spaziatura"
+	},
+	"background": {
+		"title": "Sfondo",
+		"image": "Immagine",
+		"color": "Colore",
+		"gradient": "Sfumatura",
+		"uploadCustom": "Carica personalizzato",
+		"gradientLabel": "Sfumatura {{index}}",
+		"colorWheel": "Ruota dei colori",
+		"colorPalette": "Tavolozza dei colori"
+	},
+	"crop": {
+		"title": "Ritaglia",
+		"cropVideo": "Ritaglia video",
+		"dragInstruction": "Trascina su ogni lato per regolare l'area di ritaglio",
+		"ratio": "Proporzioni",
+		"free": "Libero",
+		"done": "Fatto",
+		"lockAspectRatio": "Blocca proporzioni",
+		"unlockAspectRatio": "Sblocca proporzioni"
+	},
+	"exportFormat": {
+		"mp4": "MP4",
+		"gif": "GIF",
+		"mp4Video": "Video MP4",
+		"mp4Description": "File video di alta qualità",
+		"gifAnimation": "Animazione GIF",
+		"gifDescription": "Immagine animata per la condivisione"
+	},
+	"exportQuality": {
+		"title": "Risoluzione esportazione",
+		"low": "720p",
+		"medium": "1080p",
+		"high": "Originale"
+	},
+	"gifSettings": {
+		"frameRate": "Frequenza fotogrammi GIF",
+		"size": "Dimensione GIF",
+		"loop": "GIF in loop"
+	},
+	"project": {
+		"save": "Salva progetto",
+		"load": "Carica progetto"
+	},
+	"export": {
+		"videoButton": "Esporta video",
+		"gifButton": "Esporta GIF",
+		"chooseSaveLocation": "Scegli posizione di salvataggio"
+	},
+	"support": {
+		"reportBug": "Segnala bug",
+		"saveDiagnostics": "Salva dati diagnostici",
+		"starOnGithub": "Metti stella su GitHub"
+	},
+	"imageUpload": {
+		"invalidFileType": "Tipo di file non valido",
+		"jpgOnly": "Carica un file immagine JPG o JPEG.",
+		"uploadSuccess": "Immagine personalizzata caricata con successo!",
+		"failedToUpload": "Impossibile caricare l'immagine",
+		"errorReading": "Si è verificato un errore durante la lettura del file."
+	},
+	"annotation": {
+		"title": "Impostazioni annotazione",
+		"active": "Attivo",
+		"typeText": "Testo",
+		"typeImage": "Immagine",
+		"typeArrow": "Freccia",
+		"typeBlur": "Sfocatura",
+		"textContent": "Contenuto testo",
+		"textPlaceholder": "Inserisci il tuo testo...",
+		"fontStyle": "Stile carattere",
+		"selectStyle": "Seleziona stile",
+		"size": "Dimensione",
+		"customFonts": "Caratteri personalizzati",
+		"textColor": "Colore testo",
+		"background": "Sfondo",
+		"none": "Nessuno",
+		"color": "Colore",
+		"colorWheel": "Ruota dei colori",
+		"colorPalette": "Tavolozza dei colori",
+		"clearBackground": "Rimuovi sfondo",
+		"uploadImage": "Carica immagine",
+		"supportedFormats": "Formati supportati: JPG, PNG, GIF, WebP",
+		"arrowDirection": "Direzione freccia",
+		"strokeWidth": "Larghezza tratto: {{width}}px",
+		"arrowColor": "Colore freccia",
+		"blurType": "Tipo sfocatura",
+		"blurTypeBlur": "Sfocatura",
+		"blurTypeMosaic": "Sfocatura mosaico",
+		"blurColor": "Colore sfocatura",
+		"blurColorWhite": "Bianco",
+		"blurColorBlack": "Nero",
+		"blurShape": "Forma sfocatura",
+		"blurIntensity": "Intensità sfocatura",
+		"mosaicBlockSize": "Dimensione blocco mosaico",
+		"blurShapeRectangle": "Rettangolo",
+		"blurShapeOval": "Ovale",
+		"blurShapeFreehand": "A mano libera",
+		"deleteAnnotation": "Elimina annotazione",
+		"shortcutsAndTips": "Scorciatoie e suggerimenti",
+		"tipMovePlayhead": "Sposta la testina di riproduzione sulla sezione di annotazione sovrapposta e seleziona un elemento.",
+		"tipTabCycle": "Usa Tab per scorrere gli elementi sovrapposti.",
+		"tipShiftTabCycle": "Usa Maiusc+Tab per scorrere all'indietro.",
+		"invalidImageType": "Tipo di file non valido",
+		"imageFormatsOnly": "Carica un file immagine JPG, PNG, GIF o WebP.",
+		"imageUploadSuccess": "Immagine caricata con successo!",
+		"failedImageUpload": "Impossibile caricare l'immagine"
+	},
+	"fontStyles": {
+		"classic": "Classico",
+		"editor": "Editor",
+		"strong": "Forte",
+		"typewriter": "Macchina da scrivere",
+		"deco": "Deco",
+		"simple": "Semplice",
+		"modern": "Moderno",
+		"clean": "Pulito"
+	},
+	"textAnimation": {
+		"title": "Animazione testo",
+		"selectAnimation": "Seleziona animazione",
+		"none": "Nessuna",
+		"fade": "Dissolvenza",
+		"rise": "Ascesa",
+		"pop": "Apparizione",
+		"slideLeft": "Scivola a sinistra",
+		"typewriter": "Macchina da scrivere",
+		"pulse": "Pulsazione"
+	},
+	"customFont": {
+		"dialogTitle": "Aggiungi font Google",
+		"urlLabel": "URL importazione Google Fonts",
+		"urlPlaceholder": "https://fonts.googleapis.com/css2?family=Roboto&display=swap",
+		"urlHelp": "Ottieni questo da Google Fonts: Seleziona un font → Clicca \"Ottieni font\" → Copia l'URL @import",
+		"nameLabel": "Nome visualizzato",
+		"namePlaceholder": "Il mio font personalizzato",
+		"nameHelp": "Così apparirà il font nel selettore",
+		"addButton": "Aggiungi font",
+		"addingButton": "Aggiunta in corso...",
+		"errorEmptyUrl": "Inserisci un URL di importazione Google Fonts",
+		"errorInvalidUrl": "Inserisci un URL Google Fonts valido",
+		"errorEmptyName": "Inserisci un nome per il font",
+		"errorExtractFailed": "Impossibile estrarre la famiglia di font dall'URL",
+		"successMessage": "Font \"{{fontName}}\" aggiunto con successo",
+		"failedToAdd": "Impossibile aggiungere il font",
+		"errorTimeout": "Il font ha impiegato troppo tempo a caricarsi. Controlla l'URL e riprova.",
+		"errorLoadFailed": "Impossibile caricare il font. Verifica che l'URL di Google Fonts sia corretto."
+	},
+	"cursor": {
+		"theme": "Stile del cursore",
+		"themeDefault": "Predefinito",
+		"show": "Mostra cursore",
+		"size": "Dimensione",
+		"smoothing": "Smussatura",
+		"motionBlur": "Sfocatura movimento",
+		"clickBounce": "Rimbalzo clic",
+		"clipToBounds": "Ritaglia al canvas"
+	},
+	"language": {
+		"title": "Lingua"
+	},
+	"timeline": {
+		"title": "Timeline",
+		"waveform": "Mostra la forma d'onda sulla traccia di ritaglio"
+	}
+}

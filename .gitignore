@@ -1,0 +1,68 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-electron
+dist-ssr
+*.local
+.env
+
+# Native helper build outputs
+/electron/native/wgc-capture/build/
+/electron/native/screencapturekit/build/
+/electron/native/screencapturekit/.build/
+/electron/native/screencapturekit/.swiftpm/
+/electron/native/bin/
+
+# Native macOS generated files
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Editor directories and files
+.vscode/*
+.zed/
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+release/**
+*.kiro/
+.claude/
+# npx electron-builder --mac --win
+
+# Playwright
+test-results
+playwright-report/
+
+
+# Vitest browser mode screenshots
+__screenshots__/
+
+# shell files
+/shell.sh
+# Nix
+result
+result-*
+.direnv/
+
+#kilocode
+.kilo/
+
+#others
+
+**/*.import
+
+# Auto-caption model + ORT wasm — regenerated at build by scripts/fetch-caption-model.mjs
+/caption-assets/

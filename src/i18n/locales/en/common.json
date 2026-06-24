@@ -1,0 +1,50 @@
+{
+	"actions": {
+		"cancel": "Cancel",
+		"save": "Save",
+		"delete": "Delete",
+		"close": "Close",
+		"share": "Share",
+		"done": "Done",
+		"open": "Open",
+		"upload": "Upload",
+		"export": "Export",
+		"showInFolder": "Show in Folder",
+		"file": "File",
+		"edit": "Edit",
+		"view": "View",
+		"window": "Window",
+		"quit": "Quit",
+		"stopRecording": "Stop Recording",
+		"undo": "Undo",
+		"redo": "Redo",
+		"cut": "Cut",
+		"copy": "Copy",
+		"paste": "Paste",
+		"selectAll": "Select All",
+		"minimize": "Minimize",
+		"reload": "Reload",
+		"forceReload": "Force Reload",
+		"toggleDevTools": "Toggle Developer Tools",
+		"actualSize": "Actual Size",
+		"zoomIn": "Zoom In",
+		"zoomOut": "Zoom Out",
+		"toggleFullScreen": "Toggle Full Screen",
+		"recordingStatus": "Recording: {{source}}",
+		"about": "About Guide Studio",
+		"services": "Services",
+		"hide": "Hide Guide Studio",
+		"hideOthers": "Hide Others",
+		"unhide": "Show All"
+	},
+	"playback": {
+		"play": "Play",
+		"pause": "Pause",
+		"fullscreen": "Fullscreen",
+		"exitFullscreen": "Exit Fullscreen"
+	},
+	"locale": {
+		"name": "English",
+		"short": "EN"
+	}
+}

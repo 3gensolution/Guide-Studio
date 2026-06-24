@@ -1,0 +1,81 @@
+{
+	"errors": {
+		"noVideoLoaded": "No hay video cargado",
+		"videoNotReady": "El video no está listo",
+		"unableToDetermineSourcePath": "No se pudo determinar la ruta del video de origen",
+		"failedToSaveGif": "Error al guardar el GIF",
+		"gifExportFailed": "La exportación de GIF falló",
+		"failedToSaveVideo": "Error al guardar el video",
+		"exportFailed": "La exportación falló",
+		"exportFailedWithError": "La exportación falló: {{error}}",
+		"exportBackgroundLoadFailed": "La exportación falló: no se pudo cargar la imagen de fondo ({{url}})",
+		"failedToSaveExport": "Error al guardar la exportación",
+		"failedToSaveExportedVideo": "Error al guardar el video exportado",
+		"failedToRevealInFolder": "Error al mostrar en la carpeta: {{error}}"
+	},
+	"export": {
+		"canceled": "Exportación cancelada",
+		"exportedSuccessfully": "{{format}} exportado exitosamente"
+	},
+	"project": {
+		"saveCanceled": "Guardado de proyecto cancelado",
+		"failedToSave": "Error al guardar el proyecto",
+		"savedTo": "Proyecto guardado en {{path}}",
+		"failedToLoad": "Error al cargar el proyecto",
+		"invalidFormat": "Formato de archivo de proyecto no válido",
+		"loadedFrom": "Proyecto cargado desde {{path}}"
+	},
+	"recording": {
+		"failedCameraAccess": "Error al solicitar acceso a la cámara.",
+		"cameraBlocked": "El acceso a la cámara está bloqueado. Actívalo en la configuración del sistema para usar la cámara web.",
+		"systemAudioUnavailable": "Audio del sistema no disponible. Grabando sin audio del sistema.",
+		"microphoneDenied": "Acceso al micrófono denegado. La grabación continuará sin audio.",
+		"cameraDenied": "Acceso a la cámara denegado. La grabación continuará sin cámara web.",
+		"cameraDisconnected": "Cámara web desconectada.",
+		"cameraNotFound": "Cámara no encontrada.",
+		"permissionDenied": "Permiso de grabación denegado. Por favor permite la grabación de pantalla.",
+		"accessibilityAllowAndRetry": "Permite el acceso de accesibilidad para Guide Studio y luego pulsa grabar de nuevo para iniciar la cuenta atrás."
+	},
+	"loadingVideo": "Cargando video...",
+	"loadingEditor": "Cargando editor...",
+	"newRecording": {
+		"title": "Volver a la grabadora",
+		"description": "Tu sesión actual ha sido guardada.",
+		"cancel": "Cancelar",
+		"confirm": "Confirmar"
+	},
+	"autoCaptions": {
+		"button": "Subtítulos automáticos",
+		"dialogTitle": "Subtítulos automáticos",
+		"dialogDescription": "Elige aproximadamente cuántas palabras muestra cada subtítulo a la vez. El tiempo se reparte entre las palabras de esa frase.",
+		"minWords": "Número mínimo de palabras por subtítulo",
+		"maxWords": "Número máximo de palabras por subtítulo",
+		"wordsCount": "{{count}} palabras",
+		"generate": "Generar",
+		"dialogCancel": "Cancelar",
+		"generating": "Generando subtítulos a partir del audio…",
+		"loadingModel": "Cargando el modelo de voz (el primer uso descarga ~75 MB)…",
+		"transcribing": "Transcribiendo el habla…",
+		"busy": "La generación de subtítulos ya está en curso.",
+		"done": "Se añadieron {{count}} subtítulos.",
+		"noneHeard": "No se detectó voz.",
+		"noAudio": "Este video no tiene audio utilizable para transcribir.",
+		"failed": "No se pudieron generar los subtítulos.",
+		"truncated": "Solo se transcribieron los primeros {{minutes}} minutos."
+	},
+	"emptyState": {
+		"title": "No hay proyecto abierto",
+		"description": "Importa un video para empezar a editar o carga un proyecto de Guide Studio existente.",
+		"importVideoButton": "Importar archivo de video…",
+		"loadProjectButton": "Cargar proyecto…",
+		"supportedFormats": "Formatos compatibles: MP4, MOV, WebM, MKV, AVI, M4V, WMV",
+		"dragDropHint": "o arrastra y suelta un archivo .guidestudio aquí",
+		"dropOverlay": "Suelta el archivo de proyecto para abrirlo",
+		"dropErrors": {
+			"unsupportedFormatTitle": "Formato no compatible",
+			"unsupportedFormatMessage": "Solo se pueden soltar aquí archivos de proyecto .guidestudio. Para importar un video, usa el botón \"Importar archivo de video...\" en su lugar.",
+			"couldNotOpenTitle": "No se pudo abrir el archivo",
+			"couldNotOpenMessage": "No se pudo abrir el archivo de proyecto. El video al que hace referencia puede haber sido movido o eliminado."
+		}
+	}
+}

@@ -1,0 +1,81 @@
+{
+	"newRecording": {
+		"title": "Retour à l'enregistreur",
+		"description": "Votre session actuelle a été enregistrée.",
+		"cancel": "Annuler",
+		"confirm": "Confirmer"
+	},
+	"errors": {
+		"noVideoLoaded": "Aucune vidéo chargée",
+		"videoNotReady": "Vidéo non prête",
+		"unableToDetermineSourcePath": "Impossible de déterminer le chemin de la vidéo source",
+		"failedToSaveGif": "Échec de l'enregistrement du GIF",
+		"gifExportFailed": "L'export du GIF a échoué",
+		"failedToSaveVideo": "Échec de l'enregistrement de la vidéo",
+		"exportFailed": "L'export a échoué",
+		"exportFailedWithError": "L'export a échoué : {{error}}",
+		"exportBackgroundLoadFailed": "L'export a échoué : impossible de charger l'image d'arrière-plan ({{url}})",
+		"failedToSaveExport": "Échec de l'enregistrement de l'export",
+		"failedToSaveExportedVideo": "Échec de l'enregistrement de la vidéo exportée",
+		"failedToRevealInFolder": "Erreur lors de l'affichage dans le dossier : {{error}}"
+	},
+	"export": {
+		"canceled": "Export annulé",
+		"exportedSuccessfully": "{{format}} exporté avec succès"
+	},
+	"project": {
+		"saveCanceled": "Enregistrement du projet annulé",
+		"failedToSave": "Échec de l'enregistrement du projet",
+		"savedTo": "Projet enregistré dans {{path}}",
+		"failedToLoad": "Échec du chargement du projet",
+		"invalidFormat": "Format de fichier projet invalide",
+		"loadedFrom": "Projet chargé depuis {{path}}"
+	},
+	"recording": {
+		"failedCameraAccess": "Échec de la demande d'accès à la caméra.",
+		"cameraBlocked": "L'accès à la caméra est bloqué. Activez-le dans les paramètres système pour utiliser la webcam.",
+		"systemAudioUnavailable": "Audio système non disponible. Enregistrement sans audio système.",
+		"microphoneDenied": "Accès au microphone refusé. L'enregistrement continuera sans audio.",
+		"cameraDenied": "Accès à la caméra refusé. L'enregistrement continuera sans webcam.",
+		"cameraDisconnected": "Webcam déconnectée.",
+		"cameraNotFound": "Caméra introuvable.",
+		"permissionDenied": "Permission d'enregistrement refusée. Veuillez autoriser l'enregistrement d'écran.",
+		"accessibilityAllowAndRetry": "Autorisez l'accès Accessibilité pour Guide Studio, puis appuyez de nouveau sur enregistrer pour lancer le compte à rebours."
+	},
+	"loadingVideo": "Chargement de la vidéo...",
+	"loadingEditor": "Chargement de l'éditeur...",
+	"autoCaptions": {
+		"button": "Sous-titres automatiques",
+		"dialogTitle": "Sous-titres automatiques",
+		"dialogDescription": "Choisissez approximativement combien de mots chaque sous-titre affiche à la fois. Le timing est réparti entre les mots de cette phrase.",
+		"minWords": "Nombre minimum de mots par sous-titre",
+		"maxWords": "Nombre maximum de mots par sous-titre",
+		"wordsCount": "{{count}} mots",
+		"generate": "Générer",
+		"dialogCancel": "Annuler",
+		"generating": "Génération des sous-titres à partir de l'audio…",
+		"loadingModel": "Chargement du modèle vocal (le premier usage télécharge ~75 MB)…",
+		"transcribing": "Transcription de la parole…",
+		"busy": "La génération des sous-titres est déjà en cours.",
+		"done": "{{count}} sous-titres ajoutés.",
+		"noneHeard": "Aucune parole n'a été détectée.",
+		"noAudio": "Cette vidéo ne contient pas d'audio exploitable pour la transcription.",
+		"failed": "Impossible de générer les sous-titres.",
+		"truncated": "Seules les {{minutes}} premières minutes ont été transcrites."
+	},
+	"emptyState": {
+		"title": "Aucun projet ouvert",
+		"description": "Importez une vidéo pour commencer à éditer, ou chargez un projet Guide Studio existant.",
+		"importVideoButton": "Importer un fichier vidéo…",
+		"loadProjectButton": "Charger un projet…",
+		"supportedFormats": "Formats pris en charge : MP4, MOV, WebM, MKV, AVI, M4V, WMV",
+		"dragDropHint": "ou glissez-déposez un fichier .guidestudio ici",
+		"dropOverlay": "Déposez le fichier de projet pour l'ouvrir",
+		"dropErrors": {
+			"unsupportedFormatTitle": "Format non pris en charge",
+			"unsupportedFormatMessage": "Seuls les fichiers .guidestudio peuvent être déposés ici. Pour importer une vidéo, utilisez plutôt le bouton \"Importer un fichier vidéo...\".",
+			"couldNotOpenTitle": "Impossible d'ouvrir le fichier",
+			"couldNotOpenMessage": "Le fichier de projet n'a pas pu être ouvert. La vidéo qu'il référence a peut-être été déplacée ou supprimée."
+		}
+	}
+}
