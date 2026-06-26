@@ -2416,6 +2416,42 @@ export function registerIpcHandlers(
 		}
 	});
 
+	ipcMain.handle("save-intro-video", async (_, videoData: ArrayBuffer) => {
+		try {
+			const introsDir = path.join(app.getPath("userData"), "intros");
+			await fs.mkdir(introsDir, { recursive: true });
+			const filePath = path.join(introsDir, `intro-${Date.now()}.mp4`);
+			await fs.writeFile(filePath, Buffer.from(videoData));
+			return { success: true, path: filePath };
+		} catch (error) {
+			console.error("Failed to save intro video:", error);
+			return { success: false, error: String(error) };
+		}
+	});
+
+	ipcMain.handle("delete-temp-file", async (_, filePath: string) => {
+		try {
+			if (typeof filePath !== "string" || !path.isAbsolute(filePath)) {
+				return { success: false, error: "Invalid path" };
+			}
+			const userData = app.getPath("userData");
+			const downloads = app.getPath("downloads");
+			const temp = app.getPath("temp");
+			const normalizedPath = path.normalize(filePath);
+			const isInAllowedDir = [userData, downloads, temp].some((dir) =>
+				normalizedPath.startsWith(dir),
+			);
+			if (!isInAllowedDir) {
+				return { success: false, error: "Path not in allowed directory" };
+			}
+			await fs.unlink(normalizedPath);
+			return { success: true };
+		} catch (error) {
+			console.error("Failed to delete temp file:", error);
+			return { success: false, error: String(error) };
+		}
+	});
+
 	ipcMain.handle("write-export-to-path", async (_, videoData: ArrayBuffer, filePath: string) => {
 		try {
 			// Sanity-check the path: the renderer is trusted (contextIsolation on), but a

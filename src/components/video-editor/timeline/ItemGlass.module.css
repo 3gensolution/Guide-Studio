@@ -112,19 +112,20 @@
 
 .glassTeal {
 	position: relative;
-	border-radius: 10px;
+	border-radius: 3px;
 	-corner-smoothing: antialiased;
-	background: rgba(20, 184, 166, 0.15);
+	background: rgba(20, 184, 166, 0.18);
 	border: 1px solid rgba(20, 184, 166, 0.3);
+	border-right-color: rgba(20, 184, 166, 0.5);
 	box-shadow: 0 2px 12px 0 rgba(20, 184, 166, 0.1) inset;
-	margin: 3px 0;
+	margin: 2px 0;
 	backdrop-filter: blur(4px);
 	-webkit-backdrop-filter: blur(4px);
 	transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .glassTeal:hover {
-	background: rgba(20, 184, 166, 0.25);
+	background: rgba(20, 184, 166, 0.28);
 	border-color: rgba(20, 184, 166, 0.5);
 	box-shadow: 0 4px 20px 0 rgba(20, 184, 166, 0.2) inset;
 }
@@ -176,4 +177,15 @@
 	cursor: ew-resize;
 	border-top-right-radius: 9px;
 	border-bottom-right-radius: 9px;
+}
+
+/* Clip items use smaller radius to look like connected segments */
+.glassTeal .zoomEndCap.left {
+	border-top-left-radius: 2px;
+	border-bottom-left-radius: 2px;
+}
+
+.glassTeal .zoomEndCap.right {
+	border-top-right-radius: 2px;
+	border-bottom-right-radius: 2px;
 }

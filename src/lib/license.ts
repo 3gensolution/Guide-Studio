@@ -5,8 +5,8 @@
  * Pro:  AI features (chat, scene generation, demo recorder), scene builder,
  *       animated backgrounds, AI captions, TTS
  *
- * Pro is unlocked by connecting to a Coherence account with an active
- * Studio Pro subscription (or Coherence Team plan).
+ * Pro is unlocked by connecting to a GuideAI account with an active
+ * Studio Pro subscription (or GuideAI Team plan).
  */
 
 import {
@@ -103,7 +103,7 @@ export function getFeatureLabel(feature: ProFeature): string {
 /**
  * Warm the license cache at app startup.
  * Only does a SILENT check — if a stored token exists, verify the subscription.
- * Never opens the browser. The explicit "Connect to Coherence" button handles that.
+ * Never opens the browser. The explicit "Connect to GuideAI" button handles that.
  */
 export async function initLicense(): Promise<LicenseTier> {
 	cachedTier = null;

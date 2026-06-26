@@ -1,5 +1,6 @@
 import { AlertCircle, Film, FolderOpen, Upload, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
+import guideLogo from "@/assets/guide-logo.svg";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useScopedT } from "@/contexts/I18nContext";
 import { getProjectFolder, parentDirectoryOf, saveUserPreferences } from "@/lib/userPreferences";
@@ -124,12 +125,7 @@ export function EditorEmptyState({ onVideoImported, onProjectOpened }: EditorEmp
 				<DialogContent className="bg-[#09090b] border-white/10 rounded-2xl max-w-sm p-6 gap-0">
 					<DialogHeader className="mb-4">
 						<div className="flex items-center gap-3">
-							<img
-								src="./guidestudio.png"
-								alt=""
-								aria-hidden="true"
-								className="w-9 h-9 rounded-xl flex-shrink-0"
-							/>
+							<img src={guideLogo} alt="" aria-hidden="true" className="w-9 h-9 flex-shrink-0" />
 							<DialogTitle className="text-base font-semibold text-slate-200 leading-tight">
 								{lastDropErrorRef.current === "unsupported-format"
 									? te("emptyState.dropErrors.unsupportedFormatTitle")
@@ -160,28 +156,26 @@ export function EditorEmptyState({ onVideoImported, onProjectOpened }: EditorEmp
 				</DialogContent>
 			</Dialog>
 
-			<div className="relative flex flex-col items-center gap-8 px-6 text-center">
-				{/* Logo */}
-				<img
-					src="./guidestudio.png"
-					alt=""
-					aria-hidden="true"
-					className="h-16 w-16 rounded-2xl opacity-90"
-				/>
-
-				<div className="flex flex-col gap-2">
-					<h2 className="text-xl font-semibold text-slate-200">{te("emptyState.title")}</h2>
-					<p className="max-w-sm text-sm leading-relaxed text-slate-500">
-						{te("emptyState.description")}
-					</p>
+			<div className="relative flex flex-col items-center gap-6 px-6 text-center max-w-md">
+				{/* Logo and branding */}
+				<div className="flex flex-col items-center gap-4">
+					<div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-white/[0.04] border border-white/[0.06]">
+						<img src={guideLogo} alt="" aria-hidden="true" className="h-8 w-8" />
+					</div>
+					<div className="flex flex-col gap-1.5">
+						<h2 className="text-lg font-semibold text-slate-200">{te("emptyState.title")}</h2>
+						<p className="max-w-sm text-[13px] leading-relaxed text-slate-500">
+							{te("emptyState.description")}
+						</p>
+					</div>
 				</div>
 
 				{/* Actions */}
-				<div className="flex flex-col gap-3 w-full max-w-xs">
+				<div className="flex gap-3 w-full max-w-sm">
 					<button
 						type="button"
 						onClick={handleImportVideo}
-						className="flex items-center justify-center gap-2.5 w-full px-4 py-3 rounded-xl bg-[#00B8FF] hover:bg-[#2d9e6c] active:bg-[#27885c] text-white font-medium text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[#00B8FF] focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b]"
+						className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[#00B8FF] hover:bg-[#00a8ec] active:bg-[#0098d4] text-white font-medium text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[#00B8FF] focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b]"
 					>
 						<Film className="h-4 w-4" />
 						{te("emptyState.importVideoButton")}
@@ -189,16 +183,17 @@ export function EditorEmptyState({ onVideoImported, onProjectOpened }: EditorEmp
 					<button
 						type="button"
 						onClick={handleLoadProject}
-						className="flex items-center justify-center gap-2.5 w-full px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 font-medium text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b]"
+						className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 font-medium text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b]"
 					>
 						<FolderOpen className="h-4 w-4" />
 						{te("emptyState.loadProjectButton")}
 					</button>
 				</div>
 
-				<div className="flex flex-col items-center gap-2">
+				{/* Footer info */}
+				<div className="flex flex-col items-center gap-3 pt-2">
 					<p className="text-xs text-slate-600">{te("emptyState.supportedFormats")}</p>
-					<div className="flex items-center gap-1.5 text-xs text-slate-700 mt-4">
+					<div className="flex items-center gap-1.5 text-xs text-slate-600">
 						<Upload className="h-3 w-3" />
 						<span>{te("emptyState.dragDropHint")}</span>
 					</div>

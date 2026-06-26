@@ -51,7 +51,7 @@ export const ProGate: React.FC<{
 			>
 				{loading ? "Checking..." : "Upgrade to Pro"}
 			</button>
-			<div className="text-[10px] text-white/25">Upgrade at getcoherence.io</div>
+			<div className="text-[10px] text-white/25">Upgrade at guideai.com</div>
 		</div>
 	);
 };

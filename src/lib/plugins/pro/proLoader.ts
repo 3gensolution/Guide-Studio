@@ -1,7 +1,7 @@
 // ── Pro Plugin Loader ───────────────────────────────────────────────────
 //
 // Handles authentication and loading premium plugin bundles.
-// By default configured for Coherence, but fully configurable for
+// By default configured for GuideAI, but fully configurable for
 // self-hosted or custom auth providers.
 //
 // To disable pro features entirely: don't call activatePro().
@@ -30,13 +30,13 @@ interface ProAuthConfig {
 }
 
 const DEFAULT_CONFIG: ProAuthConfig = {
-	baseUrl: "https://app.getcoherence.io",
-	authUrl: "https://app.getcoherence.io/login?redirect=studio-desktop",
-	subscriptionUrl: "https://app.getcoherence.io/api/v1/auth/studio/subscription",
-	refreshUrl: "https://app.getcoherence.io/api/v1/auth/refresh",
-	bundleUrl: "https://app.getcoherence.io/api/v1/auth/studio/pro-bundle.js",
+	baseUrl: "https://app.guideai.com",
+	authUrl: "https://app.guideai.com/login?redirect=studio-desktop",
+	subscriptionUrl: "https://app.guideai.com/api/v1/auth/studio/subscription",
+	refreshUrl: "https://app.guideai.com/api/v1/auth/refresh",
+	bundleUrl: "https://app.guideai.com/api/v1/auth/studio/pro-bundle.js",
 	tokenKey: "studio-pro-token",
-	providerName: "Coherence",
+	providerName: "GuideAI",
 };
 
 // Dev detection — Vite sets `import.meta.env.DEV` at build time (true
@@ -52,14 +52,14 @@ const DEV_CONFIG: ProAuthConfig = {
 	refreshUrl: "http://localhost:4100/refresh",
 	bundleUrl: "http://localhost:4900/studio/pro-bundle.js",
 	tokenKey: "studio-pro-token",
-	providerName: "Coherence (dev)",
+	providerName: "GuideAI (dev)",
 };
 
 let config: ProAuthConfig = isDev ? { ...DEV_CONFIG } : { ...DEFAULT_CONFIG };
 
 /**
  * Configure the pro auth provider. Call this before activatePro()
- * to use a custom auth backend instead of Coherence.
+ * to use a custom auth backend instead of GuideAI.
  *
  * Self-hosters: you can point this at your own server that implements
  * the same 3 endpoints (auth, subscription check, bundle download).
@@ -284,7 +284,7 @@ function clearToken(): void {
 }
 
 /**
- * Authenticate with Coherence via OAuth popup.
+ * Authenticate with GuideAI via OAuth popup.
  * Returns the JWT token on success.
  */
 export async function authenticatePro(): Promise<{ success: boolean; error?: string }> {
@@ -311,7 +311,7 @@ export async function authenticatePro(): Promise<{ success: boolean; error?: str
 		const separator = config.authUrl.includes("?") ? "&" : "?";
 		const popup = window.open(
 			`${config.authUrl}${separator}t=${Date.now()}`,
-			"coherence-login",
+			"guideai-login",
 			`width=${width},height=${height},left=${left},top=${top}`,
 		);
 
@@ -369,7 +369,7 @@ export async function authenticatePro(): Promise<{ success: boolean; error?: str
 }
 
 /**
- * Check subscription status with Coherence API.
+ * Check subscription status with GuideAI API.
  */
 export async function checkSubscription(): Promise<{
 	active: boolean;
@@ -417,7 +417,7 @@ export async function checkSubscription(): Promise<{
 }
 
 /**
- * Download and load the pro plugin bundle from Coherence CDN.
+ * Download and load the pro plugin bundle from GuideAI CDN.
  */
 async function loadProBundle(): Promise<void> {
 	const token = proToken || getStoredToken();

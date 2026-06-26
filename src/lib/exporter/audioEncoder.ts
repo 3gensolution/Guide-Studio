@@ -1,6 +1,7 @@
 import { WebDemuxer } from "web-demuxer";
 import type { SpeedRegion, TrimRegion } from "@/components/video-editor/types";
 import type { ExportAudioMuxerCodec, VideoMuxer } from "./muxer";
+import type { AudioStrategy } from "./types";
 
 const AUDIO_BITRATE = 128_000;
 const DECODE_BACKPRESSURE_LIMIT = 20;
@@ -156,6 +157,31 @@ export function downmixPlanarChannelsForExport(
 
 export class AudioProcessor {
 	private cancelled = false;
+
+	/**
+	 * Select the optimal audio processing strategy based on the editing state.
+	 * - copy-source: No edits, pass raw audio through (fastest).
+	 * - trim-source: Only trim regions, extract segments.
+	 * - speed-render: Speed changes present, must render with pitch preservation.
+	 * - reencode: Fallback to full decode/encode cycle.
+	 */
+	static selectStrategy(
+		trimRegions: TrimRegion[] | undefined,
+		speedRegions: SpeedRegion[] | undefined,
+	): AudioStrategy {
+		const hasTrims =
+			trimRegions?.some((r) => r.endMs - r.startMs > MIN_SPEED_REGION_DELTA_MS) ?? false;
+		const hasSpeeds =
+			speedRegions?.some(
+				(r) =>
+					r.endMs - r.startMs > MIN_SPEED_REGION_DELTA_MS &&
+					Math.abs(r.speed - 1) > MIN_SPEED_REGION_DELTA_MS,
+			) ?? false;
+
+		if (hasSpeeds) return "speed-render";
+		if (hasTrims) return "trim-source";
+		return "copy-source";
+	}
 
 	static async selectSupportedExportCodec(
 		sampleRate: number,

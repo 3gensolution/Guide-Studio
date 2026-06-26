@@ -1,5 +1,6 @@
 import { DEFAULT_CURSOR_THEME_ID } from "@/lib/cursor/cursorThemes";
 import type {
+	EncodingMode,
 	ExportFormat,
 	ExportQuality,
 	GifFrameRate,
@@ -88,10 +89,12 @@ export const DEFAULT_EXPORT_SETTINGS: {
 	quality: ExportQuality;
 	format: ExportFormat;
 	frameRate: Mp4FrameRate;
+	encodingMode: EncodingMode;
 } = {
 	quality: "good",
 	format: "mp4",
 	frameRate: 30,
+	encodingMode: "quality",
 };
 
 export const DEFAULT_GIF_SETTINGS: {

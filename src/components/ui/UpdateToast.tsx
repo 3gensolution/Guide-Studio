@@ -27,7 +27,7 @@ export function UpdateToast() {
 					const version = event.latestVersion ?? "unknown";
 					if (downloadedShown.current === version) return;
 					downloadedShown.current = version;
-					toast(`Coherence Studio ${version} is ready to install`, {
+					toast(`Guide Studio ${version} is ready to install`, {
 						duration: Number.POSITIVE_INFINITY,
 						action: {
 							label: "Install & Restart",

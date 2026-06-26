@@ -1,4 +1,5 @@
-import type { ExportQuality } from "./types";
+import type { EncodingMode, ExportQuality } from "./types";
+import { ENCODING_MODE_PROFILES } from "./types";
 
 export interface Mp4ExportSettings {
 	width: number;
@@ -94,18 +95,36 @@ function calculateSourceDimensions(
 	};
 }
 
-function calculateBitrate(width: number, height: number, quality: ExportQuality) {
+function calculateBitrate(
+	width: number,
+	height: number,
+	quality: ExportQuality,
+	frameRate: number = 30,
+	encodingMode: EncodingMode = "quality",
+) {
 	const totalPixels = width * height;
 
+	let baseBitrate: number;
 	if (quality === "source") {
-		if (totalPixels > 2560 * 1440) return 80_000_000;
-		if (totalPixels > 1920 * 1080) return 50_000_000;
-		return 30_000_000;
+		if (totalPixels > 2560 * 1440) baseBitrate = 80_000_000;
+		else if (totalPixels > 1920 * 1080) baseBitrate = 50_000_000;
+		else baseBitrate = 30_000_000;
+	} else if (totalPixels <= 1280 * 720) {
+		baseBitrate = 10_000_000;
+	} else if (totalPixels <= 1920 * 1080) {
+		baseBitrate = 20_000_000;
+	} else {
+		baseBitrate = 30_000_000;
 	}
 
-	if (totalPixels <= 1280 * 720) return 10_000_000;
-	if (totalPixels <= 1920 * 1080) return 20_000_000;
-	return 30_000_000;
+	// Scale by frame rate: higher frame rates need proportionally more bitrate.
+	// sqrt scaling avoids linear explosion while reflecting increased data rate.
+	const frameRateScale = Math.sqrt(frameRate / 30);
+
+	// Apply encoding mode multiplier (fast=0.1x, balanced=0.75x, quality=1.0x).
+	const modeMultiplier = ENCODING_MODE_PROFILES[encodingMode].bitrateMultiplier;
+
+	return Math.max(2_000_000, Math.round(baseBitrate * frameRateScale * modeMultiplier));
 }
 
 export function calculateMp4ExportSettings({
@@ -113,17 +132,27 @@ export function calculateMp4ExportSettings({
 	sourceWidth,
 	sourceHeight,
 	aspectRatioValue,
+	frameRate = 30,
+	encodingMode = "quality",
 }: {
 	quality: ExportQuality;
 	sourceWidth: number;
 	sourceHeight: number;
 	aspectRatioValue: number;
+	frameRate?: number;
+	encodingMode?: EncodingMode;
 }): Mp4ExportSettings {
 	if (quality === "medium") {
 		const dimensions = calculateDimensionsForShortSide(MEDIUM_SHORT_SIDE, aspectRatioValue);
 		return {
 			...dimensions,
-			bitrate: calculateBitrate(dimensions.width, dimensions.height, quality),
+			bitrate: calculateBitrate(
+				dimensions.width,
+				dimensions.height,
+				quality,
+				frameRate,
+				encodingMode,
+			),
 		};
 	}
 
@@ -131,13 +160,25 @@ export function calculateMp4ExportSettings({
 		const dimensions = calculateDimensionsForShortSide(HIGH_SHORT_SIDE, aspectRatioValue);
 		return {
 			...dimensions,
-			bitrate: calculateBitrate(dimensions.width, dimensions.height, quality),
+			bitrate: calculateBitrate(
+				dimensions.width,
+				dimensions.height,
+				quality,
+				frameRate,
+				encodingMode,
+			),
 		};
 	}
 
 	const sourceDimensions = calculateSourceDimensions(sourceWidth, sourceHeight, aspectRatioValue);
 	return {
 		...sourceDimensions,
-		bitrate: calculateBitrate(sourceDimensions.width, sourceDimensions.height, quality),
+		bitrate: calculateBitrate(
+			sourceDimensions.width,
+			sourceDimensions.height,
+			quality,
+			frameRate,
+			encodingMode,
+		),
 	};
 }

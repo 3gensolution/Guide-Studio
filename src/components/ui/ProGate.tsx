@@ -131,7 +131,7 @@ export function ProGateDialog({ open, onOpenChange, feature, onUpgrade }: ProGat
 			const baseUrl =
 				window.location.hostname === "localhost"
 					? "http://localhost:4100"
-					: "https://app.getcoherence.io/api/v1/auth";
+					: "https://app.guideai.com/api/v1/auth";
 
 			const res = await fetch(`${baseUrl}/studio/checkout`, {
 				method: "POST",
@@ -237,7 +237,7 @@ export function ProGateDialog({ open, onOpenChange, feature, onUpgrade }: ProGat
 							Studio Pro.
 						</p>
 						<p className="text-xs text-white/40">
-							Connect your Coherence account to unlock AI features, scene builder, animated
+							Connect your GuideAI account to unlock AI features, scene builder, animated
 							backgrounds, demo recorder, and more.
 						</p>
 
@@ -260,19 +260,17 @@ export function ProGateDialog({ open, onOpenChange, feature, onUpgrade }: ProGat
 							) : (
 								<>
 									<ExternalLink size={14} />
-									Connect to Coherence
+									Connect to GuideAI
 								</>
 							)}
 						</button>
 
 						<button
 							type="button"
-							onClick={() =>
-								window.electronAPI?.openExternalUrl?.("https://getcoherence.io/pricing")
-							}
+							onClick={() => window.electronAPI?.openExternalUrl?.("https://guideai.com/pricing")}
 							className="block w-full text-center text-[11px] text-white/40 hover:text-white/60 transition-colors"
 						>
-							New here? Studio Pro is free with any paid Coherence plan →
+							New here? Studio Pro is free with any paid GuideAI plan →
 						</button>
 					</>
 				)}
@@ -283,7 +281,7 @@ export function ProGateDialog({ open, onOpenChange, feature, onUpgrade }: ProGat
 						<div className="flex items-center justify-between gap-2 px-3 py-2 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">
 							<span className="flex items-center gap-2">
 								<Check size={12} />
-								Connected to Coherence
+								Connected to GuideAI
 							</span>
 							<button
 								type="button"
@@ -292,7 +290,7 @@ export function ProGateDialog({ open, onOpenChange, feature, onUpgrade }: ProGat
 									onOpenChange(false);
 								}}
 								className="text-[11px] text-emerald-400/60 hover:text-emerald-300 underline underline-offset-2"
-								title="Sign out of your Coherence account"
+								title="Sign out of your GuideAI account"
 							>
 								Sign out
 							</button>
@@ -347,27 +345,28 @@ export function ProGateDialog({ open, onOpenChange, feature, onUpgrade }: ProGat
 
 						<div className="relative flex items-center py-1">
 							<div className="flex-grow border-t border-white/10" />
-							<span className="flex-shrink mx-3 text-[10px] uppercase tracking-wider text-white/30">or</span>
+							<span className="flex-shrink mx-3 text-[10px] uppercase tracking-wider text-white/30">
+								or
+							</span>
 							<div className="flex-grow border-t border-white/10" />
 						</div>
 
 						<button
 							type="button"
-							onClick={() =>
-								window.electronAPI?.openExternalUrl?.("https://getcoherence.io/pricing")
-							}
+							onClick={() => window.electronAPI?.openExternalUrl?.("https://guideai.com/pricing")}
 							className="w-full rounded-md border border-white/10 hover:border-white/20 bg-white/[0.02] hover:bg-white/[0.05] px-4 py-2.5 text-left transition-colors group"
 						>
 							<div className="flex items-center justify-between gap-2">
 								<div>
-									<div className="text-sm font-medium text-white">
-										Get it free with Coherence
-									</div>
+									<div className="text-sm font-medium text-white">Get it free with GuideAI</div>
 									<div className="text-[11px] text-white/40 mt-0.5">
 										Studio Pro is included with any paid plan, from $12/mo
 									</div>
 								</div>
-								<ExternalLink size={14} className="text-white/30 group-hover:text-white/60 shrink-0" />
+								<ExternalLink
+									size={14}
+									className="text-white/30 group-hover:text-white/60 shrink-0"
+								/>
 							</div>
 						</button>
 					</>

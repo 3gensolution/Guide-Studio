@@ -19,7 +19,7 @@ const assetBaseUrlArg = process.argv.find((arg) => arg.startsWith(ASSET_BASE_URL
 const assetBaseUrl = assetBaseUrlArg ? assetBaseUrlArg.slice(ASSET_BASE_URL_ARG_PREFIX.length) : "";
 
 contextBridge.exposeInMainWorld("electronAPI", {
-	// ── Asset base path (both GuideStudio sync + Coherence async patterns) ──
+	// ── Asset base path ──
 	assetBaseUrl,
 	getAssetBasePath: async () => {
 		return await ipcRenderer.invoke("get-asset-base-path");
@@ -150,7 +150,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return ipcRenderer.invoke("attach-native-mac-webcam-recording", payload);
 	},
 
-	// ── Native Capture (Coherence unified API) ──
+	// ── Native Capture ──
 	nativeGetSources: () => {
 		return ipcRenderer.invoke("native-get-sources");
 	},
@@ -353,6 +353,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return ipcRenderer.invoke("save-diagnostic", payload);
 	},
 
+	// ── Intro video ──
+	saveIntroVideo: (videoData: ArrayBuffer) => {
+		return ipcRenderer.invoke("save-intro-video", videoData);
+	},
+	deleteTempFile: (filePath: string) => {
+		return ipcRenderer.invoke("delete-temp-file", filePath);
+	},
+
 	// ── FFmpeg ──
 	getFfmpegPath: () => {
 		return ipcRenderer.invoke("get-ffmpeg-path");
@@ -410,7 +418,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		ipcRenderer.send("close-confirm-response", choice);
 	},
 
-	// ── Multi-window recording (Coherence) ──
+	// ── Multi-window recording ──
 	openWindowForRecording: () => {
 		return ipcRenderer.invoke("open-window-for-recording");
 	},
@@ -434,7 +442,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return () => ipcRenderer.removeListener("capture-mode-changed", handler);
 	},
 
-	// ── Recording bar (Coherence) ──
+	// ── Recording bar ──
 	showRecordingBar: () => {
 		return ipcRenderer.invoke("show-recording-bar");
 	},
@@ -456,7 +464,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return () => ipcRenderer.removeListener("stop-recording-from-bar", listener);
 	},
 
-	// ── Studio site cache (Coherence Phase 1 outputs) ──
+	// ── Studio site cache ──
 	studioCacheGet: (url: string) => {
 		return ipcRenderer.invoke("studio-cache-get", url);
 	},

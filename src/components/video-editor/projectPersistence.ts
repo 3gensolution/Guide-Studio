@@ -16,7 +16,6 @@ import {
 import {
 	type AnnotationRegion,
 	type CropRegion,
-	type VideoClip,
 	clampPlaybackSpeed,
 	DEFAULT_ANNOTATION_POSITION,
 	DEFAULT_ANNOTATION_SIZE,
@@ -39,6 +38,7 @@ import {
 	MIN_PLAYBACK_SPEED,
 	type SpeedRegion,
 	type TrimRegion,
+	type VideoClip,
 	type WebcamLayoutPreset,
 	type WebcamMaskShape,
 	type WebcamPosition,
@@ -89,11 +89,12 @@ export interface ProjectEditorState {
 	webcamPosition: WebcamPosition | null;
 	exportQuality: ExportQuality;
 	exportFormat: ExportFormat;
+	encodingMode?: import("@/lib/exporter").EncodingMode;
 	gifFrameRate: GifFrameRate;
 	gifLoop: boolean;
 	gifSizePreset: GifSizePreset;
 	cursorTheme: string;
-	// Coherence cursor overlay settings
+	// Cursor overlay settings
 	cursorSmoothing?: number;
 	cursorSway?: number;
 	cursorStyle?: string;
@@ -101,6 +102,8 @@ export interface ProjectEditorState {
 	showCursor?: boolean;
 	// Multi-clip
 	videoClips: VideoClip[];
+	// Isolated intro clip
+	introClip: VideoClip | null;
 }
 
 export interface EditorProjectData {
@@ -224,6 +227,28 @@ export function resolveProjectMedia(
 	}
 
 	return null;
+}
+
+function normalizeClipIntroConfig(raw: unknown): VideoClip["introConfig"] | undefined {
+	if (!raw || typeof raw !== "object") return undefined;
+	const obj = raw as Record<string, unknown>;
+
+	// New format: has config object
+	if (obj.config && typeof obj.config === "object") {
+		return {
+			config: obj.config as VideoClip["introConfig"] extends { config?: infer C } ? C : never,
+		};
+	}
+
+	// Old format: templateId + fieldValues
+	if (typeof obj.templateId === "string" && typeof obj.fieldValues === "object") {
+		return {
+			templateId: obj.templateId,
+			fieldValues: obj.fieldValues as Record<string, string>,
+		};
+	}
+
+	return undefined;
 }
 
 export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): ProjectEditorState {
@@ -525,6 +550,12 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 				? editor.exportQuality
 				: DEFAULT_EXPORT_SETTINGS.quality,
 		exportFormat: editor.exportFormat === "gif" ? "gif" : DEFAULT_EXPORT_SETTINGS.format,
+		encodingMode:
+			editor.encodingMode === "fast" ||
+			editor.encodingMode === "balanced" ||
+			editor.encodingMode === "quality"
+				? editor.encodingMode
+				: DEFAULT_EXPORT_SETTINGS.encodingMode,
 		gifFrameRate:
 			editor.gifFrameRate === 15 ||
 			editor.gifFrameRate === 20 ||
@@ -539,7 +570,7 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 			editor.gifSizePreset === "original"
 				? editor.gifSizePreset
 				: DEFAULT_GIF_SETTINGS.sizePreset,
-		// Coherence cursor overlay settings
+		// Cursor overlay settings
 		cursorSmoothing: isFiniteNumber(editor.cursorSmoothing)
 			? clamp(editor.cursorSmoothing, 0, 1)
 			: 0.5,
@@ -551,37 +582,78 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 		showClickRings: typeof editor.showClickRings === "boolean" ? editor.showClickRings : true,
 		showCursor: typeof editor.showCursor === "boolean" ? editor.showCursor : true,
 		// Multi-clip
-		videoClips: Array.isArray(editor.videoClips)
-			? editor.videoClips
-					.filter(
-						(clip): clip is VideoClip => Boolean(clip && typeof clip.id === "string"),
-					)
-					.map((clip) => ({
-						id: clip.id,
+		videoClips: (() => {
+			const clips = Array.isArray(editor.videoClips)
+				? editor.videoClips
+						.filter((clip): clip is VideoClip => Boolean(clip && typeof clip.id === "string"))
+						.map((clip) => ({
+							id: clip.id,
+							sourceVideoPath: typeof clip.sourceVideoPath === "string" ? clip.sourceVideoPath : "",
+							startMs: Math.max(0, isFiniteNumber(clip.startMs) ? Math.round(clip.startMs) : 0),
+							endMs: isFiniteNumber(clip.endMs) ? Math.round(clip.endMs) : 0,
+							offsetMs: Math.max(0, isFiniteNumber(clip.offsetMs) ? Math.round(clip.offsetMs) : 0),
+							durationMs: Math.max(
+								1,
+								isFiniteNumber(clip.durationMs) ? Math.round(clip.durationMs) : 1000,
+							),
+							label: typeof clip.label === "string" ? clip.label : undefined,
+							sourceType:
+								clip.sourceType === "recording" ||
+								clip.sourceType === "imported" ||
+								clip.sourceType === "intro"
+									? clip.sourceType
+									: undefined,
+							introConfig: normalizeClipIntroConfig(clip.introConfig),
+						}))
+				: [];
+			// Migration: remove intro clips from videoClips (they belong in introClip now)
+			return clips.filter((c) => c.sourceType !== "intro");
+		})(),
+		// Isolated intro clip
+		introClip: (() => {
+			// Prefer the dedicated introClip field
+			const raw = editor.introClip as VideoClip | undefined;
+			if (raw && typeof raw === "object" && typeof raw.id === "string") {
+				return {
+					id: raw.id,
+					sourceVideoPath: typeof raw.sourceVideoPath === "string" ? raw.sourceVideoPath : "",
+					startMs: Math.max(0, isFiniteNumber(raw.startMs) ? Math.round(raw.startMs) : 0),
+					endMs: isFiniteNumber(raw.endMs) ? Math.round(raw.endMs) : 0,
+					offsetMs: 0,
+					durationMs: Math.max(
+						1,
+						isFiniteNumber(raw.durationMs) ? Math.round(raw.durationMs) : 1000,
+					),
+					label: typeof raw.label === "string" ? raw.label : "Intro",
+					sourceType: "intro" as const,
+					introConfig: normalizeClipIntroConfig(raw.introConfig),
+				};
+			}
+			// Migration: extract intro from legacy videoClips array
+			if (Array.isArray(editor.videoClips)) {
+				const legacy = editor.videoClips.find((c): c is VideoClip =>
+					Boolean(c && typeof c === "object" && (c as VideoClip).sourceType === "intro"),
+				);
+				if (legacy) {
+					return {
+						id: legacy.id,
 						sourceVideoPath:
-							typeof clip.sourceVideoPath === "string" ? clip.sourceVideoPath : "",
-						startMs: Math.max(
-							0,
-							isFiniteNumber(clip.startMs) ? Math.round(clip.startMs) : 0,
-						),
-						endMs: isFiniteNumber(clip.endMs) ? Math.round(clip.endMs) : 0,
-						offsetMs: Math.max(
-							0,
-							isFiniteNumber(clip.offsetMs) ? Math.round(clip.offsetMs) : 0,
-						),
+							typeof legacy.sourceVideoPath === "string" ? legacy.sourceVideoPath : "",
+						startMs: Math.max(0, isFiniteNumber(legacy.startMs) ? Math.round(legacy.startMs) : 0),
+						endMs: isFiniteNumber(legacy.endMs) ? Math.round(legacy.endMs) : 0,
+						offsetMs: 0,
 						durationMs: Math.max(
 							1,
-							isFiniteNumber(clip.durationMs) ? Math.round(clip.durationMs) : 1000,
+							isFiniteNumber(legacy.durationMs) ? Math.round(legacy.durationMs) : 1000,
 						),
-						label: typeof clip.label === "string" ? clip.label : undefined,
-						sourceType:
-							clip.sourceType === "recording" ||
-							clip.sourceType === "imported" ||
-							clip.sourceType === "intro"
-								? clip.sourceType
-								: undefined,
-					}))
-			: [],
+						label: typeof legacy.label === "string" ? legacy.label : "Intro",
+						sourceType: "intro" as const,
+						introConfig: normalizeClipIntroConfig(legacy.introConfig),
+					};
+				}
+			}
+			return null;
+		})(),
 	};
 }
 

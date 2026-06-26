@@ -69,14 +69,14 @@ class ApiClient {
 		return this.tokens?.accessToken || null;
 	}
 
-	async request<T = any>(
+	async request<T = unknown>(
 		endpoint: string,
 		options: RequestInit = {},
 	): Promise<{ success: true; data: T } | { success: false; error: string }> {
 		const url = `${this.config.baseUrl}${endpoint}`;
 		const headers: Record<string, string> = {
 			"Content-Type": "application/json",
-			...(options.headers as Record<string, string> || {}),
+			...((options.headers as Record<string, string>) || {}),
 		};
 
 		// Add authentication
@@ -138,7 +138,7 @@ class ApiClient {
 			const response = await fetch(`${this.config.baseUrl}/auth/refresh`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ refreshToken: this.tokens.refreshToken }),
+				body: JSON.stringify({ refresh_token: this.tokens.refreshToken }),
 			});
 
 			if (!response.ok) {
@@ -148,9 +148,9 @@ class ApiClient {
 
 			const data = await response.json();
 			this.setTokens({
-				accessToken: data.accessToken,
-				refreshToken: data.refreshToken || this.tokens.refreshToken,
-				expiresAt: Date.now() + data.expiresIn * 1000,
+				accessToken: data.access_token,
+				refreshToken: data.refresh_token || this.tokens.refreshToken,
+				expiresAt: Date.now() + 30 * 60 * 1000, // 30 minutes
 			});
 
 			return true;
@@ -166,16 +166,23 @@ class ApiClient {
 		return this.request<T>(endpoint, { method: "GET" });
 	}
 
-	post<T>(endpoint: string, data: any) {
+	post<T>(endpoint: string, data: unknown) {
 		return this.request<T>(endpoint, {
 			method: "POST",
 			body: JSON.stringify(data),
 		});
 	}
 
-	put<T>(endpoint: string, data: any) {
+	put<T>(endpoint: string, data: unknown) {
 		return this.request<T>(endpoint, {
 			method: "PUT",
+			body: JSON.stringify(data),
+		});
+	}
+
+	patch<T>(endpoint: string, data: unknown) {
+		return this.request<T>(endpoint, {
+			method: "PATCH",
 			body: JSON.stringify(data),
 		});
 	}
@@ -188,7 +195,7 @@ class ApiClient {
 // Default API client instance
 // Update baseUrl to your Docker backend URL
 const defaultConfig: ApiConfig = {
-	baseUrl: import.meta.env.VITE_API_URL || "http://localhost:8000/api",
+	baseUrl: import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1",
 	apiKey: import.meta.env.VITE_API_KEY,
 };
 

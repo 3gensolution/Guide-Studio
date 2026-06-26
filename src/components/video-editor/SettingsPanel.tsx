@@ -1,20 +1,18 @@
 import * as SliderPrimitive from "@radix-ui/react-slider";
 import {
-	Brackets,
-	Bug,
 	Crop,
 	Download,
 	FileDown,
 	Film,
 	Image,
 	Info,
-	LayoutPanelTop,
+	Layers,
 	Lock,
 	MousePointerClick,
-	Palette,
-	SlidersHorizontal,
+	Paintbrush,
+	Settings2,
 	Sparkles,
-	Star,
+	Timer,
 	Trash2,
 	Unlock,
 	Upload,
@@ -54,6 +52,7 @@ import type {
 } from "@/lib/exporter";
 import {
 	calculateEffectiveSourceDimensions,
+	ENCODING_MODES,
 	GIF_FRAME_RATES,
 	GIF_SIZE_PRESETS,
 	MP4_FRAME_RATES,
@@ -76,7 +75,7 @@ import {
 	DEFAULT_SOURCE_DIMENSIONS,
 	DEFAULT_WEBCAM_SETTINGS,
 } from "./editorDefaults";
-import { BLUR_REGIONS_ENABLED } from "./featureFlags";
+import { BLUR_REGIONS_ENABLED, ENCODING_MODE_ENABLED } from "./featureFlags";
 import { KeyboardShortcutsHelp } from "./KeyboardShortcutsHelp";
 import type {
 	AnnotationRegion,
@@ -86,6 +85,7 @@ import type {
 	FigureData,
 	PlaybackSpeed,
 	Rotation3DPreset,
+	VideoClip,
 	WebcamLayoutPreset,
 	WebcamMaskShape,
 	WebcamSizePreset,
@@ -298,6 +298,8 @@ interface SettingsPanelProps {
 	onExportFormatChange?: (format: ExportFormat) => void;
 	mp4FrameRate?: Mp4FrameRate;
 	onMp4FrameRateChange?: (frameRate: Mp4FrameRate) => void;
+	encodingMode?: import("@/lib/exporter").EncodingMode;
+	onEncodingModeChange?: (mode: import("@/lib/exporter").EncodingMode) => void;
 	gifFrameRate?: GifFrameRate;
 	onGifFrameRateChange?: (rate: GifFrameRate) => void;
 	gifLoop?: boolean;
@@ -330,6 +332,9 @@ interface SettingsPanelProps {
 	selectedSpeedValue?: PlaybackSpeed | null;
 	onSpeedChange?: (speed: PlaybackSpeed) => void;
 	onSpeedDelete?: (id: string) => void;
+	selectedClipId?: string | null;
+	selectedClip?: VideoClip | null;
+	onClipDelete?: (id: string) => void;
 	hasWebcam?: boolean;
 	webcamLayoutPreset?: WebcamLayoutPreset;
 	onWebcamLayoutPresetChange?: (preset: WebcamLayoutPreset) => void;
@@ -359,13 +364,13 @@ interface SettingsPanelProps {
 	onCursorThemeChange?: (theme: string) => void;
 	hasCursorData?: boolean;
 	showCursorSettings?: boolean;
-	// Coherence AI caption settings
+	// AI caption settings
 	captionTrack?: import("@/lib/ai/types").CaptionTrack | null;
 	captionStyle?: import("@/lib/ai/types").CaptionStyle;
 	onCaptionStyleChange?: (style: Partial<import("@/lib/ai/types").CaptionStyle>) => void;
 	onCaptionTrackChange?: (track: import("@/lib/ai/types").CaptionTrack | null) => void;
 	videoPath?: string | null;
-	// Coherence animated background settings
+	// Animated background settings
 	animatedBgSpeed?: number;
 	onAnimatedBgSpeedChange?: (speed: number) => void;
 	onAnimatedBgSpeedCommit?: () => void;
@@ -450,6 +455,8 @@ export function SettingsPanel({
 	onExportFormatChange,
 	mp4FrameRate = DEFAULT_EXPORT_SETTINGS.frameRate,
 	onMp4FrameRateChange,
+	encodingMode = DEFAULT_EXPORT_SETTINGS.encodingMode,
+	onEncodingModeChange,
 	gifFrameRate = DEFAULT_GIF_SETTINGS.frameRate,
 	onGifFrameRateChange,
 	gifLoop = DEFAULT_GIF_SETTINGS.loop,
@@ -478,6 +485,9 @@ export function SettingsPanel({
 	selectedSpeedValue,
 	onSpeedChange,
 	onSpeedDelete,
+	selectedClipId,
+	selectedClip,
+	onClipDelete,
 	hasWebcam = false,
 	webcamLayoutPreset = DEFAULT_WEBCAM_SETTINGS.layoutPreset,
 	onWebcamLayoutPresetChange,
@@ -662,7 +672,9 @@ export function SettingsPanel({
 
 	const zoomEnabled = Boolean(selectedZoomDepth);
 	const trimEnabled = Boolean(selectedTrimId);
-	const hasTimelineSelection = Boolean(selectedZoomId || selectedTrimId || selectedSpeedId);
+	const hasTimelineSelection = Boolean(
+		selectedZoomId || selectedTrimId || selectedSpeedId || selectedClipId,
+	);
 	const hasCursorPanel = showCursorSettings && hasCursorData;
 	const panelModes: Array<{
 		id: SettingsPanelMode;
@@ -670,10 +682,10 @@ export function SettingsPanel({
 		icon: ComponentType<{ className?: string }>;
 		disabled?: boolean;
 	}> = [
-		{ id: "background", label: t("background.title"), icon: Palette },
-		{ id: "effects", label: t("effects.title"), icon: SlidersHorizontal },
-		{ id: "layout", label: t("layout.title"), icon: LayoutPanelTop, disabled: !hasWebcam },
-		{ id: "timeline", label: t("timeline.title"), icon: Brackets },
+		{ id: "background", label: t("background.title"), icon: Paintbrush },
+		{ id: "effects", label: t("effects.title"), icon: Settings2 },
+		{ id: "layout", label: t("layout.title"), icon: Layers, disabled: !hasWebcam },
+		{ id: "timeline", label: t("timeline.title"), icon: Timer },
 		...(hasCursorPanel
 			? [
 					{
@@ -690,11 +702,13 @@ export function SettingsPanel({
 		icon: Download,
 	};
 	const activeModeLabel = hasTimelineSelection
-		? selectedZoomId
-			? t("zoom.level")
-			: selectedSpeedId
-				? t("speed.playbackSpeed")
-				: t("trim.deleteRegion")
+		? selectedClipId
+			? "Video Clip"
+			: selectedZoomId
+				? t("zoom.level")
+				: selectedSpeedId
+					? t("speed.playbackSpeed")
+					: t("trim.deleteRegion")
 		: activePanelMode === "timeline"
 			? t("timeline.title")
 			: ([...panelModes, exportPanelMode].find((mode) => mode.id === activePanelMode)?.label ??
@@ -765,18 +779,6 @@ export function SettingsPanel({
 		: null;
 	const commonFooterLinks = (
 		<div className="flex gap-2 mt-3">
-			<button
-				type="button"
-				onClick={() => {
-					window.electronAPI?.openExternalUrl(
-						"https://github.com/guidestudio/guide-studio/issues/new/choose",
-					);
-				}}
-				className="flex-1 flex items-center justify-center gap-1.5 text-[10px] text-slate-500 hover:text-slate-300 py-1.5 transition-colors"
-			>
-				<Bug className="w-3 h-3 text-[#00B8FF]" />
-				{t("support.reportBug")}
-			</button>
 			{onSaveDiagnostic && (
 				<button
 					type="button"
@@ -787,16 +789,6 @@ export function SettingsPanel({
 					{t("support.saveDiagnostics")}
 				</button>
 			)}
-			<button
-				type="button"
-				onClick={() => {
-					window.electronAPI?.openExternalUrl("https://github.com/guidestudio/guide-studio");
-				}}
-				className="flex-1 flex items-center justify-center gap-1.5 text-[10px] text-slate-500 hover:text-slate-300 py-1.5 transition-colors"
-			>
-				<Star className="w-3 h-3 text-yellow-400" />
-				{t("support.starOnGithub")}
-			</button>
 		</div>
 	);
 
@@ -855,7 +847,7 @@ export function SettingsPanel({
 	return (
 		<div className="editor-inspector-shell flex min-w-0 flex-col h-full overflow-hidden">
 			<div className="flex min-h-0 flex-1">
-				<div className="settings-mode-rail flex w-11 shrink-0 flex-col items-center gap-1 border-r border-white/[0.07] bg-black/20 px-1 py-2.5">
+				<div className="settings-mode-rail flex w-12 shrink-0 flex-col items-center gap-1.5 border-r border-white/[0.07] bg-black/20 px-1.5 py-3">
 					{panelModes.map((mode) => {
 						const Icon = mode.icon;
 						const isActive = activePanelMode === mode.id && !hasTimelineSelection;
@@ -908,8 +900,8 @@ export function SettingsPanel({
 						<Download className="h-4 w-4" />
 					</button>
 				</div>
-				<div className="flex-1 overflow-y-auto custom-scrollbar p-3 pb-0">
-					<div className="mb-3 flex items-center justify-between px-1">
+				<div className="flex-1 overflow-y-auto custom-scrollbar p-3.5 pb-0">
+					<div className="mb-3.5 flex items-center justify-between px-0.5">
 						<span className="text-sm font-semibold text-slate-100">{activeModeLabel}</span>
 						<KeyboardShortcutsHelp />
 					</div>
@@ -1262,6 +1254,66 @@ export function SettingsPanel({
 						</div>
 					)}
 
+					{selectedClipId && selectedClip && (
+						<div className="editor-panel-section mb-3 space-y-3 px-1">
+							<div className="flex items-center justify-between">
+								<span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+									Video Clip
+								</span>
+							</div>
+
+							{/* Clip info */}
+							<div className="rounded-lg border border-white/[0.06] bg-white/[0.03] p-2.5 space-y-2">
+								<div className="flex items-center gap-2">
+									<Film className="w-3.5 h-3.5 text-[#14b8a6] flex-shrink-0" />
+									<span className="text-[11px] font-medium text-slate-300 truncate">
+										{selectedClip.label || "Untitled Clip"}
+									</span>
+								</div>
+								<div className="grid grid-cols-2 gap-2 text-[10px]">
+									<div className="flex flex-col gap-0.5">
+										<span className="text-slate-500">Trim Start</span>
+										<span className="text-slate-300 font-mono tabular-nums">
+											{(selectedClip.startMs / 1000).toFixed(1)}s
+										</span>
+									</div>
+									<div className="flex flex-col gap-0.5">
+										<span className="text-slate-500">Trim End</span>
+										<span className="text-slate-300 font-mono tabular-nums">
+											{(selectedClip.endMs / 1000).toFixed(1)}s
+										</span>
+									</div>
+									<div className="flex flex-col gap-0.5">
+										<span className="text-slate-500">Duration</span>
+										<span className="text-slate-300 font-mono tabular-nums">
+											{(selectedClip.durationMs / 1000).toFixed(1)}s
+										</span>
+									</div>
+									<div className="flex flex-col gap-0.5">
+										<span className="text-slate-500">Position</span>
+										<span className="text-slate-300 font-mono tabular-nums">
+											{(selectedClip.offsetMs / 1000).toFixed(1)}s
+										</span>
+									</div>
+								</div>
+							</div>
+
+							<p className="text-[10px] text-slate-600 leading-relaxed">
+								Drag clip edges on the timeline to trim. Drag the clip body to reposition.
+							</p>
+
+							<Button
+								onClick={() => selectedClipId && onClipDelete?.(selectedClipId)}
+								variant="destructive"
+								size="sm"
+								className="w-full gap-2 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-all h-8 text-xs"
+							>
+								<Trash2 className="w-3 h-3" />
+								Remove Clip
+							</Button>
+						</div>
+					)}
+
 					{!hasTimelineSelection && (
 						<Accordion type="multiple" value={[activePanelMode]} className="space-y-2">
 							{hasWebcam && activePanelMode === "layout" && (
@@ -1457,7 +1509,7 @@ export function SettingsPanel({
 											{activePanelMode === "cursor" ? (
 												<MousePointerClick className="w-4 h-4 text-[#00B8FF]" />
 											) : (
-												<SlidersHorizontal className="w-4 h-4 text-[#00B8FF]" />
+												<Settings2 className="w-4 h-4 text-[#00B8FF]" />
 											)}
 											<span className="text-xs font-medium">{t("effects.title")}</span>
 										</div>
@@ -1722,7 +1774,7 @@ export function SettingsPanel({
 								<AccordionItem value="background" className="editor-panel-section px-3">
 									<AccordionTrigger className="py-2.5 hover:no-underline">
 										<div className="flex items-center gap-2">
-											<Palette className="w-4 h-4 text-[#00B8FF]" />
+											<Paintbrush className="w-4 h-4 text-[#00B8FF]" />
 											<span className="text-xs font-medium">{t("background.title")}</span>
 										</div>
 									</AccordionTrigger>
@@ -1866,16 +1918,16 @@ export function SettingsPanel({
 
 										{/* Video Frame controls */}
 										<div className="mt-3 pt-3 border-t border-white/[0.06]">
-											<div className="text-[10px] font-medium text-slate-400 mb-2 uppercase tracking-wider">{t("effects.videoFrame") || "Video Frame"}</div>
+											<div className="text-[10px] font-medium text-slate-400 mb-2 uppercase tracking-wider">
+												{t("effects.videoFrame") || "Video Frame"}
+											</div>
 											<div className="grid grid-cols-2 gap-2">
 												<div className="p-2 rounded-lg editor-control-surface">
 													<div className="flex items-center justify-between mb-1">
 														<div className="text-[10px] font-medium text-slate-300">
 															{t("effects.padding")}
 														</div>
-														<span className="text-[10px] text-slate-500 font-mono">
-															{padding}%
-														</span>
+														<span className="text-[10px] text-slate-500 font-mono">{padding}%</span>
 													</div>
 													<Slider
 														value={[padding]}
@@ -1915,7 +1967,7 @@ export function SettingsPanel({
 								<AccordionItem value="timeline" className="editor-panel-section px-3">
 									<AccordionTrigger className="py-2.5 hover:no-underline">
 										<div className="flex items-center gap-2">
-											<Brackets className="w-4 h-4 text-[#00B8FF]" />
+											<Timer className="w-4 h-4 text-[#00B8FF]" />
 											<span className="text-xs font-medium">{t("timeline.title")}</span>
 										</div>
 									</AccordionTrigger>
@@ -2095,105 +2147,130 @@ export function SettingsPanel({
 
 						{exportFormat === "mp4" && (
 							<>
-							<div className="mb-3 space-y-1.5">
-								{sourceDimensions && (
-									<div className="flex items-center justify-between px-0.5 text-[10px] leading-none text-slate-500">
-										<span>{t("exportQuality.title")}</span>
-										<span>
-											Source {sourceDimensions.width}x{sourceDimensions.height}
-										</span>
-									</div>
-								)}
-								<div className="bg-white/5 border border-white/5 p-0.5 w-full grid grid-cols-3 h-9 rounded-lg">
-									<button
-										onClick={() => onExportQualityChange?.("medium")}
-										className={cn(
-											"rounded-md transition-all text-[10px] font-medium flex flex-col items-center justify-center leading-none gap-0.5",
-											exportQuality === "medium"
-												? "bg-white text-black"
-												: "text-slate-400 hover:text-slate-200",
-										)}
-									>
-										<span>{t("exportQuality.low")}</span>
-										{sourceDimensions &&
-											sourceDimensions.shortSide < MP4_EXPORT_SHORT_SIDES.medium && (
-												<span
-													className={cn(
-														"text-[8px] font-medium",
-														exportQuality === "medium" ? "text-black/55" : "text-amber-300/80",
-													)}
-												>
-													Upscale
-												</span>
-											)}
-									</button>
-									<button
-										onClick={() => onExportQualityChange?.("good")}
-										className={cn(
-											"rounded-md transition-all text-[10px] font-medium flex flex-col items-center justify-center leading-none gap-0.5",
-											exportQuality === "good"
-												? "bg-white text-black"
-												: "text-slate-400 hover:text-slate-200",
-										)}
-									>
-										<span>{t("exportQuality.medium")}</span>
-										{sourceDimensions &&
-											sourceDimensions.shortSide < MP4_EXPORT_SHORT_SIDES.good && (
-												<span
-													className={cn(
-														"text-[8px] font-medium",
-														exportQuality === "good" ? "text-black/55" : "text-amber-300/80",
-													)}
-												>
-													Upscale
-												</span>
-											)}
-									</button>
-									<button
-										onClick={() => onExportQualityChange?.("source")}
-										className={cn(
-											"rounded-md transition-all text-[10px] font-medium flex flex-col items-center justify-center leading-none gap-0.5",
-											exportQuality === "source"
-												? "bg-white text-black"
-												: "text-slate-400 hover:text-slate-200",
-										)}
-									>
-										<span>{t("exportQuality.high")}</span>
-										{sourceDimensions && (
-											<span
-												className={cn(
-													"text-[8px] font-medium",
-													exportQuality === "source" ? "text-black/55" : "text-slate-500",
-												)}
-											>
-												{sourceDimensions.shortSide}p
+								<div className="mb-3 space-y-1.5">
+									{sourceDimensions && (
+										<div className="flex items-center justify-between px-0.5 text-[10px] leading-none text-slate-500">
+											<span>{t("exportQuality.title")}</span>
+											<span>
+												Source {sourceDimensions.width}x{sourceDimensions.height}
 											</span>
-										)}
-									</button>
-								</div>
-							</div>
-
-							<div className="mb-3 space-y-1.5">
-								<div className="flex items-center justify-between px-0.5 text-[10px] leading-none text-slate-500">
-									<span>Frame Rate</span>
-								</div>
-								<div className="bg-white/5 border border-white/5 p-0.5 w-full grid grid-cols-3 h-9 rounded-lg">
-									{MP4_FRAME_RATES.map((rate) => (
+										</div>
+									)}
+									<div className="bg-white/5 border border-white/5 p-0.5 w-full grid grid-cols-3 h-9 rounded-lg">
 										<button
-											key={rate.value}
-											onClick={() => onMp4FrameRateChange?.(rate.value)}
+											onClick={() => onExportQualityChange?.("medium")}
 											className={cn(
-												"rounded-md transition-all text-[10px] font-medium flex items-center justify-center leading-none",
-												mp4FrameRate === rate.value
+												"rounded-md transition-all text-[10px] font-medium flex flex-col items-center justify-center leading-none gap-0.5",
+												exportQuality === "medium"
 													? "bg-white text-black"
 													: "text-slate-400 hover:text-slate-200",
 											)}
 										>
-											<span>{rate.value} FPS</span>
+											<span>{t("exportQuality.low")}</span>
+											{sourceDimensions &&
+												sourceDimensions.shortSide < MP4_EXPORT_SHORT_SIDES.medium && (
+													<span
+														className={cn(
+															"text-[8px] font-medium",
+															exportQuality === "medium" ? "text-black/55" : "text-amber-300/80",
+														)}
+													>
+														Upscale
+													</span>
+												)}
 										</button>
-									))}
+										<button
+											onClick={() => onExportQualityChange?.("good")}
+											className={cn(
+												"rounded-md transition-all text-[10px] font-medium flex flex-col items-center justify-center leading-none gap-0.5",
+												exportQuality === "good"
+													? "bg-white text-black"
+													: "text-slate-400 hover:text-slate-200",
+											)}
+										>
+											<span>{t("exportQuality.medium")}</span>
+											{sourceDimensions &&
+												sourceDimensions.shortSide < MP4_EXPORT_SHORT_SIDES.good && (
+													<span
+														className={cn(
+															"text-[8px] font-medium",
+															exportQuality === "good" ? "text-black/55" : "text-amber-300/80",
+														)}
+													>
+														Upscale
+													</span>
+												)}
+										</button>
+										<button
+											onClick={() => onExportQualityChange?.("source")}
+											className={cn(
+												"rounded-md transition-all text-[10px] font-medium flex flex-col items-center justify-center leading-none gap-0.5",
+												exportQuality === "source"
+													? "bg-white text-black"
+													: "text-slate-400 hover:text-slate-200",
+											)}
+										>
+											<span>{t("exportQuality.high")}</span>
+											{sourceDimensions && (
+												<span
+													className={cn(
+														"text-[8px] font-medium",
+														exportQuality === "source" ? "text-black/55" : "text-slate-500",
+													)}
+												>
+													{sourceDimensions.shortSide}p
+												</span>
+											)}
+										</button>
+									</div>
 								</div>
-							</div>
+
+								{ENCODING_MODE_ENABLED && (
+									<div className="mb-3 space-y-1.5">
+										<div className="flex items-center justify-between px-0.5 text-[10px] leading-none text-slate-500">
+											<span>Encoding Mode</span>
+										</div>
+										<div className="bg-white/5 border border-white/5 p-0.5 w-full grid grid-cols-3 h-9 rounded-lg">
+											{ENCODING_MODES.map((mode) => (
+												<button
+													key={mode.value}
+													onClick={() => onEncodingModeChange?.(mode.value)}
+													className={cn(
+														"rounded-md transition-all text-[10px] font-medium flex items-center justify-center leading-none",
+														encodingMode === mode.value
+															? "bg-white text-black"
+															: "text-slate-400 hover:text-slate-200",
+													)}
+													title={mode.description}
+												>
+													<span>{mode.label}</span>
+												</button>
+											))}
+										</div>
+									</div>
+								)}
+
+								<div className="mb-3 space-y-1.5">
+									<div className="flex items-center justify-between px-0.5 text-[10px] leading-none text-slate-500">
+										<span>Frame Rate</span>
+									</div>
+									<div className="bg-white/5 border border-white/5 p-0.5 w-full grid grid-cols-3 h-9 rounded-lg">
+										{MP4_FRAME_RATES.map((rate) => (
+											<button
+												key={rate.value}
+												onClick={() => onMp4FrameRateChange?.(rate.value)}
+												className={cn(
+													"rounded-md transition-all text-[10px] font-medium flex items-center justify-center leading-none",
+													mp4FrameRate === rate.value
+														? "bg-white text-black"
+														: "text-slate-400 hover:text-slate-200",
+												)}
+											>
+												<span>{rate.value} FPS</span>
+											</button>
+										))}
+									</div>
+								</div>
 							</>
 						)}
 

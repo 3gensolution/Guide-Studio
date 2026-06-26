@@ -1,3 +1,8 @@
+import {
+	DYNAMIC_BACKPRESSURE_ENABLED,
+	EXPORT_METRICS_ENABLED,
+	FINALIZATION_WATCHDOG_ENABLED,
+} from "@/components/video-editor/featureFlags";
 import type {
 	AnnotationRegion,
 	CropRegion,
@@ -12,14 +17,25 @@ import { BackgroundLoadError } from "@/lib/wallpaper";
 import type { CursorRecordingData } from "@/native/contracts";
 import { getPlatform } from "@/utils/platformUtils";
 import { AudioProcessor } from "./audioEncoder";
+import { getBackpressureLimits, selectBackpressureProfile } from "./backpressure";
 import { FrameRenderer } from "./frameRenderer";
 import { VideoMuxer } from "./muxer";
 import { StreamingVideoDecoder } from "./streamingDecoder";
 import { TimestampedVideoFrameQueue } from "./timestampedVideoFrameQueue";
-import type { ExportConfig, ExportProgress, ExportResult } from "./types";
+import type {
+	EncodingMode,
+	ExportConfig,
+	ExportMetrics,
+	ExportProgress,
+	ExportResult,
+} from "./types";
+import { ENCODING_MODE_PROFILES } from "./types";
 
 const ENCODER_STALL_TIMEOUT_MS = 15_000;
 const ENCODER_FLUSH_TIMEOUT_MS = 20_000;
+const MUXING_PROMISES_TIMEOUT_MS = 30_000;
+const AUDIO_PROCESS_TIMEOUT_MS = 60_000;
+const MUXER_FINALIZE_TIMEOUT_MS = 30_000;
 
 export interface VideoExporterConfig extends ExportConfig {
 	videoUrl: string;
@@ -149,9 +165,11 @@ export class VideoExporter {
 	private webcamDecoder: StreamingVideoDecoder | null = null;
 	private cancelled = false;
 	private encodeQueue = 0;
-	// Keep a smaller queue for software encoding so Windows does not balloon memory.
 	private readonly MAX_ENCODE_QUEUE = 120;
 	private videoDescription: Uint8Array | undefined;
+	private peakEncodeQueueSize = 0;
+	private peakDecodeQueueSize = 0;
+	private exportStartTime = 0;
 	private videoColorSpace: VideoColorSpaceInit | undefined;
 	private muxingPromises: Promise<void>[] = [];
 	private chunkCount = 0;
@@ -212,13 +230,24 @@ export class VideoExporter {
 		this.cleanup();
 		this.cancelled = false;
 		this.fatalEncoderError = null;
+		this.peakEncodeQueueSize = 0;
+		this.peakDecodeQueueSize = 0;
+		this.exportStartTime = performance.now();
+
+		const metrics: Partial<ExportMetrics> = {
+			encodingMode: this.config.encodingMode || "quality",
+		};
 
 		try {
 			const platform = await getPlatform();
 
+			// ── Metadata loading ─────────────────────────────────────────────
+			const metadataStart = performance.now();
 			const streamingDecoder = new StreamingVideoDecoder();
 			this.streamingDecoder = streamingDecoder;
 			const videoInfo = await streamingDecoder.loadMetadata(this.config.videoUrl);
+			metrics.metadataLoadTimeMs = performance.now() - metadataStart;
+
 			const sourceCopyResult = await this.trySourceCopyFastPath(videoInfo);
 			if (sourceCopyResult) {
 				return sourceCopyResult;
@@ -270,7 +299,9 @@ export class VideoExporter {
 				platform,
 			});
 			this.renderer = renderer;
+			const rendererInitStart = performance.now();
 			await renderer.initialize();
+			metrics.rendererInitTimeMs = performance.now() - rendererInitStart;
 
 			await this.initializeEncoder(encoderPreference);
 
@@ -296,10 +327,37 @@ export class VideoExporter {
 
 			const frameDuration = 1_000_000 / this.config.frameRate;
 			let frameIndex = 0;
-			const maxEncodeQueue =
-				encoderPreference === "prefer-software"
-					? Math.min(this.MAX_ENCODE_QUEUE, 32)
-					: this.MAX_ENCODE_QUEUE;
+
+			// ── Backpressure profile selection ───────────────────────────────
+			let maxEncodeQueue: number;
+			if (DYNAMIC_BACKPRESSURE_ENABLED) {
+				const bpProfile = selectBackpressureProfile(
+					this.config.width,
+					this.config.height,
+					this.config.bitrate,
+				);
+				const limits = getBackpressureLimits(bpProfile);
+				maxEncodeQueue =
+					encoderPreference === "prefer-software"
+						? Math.min(limits.maxEncodeQueueSize, 64)
+						: limits.maxEncodeQueueSize;
+				metrics.backpressureProfile = bpProfile;
+				console.log(
+					`[VideoExporter] Backpressure profile: ${bpProfile} (maxEncode=${maxEncodeQueue})`,
+				);
+			} else {
+				maxEncodeQueue =
+					encoderPreference === "prefer-software"
+						? Math.min(this.MAX_ENCODE_QUEUE, 64)
+						: this.MAX_ENCODE_QUEUE;
+			}
+
+			// ── Keyframe interval from encoding mode ─────────────────────────
+			const encodingMode: EncodingMode = this.config.encodingMode || "quality";
+			const modeProfile = ENCODING_MODE_PROFILES[encodingMode];
+			const keyframeInterval = Math.round(modeProfile.keyframeIntervalSec * this.config.frameRate);
+
+			const encodeLoopStart = performance.now();
 
 			webcamFrameQueue = this.config.webcamVideoUrl ? new TimestampedVideoFrameQueue() : null;
 			webcamDecodePromise =
@@ -402,12 +460,17 @@ export class VideoExporter {
 										: "The video encoder stopped responding during export.",
 								);
 							}
-							await new Promise((resolve) => setTimeout(resolve, 5));
+							await new Promise((resolve) => setTimeout(resolve, 1));
 						}
 
 						if (this.encoder && this.encoder.state === "configured") {
 							this.encodeQueue++;
-							this.encoder.encode(exportFrame, { keyFrame: frameIndex % 150 === 0 });
+							if (this.encodeQueue > this.peakEncodeQueueSize) {
+								this.peakEncodeQueueSize = this.encodeQueue;
+							}
+							this.encoder.encode(exportFrame, {
+								keyFrame: frameIndex % keyframeInterval === 0,
+							});
 						} else {
 							console.warn(
 								`[Frame ${frameIndex}] Encoder not ready! State: ${this.encoder?.state}`,
@@ -417,11 +480,23 @@ export class VideoExporter {
 						exportFrame.close();
 						frameIndex++;
 
+						const elapsedSec = (performance.now() - encodeLoopStart) / 1000;
+						const fps = elapsedSec > 0 ? frameIndex / elapsedSec : 0;
+						const remaining = fps > 0 ? (totalFrames - frameIndex) / fps : 0;
+
 						this.reportProgress({
 							currentFrame: frameIndex,
 							totalFrames,
 							percentage: (frameIndex / totalFrames) * 100,
-							estimatedTimeRemaining: 0,
+							estimatedTimeRemaining: remaining,
+							phase: "encoding",
+							framesPerSecond: Math.round(fps * 10) / 10,
+							metrics: EXPORT_METRICS_ENABLED
+								? {
+										peakEncodeQueueSize: this.peakEncodeQueueSize,
+										peakDecodeQueueSize: this.peakDecodeQueueSize,
+									}
+								: undefined,
 						});
 					} finally {
 						videoFrame.close();
@@ -458,7 +533,63 @@ export class VideoExporter {
 				throw this.fatalEncoderError;
 			}
 
-			await Promise.all(this.muxingPromises);
+			metrics.encodeLoopTimeMs = performance.now() - encodeLoopStart;
+			metrics.peakEncodeQueueSize = this.peakEncodeQueueSize;
+
+			// ── Finalization with watchdog ───────────────────────────────────
+			const finalizationStart = performance.now();
+
+			this.reportProgress({
+				currentFrame: totalFrames,
+				totalFrames,
+				percentage: 100,
+				estimatedTimeRemaining: 0,
+				phase: "muxing",
+			});
+
+			if (FINALIZATION_WATCHDOG_ENABLED) {
+				await this.withTimeout(
+					Promise.all(this.muxingPromises),
+					MUXING_PROMISES_TIMEOUT_MS,
+					"Muxing stopped responding during finalization.",
+				);
+			} else {
+				await Promise.all(this.muxingPromises);
+			}
+
+			// Process audio after video encoding is complete so both don't
+			// contend for the same WebDemuxer file cursor.
+			if (hasAudio && audioExportCodec && sourceDemuxer && !this.cancelled) {
+				this.reportProgress({
+					currentFrame: totalFrames,
+					totalFrames,
+					percentage: 100,
+					estimatedTimeRemaining: 0,
+					phase: "audio",
+				});
+				console.log("[VideoExporter] Processing audio track...");
+				const audioStart = performance.now();
+				this.audioProcessor = new AudioProcessor();
+				const audioPromise = this.audioProcessor.process(
+					sourceDemuxer,
+					muxer,
+					this.config.videoUrl,
+					this.config.trimRegions,
+					this.config.speedRegions,
+					videoInfo.duration,
+					audioExportCodec,
+				);
+				if (FINALIZATION_WATCHDOG_ENABLED) {
+					await this.withTimeout(
+						audioPromise,
+						AUDIO_PROCESS_TIMEOUT_MS,
+						"Audio processing stopped responding during finalization.",
+					);
+				} else {
+					await audioPromise;
+				}
+				metrics.audioProcessTimeMs = performance.now() - audioStart;
+			}
 
 			this.reportProgress({
 				currentFrame: totalFrames,
@@ -468,25 +599,30 @@ export class VideoExporter {
 				phase: "finalizing",
 			});
 
-			if (hasAudio && audioExportCodec && !this.cancelled) {
-				const demuxer = streamingDecoder.getDemuxer();
-				if (demuxer) {
-					console.log("[VideoExporter] Processing audio track...");
-					this.audioProcessor = new AudioProcessor();
-					await this.audioProcessor.process(
-						demuxer,
-						muxer,
-						this.config.videoUrl,
-						this.config.trimRegions,
-						this.config.speedRegions,
-						videoInfo.duration,
-						audioExportCodec,
-					);
-				}
+			let blob: Blob;
+			if (FINALIZATION_WATCHDOG_ENABLED) {
+				blob = await this.withTimeout(
+					muxer.finalize(),
+					MUXER_FINALIZE_TIMEOUT_MS,
+					"Muxer finalization stopped responding.",
+				);
+			} else {
+				blob = await muxer.finalize();
 			}
 
-			const blob = await muxer.finalize();
-			return { success: true, blob, warnings: warnings.length > 0 ? warnings : undefined };
+			metrics.finalizationTimeMs = performance.now() - finalizationStart;
+			metrics.totalExportTimeMs = performance.now() - this.exportStartTime;
+			metrics.framesPerSecond =
+				metrics.encodeLoopTimeMs > 0
+					? Math.round((totalFrames / (metrics.encodeLoopTimeMs / 1000)) * 10) / 10
+					: undefined;
+
+			return {
+				success: true,
+				blob,
+				warnings: warnings.length > 0 ? warnings : undefined,
+				metrics: EXPORT_METRICS_ENABLED ? (metrics as ExportMetrics) : undefined,
+			};
 		} finally {
 			stopWebcamDecode = true;
 			webcamFrameQueue?.destroy();
@@ -557,6 +693,24 @@ export class VideoExporter {
 
 				this.muxingPromises.push(muxingPromise);
 				this.encodeQueue = Math.max(0, this.encodeQueue - 1);
+
+				// Periodically prune settled muxing promises to bound memory.
+				if (this.muxingPromises.length > 200) {
+					const settled = new Set<Promise<void>>();
+					for (const p of this.muxingPromises) {
+						// Tag resolved promises for removal without blocking.
+						p.then(
+							() => settled.add(p),
+							() => settled.add(p),
+						);
+					}
+					// Yield to let microtasks run, then filter.
+					queueMicrotask(() => {
+						if (settled.size > 0) {
+							this.muxingPromises = this.muxingPromises.filter((p) => !settled.has(p));
+						}
+					});
+				}
 			},
 			error: (error) => {
 				console.error("[VideoExporter] Encoder error:", error);
@@ -567,16 +721,26 @@ export class VideoExporter {
 			},
 		});
 
+		const mode = this.config.encodingMode || "quality";
+		const profile = ENCODING_MODE_PROFILES[mode];
+		// Bitrate already has the encoding mode multiplier applied by
+		// calculateMp4ExportSettings — don't apply it again here.
+		const effectiveBitrate = Math.max(2_000_000, this.config.bitrate);
+
 		const encoderConfig: VideoEncoderConfig = {
 			codec: this.config.codec || "avc1.640033",
 			width: this.config.width,
 			height: this.config.height,
-			bitrate: this.config.bitrate,
+			bitrate: effectiveBitrate,
 			framerate: this.config.frameRate,
-			latencyMode: "quality",
+			latencyMode: profile.latencyMode,
 			bitrateMode: "variable",
 			hardwareAcceleration,
 		};
+
+		console.log(
+			`[VideoExporter] Encoding mode: ${mode} (bitrate=${effectiveBitrate}, latency=${profile.latencyMode}, keyframe=${profile.keyframeIntervalSec}s)`,
+		);
 
 		const support = await VideoEncoder.isConfigSupported(encoderConfig);
 		if (!support.supported) {

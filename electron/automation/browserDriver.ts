@@ -42,7 +42,7 @@ export class BrowserDriver {
 			width: viewport.width,
 			height: viewport.height,
 			show: !options?.headless,
-			title: "Coherence Studio Demo Browser",
+			title: "Guide Studio Demo Browser",
 			webPreferences: {
 				nodeIntegration: false,
 				contextIsolation: true,

@@ -10,11 +10,10 @@ import { findRemotionFfmpeg } from "../ffmpeg";
 // same binary and can't drift out of sync.
 const findFfmpegBinary = findRemotionFfmpeg;
 
-// auth.getcoherence.io is the marketing/frontends static-site app, not the
-// auth service. The actual auth service lives behind app.getcoherence.io at
-// /api/v1/auth/*, matching the other pro endpoints in src/lib/plugins/pro/
-// proLoader.ts (refreshUrl, subscriptionUrl, bundleUrl).
-const AUTH_BASE_URL = "https://app.getcoherence.io/api/v1/auth";
+// The auth service lives behind app.guideai.com at /api/v1/auth/*,
+// matching the other pro endpoints in src/lib/plugins/pro/proLoader.ts
+// (refreshUrl, subscriptionUrl, bundleUrl).
+const AUTH_BASE_URL = "https://app.guideai.com/api/v1/auth";
 
 export function registerShowcaseHandlers(_getMainWindow: () => BrowserWindow | null): void {
 	ipcMain.handle(
@@ -71,7 +70,7 @@ export function registerShowcaseHandlers(_getMainWindow: () => BrowserWindow | n
 				sendProgress(0.1);
 
 				// 2. Extract poster frame at 2 seconds
-				const tmpDir = path.join(os.tmpdir(), "coherence-studio-showcase");
+				const tmpDir = path.join(os.tmpdir(), "guide-studio-showcase");
 				await fs.mkdir(tmpDir, { recursive: true });
 				const posterPath = path.join(tmpDir, `${presign.id}-poster.jpg`);
 
@@ -132,12 +131,14 @@ export function registerShowcaseHandlers(_getMainWindow: () => BrowserWindow | n
 				sendProgress(1);
 
 				// Cleanup
-				await fs.unlink(posterPath).catch(() => {});
+				await fs.unlink(posterPath).catch(() => {
+					/* intentional noop */
+				});
 
 				return { success: true, entry: result.entry };
-			} catch (err: any) {
+			} catch (err: unknown) {
 				console.error("[Showcase] Upload failed:", err);
-				return { success: false, error: err.message || String(err) };
+				return { success: false, error: err instanceof Error ? err.message : String(err) };
 			}
 		},
 	);

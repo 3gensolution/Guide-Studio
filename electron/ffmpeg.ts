@@ -197,9 +197,7 @@ export async function concatenateVideos(
 
 	// Write a temporary concat list file
 	const concatListPath = `${outputPath}.concat.txt`;
-	const listContent = inputPaths
-		.map((p) => `file '${p.replace(/'/g, "'\\''")}'`)
-		.join("\n");
+	const listContent = inputPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n");
 	await fs.writeFile(concatListPath, listContent);
 
 	try {
@@ -238,7 +236,9 @@ export async function concatenateVideos(
 			return { success: false, error: `FFmpeg concat failed: ${err2}` };
 		}
 	} finally {
-		await fs.unlink(concatListPath).catch(() => {});
+		await fs.unlink(concatListPath).catch(() => {
+			/* intentional noop */
+		});
 	}
 }
 

@@ -316,6 +316,14 @@ export class StreamingVideoDecoder {
 
 		const decoderConfig = await this.demuxer.getDecoderConfig("video");
 
+		// web-demuxer can return codedWidth/codedHeight as 0 for certain containers;
+		// patch from the metadata we already extracted so VideoDecoder.isConfigSupported
+		// doesn't reject with "Invalid coded size (0, 0)".
+		if (!decoderConfig.codedWidth || !decoderConfig.codedHeight) {
+			decoderConfig.codedWidth = this.metadata.width;
+			decoderConfig.codedHeight = this.metadata.height;
+		}
+
 		console.log("[StreamingVideoDecoder] decoderConfig.codec:", decoderConfig.codec);
 		console.log("[StreamingVideoDecoder] decoderConfig.description:", decoderConfig.description);
 

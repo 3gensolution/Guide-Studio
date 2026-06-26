@@ -10,6 +10,12 @@ import type { ExportConfig } from "./types";
 
 export type ExportAudioMuxerCodec = "aac" | "opus";
 
+/**
+ * Maximum in-memory export size (~2 GB). Exports exceeding this threshold
+ * should use a streaming/temp-file path to avoid crashes.
+ */
+export const MAX_IN_MEMORY_EXPORT_BYTES = 0x7fffffff;
+
 export class VideoMuxer {
 	private output: Output | null = null;
 	private videoSource: EncodedVideoPacketSource | null = null;
@@ -18,11 +24,28 @@ export class VideoMuxer {
 	private target: BufferTarget | null = null;
 	private config: ExportConfig;
 	private audioCodec: ExportAudioMuxerCodec;
+	/** Running total of bytes written (approximate). */
+	private cumulativeBytes = 0;
 
 	constructor(config: ExportConfig, hasAudio = false, audioCodec: ExportAudioMuxerCodec = "aac") {
 		this.config = config;
 		this.hasAudio = hasAudio;
 		this.audioCodec = audioCodec;
+	}
+
+	/** Returns the approximate cumulative bytes written so far. */
+	getCumulativeBytes(): number {
+		return this.cumulativeBytes;
+	}
+
+	/** Estimate the total export size from bitrate and duration. */
+	static estimateExportSize(bitrate: number, durationSec: number): number {
+		return Math.ceil((bitrate * durationSec) / 8);
+	}
+
+	/** Returns true if the estimated export will exceed the in-memory cap. */
+	static willExceedMemoryCap(bitrate: number, durationSec: number): boolean {
+		return VideoMuxer.estimateExportSize(bitrate, durationSec) > MAX_IN_MEMORY_EXPORT_BYTES;
 	}
 
 	async initialize(): Promise<void> {
@@ -54,6 +77,7 @@ export class VideoMuxer {
 			throw new Error("Muxer not initialized");
 		}
 
+		this.cumulativeBytes += chunk.byteLength;
 		const packet = EncodedPacket.fromEncodedChunk(chunk);
 
 		await this.videoSource.add(packet, meta);
@@ -64,6 +88,7 @@ export class VideoMuxer {
 			throw new Error("Audio not configured for this muxer");
 		}
 
+		this.cumulativeBytes += chunk.byteLength;
 		const packet = EncodedPacket.fromEncodedChunk(chunk);
 
 		await this.audioSource.add(packet, meta);

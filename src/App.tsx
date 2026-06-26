@@ -1,8 +1,11 @@
 import { lazy, Suspense, useEffect, useState } from "react";
+import guideLogo from "@/assets/guide-logo.svg";
+import { BackendProvider } from "@/contexts/BackendContext";
+import { applyThemeVariables } from "@/lib/theme";
+import { BenchRenderPage } from "./components/BenchRenderPage";
 import { CountdownOverlay } from "./components/launch/CountdownOverlay.tsx";
 import { LaunchWindow } from "./components/launch/LaunchWindow";
 import { SourceSelector } from "./components/launch/SourceSelector";
-import { BenchRenderPage } from "./components/BenchRenderPage";
 import { RecordingBar } from "./components/recording/RecordingBar";
 import { Toaster } from "./components/ui/sonner";
 import { TooltipProvider } from "./components/ui/tooltip";
@@ -10,9 +13,6 @@ import { UpdateToast } from "./components/ui/UpdateToast";
 import { useScopedT } from "./contexts/I18nContext";
 import { ShortcutsProvider } from "./contexts/ShortcutsContext";
 import { loadAllCustomFonts } from "./lib/customFonts";
-import { applyThemeVariables } from "@/lib/theme";
-import { BackendProvider } from "@/contexts/BackendContext";
-import guideLogo from "@/assets/guide-logo.svg";
 
 const VideoEditor = lazy(() => import("./components/video-editor/VideoEditor"));
 const ShortcutsConfigDialog = lazy(() =>
@@ -80,9 +80,11 @@ export default function App() {
 	// overlays, the update toast) can hide via CSS.
 	useEffect(() => {
 		if (!window.electronAPI?.onCaptureModeChanged) return;
-		const cleanup = window.electronAPI.onCaptureModeChanged(({ recording }: { recording: boolean }) => {
-			document.body.classList.toggle("recording-target", recording);
-		});
+		const cleanup = window.electronAPI.onCaptureModeChanged(
+			({ recording }: { recording: boolean }) => {
+				document.body.classList.toggle("recording-target", recording);
+			},
+		);
 		return cleanup;
 	}, []);
 
@@ -105,15 +107,20 @@ export default function App() {
 						<Suspense
 							fallback={
 								<div className="flex flex-col items-center justify-center gap-4 h-screen bg-[#09090b]">
-									<img
-										src={guideLogo}
-										alt="Guide Studio"
-										className="w-12 h-12 animate-pulse"
-									/>
+									<img src={guideLogo} alt="Guide Studio" className="w-12 h-12 animate-pulse" />
 									<div className="flex items-center gap-2">
-										<div className="w-1.5 h-1.5 rounded-full bg-[#00B8FF] animate-bounce" style={{ animationDelay: "0ms" }} />
-										<div className="w-1.5 h-1.5 rounded-full bg-[#6366F1] animate-bounce" style={{ animationDelay: "150ms" }} />
-										<div className="w-1.5 h-1.5 rounded-full bg-[#A855F7] animate-bounce" style={{ animationDelay: "300ms" }} />
+										<div
+											className="w-1.5 h-1.5 rounded-full bg-[#00B8FF] animate-bounce"
+											style={{ animationDelay: "0ms" }}
+										/>
+										<div
+											className="w-1.5 h-1.5 rounded-full bg-[#6366F1] animate-bounce"
+											style={{ animationDelay: "150ms" }}
+										/>
+										<div
+											className="w-1.5 h-1.5 rounded-full bg-[#A855F7] animate-bounce"
+											style={{ animationDelay: "300ms" }}
+										/>
 									</div>
 									<span className="text-white/50 text-sm">{tEditor("loadingEditor")}</span>
 								</div>

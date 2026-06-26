@@ -186,11 +186,7 @@ function isEditorWindow(window: BrowserWindow) {
 }
 
 function sendEditorMenuAction(
-	channel:
-		| "menu-load-project"
-		| "menu-save-project"
-		| "menu-save-project-as"
-		| "menu-new-project",
+	channel: "menu-load-project" | "menu-save-project" | "menu-save-project-as" | "menu-new-project",
 ) {
 	let targetWindow: BrowserWindow | null = BrowserWindow.getFocusedWindow();
 	if (!targetWindow || targetWindow.isDestroyed() || !isEditorWindow(targetWindow)) {
@@ -368,8 +364,7 @@ function setupApplicationMenu() {
 					click: () => sendEditorMenuAction("menu-save-project"),
 				},
 				{
-					label:
-						mainT("dialogs", "unsavedChanges.saveProjectAs") || "Save Project As\u2026",
+					label: mainT("dialogs", "unsavedChanges.saveProjectAs") || "Save Project As\u2026",
 					accelerator: "CmdOrCtrl+Shift+S",
 					click: () => sendEditorMenuAction("menu-save-project-as"),
 				},
@@ -412,8 +407,7 @@ function setupApplicationMenu() {
 				},
 				{
 					role: "toggleDevTools",
-					label:
-						mainT("common", "actions.toggleDevTools") || "Toggle Developer Tools",
+					label: mainT("common", "actions.toggleDevTools") || "Toggle Developer Tools",
 				},
 				{ type: "separator" },
 				{
@@ -431,8 +425,7 @@ function setupApplicationMenu() {
 				{ type: "separator" },
 				{
 					role: "togglefullscreen",
-					label:
-						mainT("common", "actions.toggleFullScreen") || "Toggle Full Screen",
+					label: mainT("common", "actions.toggleFullScreen") || "Toggle Full Screen",
 				},
 			],
 		},
@@ -495,10 +488,7 @@ function setupApplicationMenu() {
 							click: () => handleChannelSelect("latest"),
 						},
 						{
-							label:
-								getCachedSetting("licenseTier") === "pro"
-									? "Beta"
-									: "Beta (Pro)",
+							label: getCachedSetting("licenseTier") === "pro" ? "Beta" : "Beta (Pro)",
 							type: "radio",
 							checked: currentChannel === "beta",
 							click: () => handleChannelSelect("beta"),
@@ -508,17 +498,11 @@ function setupApplicationMenu() {
 				{ type: "separator" },
 				{
 					label: "Documentation",
-					click: () =>
-						shell.openExternal(
-							"https://github.com/guidestudioapp/guidestudio#readme",
-						),
+					click: () => shell.openExternal("https://github.com/guidestudioapp/guidestudio#readme"),
 				},
 				{
 					label: "Report a Bug",
-					click: () =>
-						shell.openExternal(
-							"https://github.com/guidestudioapp/guidestudio/issues",
-						),
+					click: () => shell.openExternal("https://github.com/guidestudioapp/guidestudio/issues"),
 				},
 				{ type: "separator" },
 				{ role: "toggleDevTools" },
@@ -551,9 +535,7 @@ function setupApplicationMenu() {
 											if (result.response === 1) {
 												shell.openExternal("https://getguidestudio.com");
 											} else if (result.response === 2) {
-												shell.openExternal(
-													"https://github.com/guidestudioapp/guidestudio",
-												);
+												shell.openExternal("https://github.com/guidestudioapp/guidestudio");
 											}
 										});
 								},
@@ -969,9 +951,7 @@ app.whenReady().then(async () => {
 	protocol.handle("studio", async (request) => {
 		// studio://file/C:/path/to/file.webm -> C:/path/to/file.webm
 		const rawUrl = request.url;
-		const filePath = decodeURIComponent(
-			rawUrl.replace("studio://file/", "").replace(/#.*$/, ""),
-		);
+		const filePath = decodeURIComponent(rawUrl.replace("studio://file/", "").replace(/#.*$/, ""));
 		console.log("[studio://] request.url:", rawUrl, "-> filePath:", filePath);
 
 		const mimeFor = (p: string): string => {
@@ -1106,9 +1086,7 @@ app.whenReady().then(async () => {
 
 			callback({
 				video: source,
-				...(request.audioRequested && process.platform === "win32"
-					? { audio: "loopback" }
-					: {}),
+				...(request.audioRequested && process.platform === "win32" ? { audio: "loopback" } : {}),
 			});
 		},
 		{ useSystemPicker: false },

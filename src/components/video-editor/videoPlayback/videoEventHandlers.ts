@@ -1,9 +1,21 @@
 import type React from "react";
-import type { SpeedRegion, TrimRegion } from "../types";
+import type { SpeedRegion, TrimRegion, VideoClip } from "../types";
 
 // Keep "scrub mode" on for a brief tail after `seeked`: rapid drag-scrubbing fires
 // `seeking`/`seeked` dozens of times a second and toggling effects each time would flicker.
 const SCRUB_END_DEBOUNCE_MS = 150;
+
+/** Convert local video time (ms) to master timeline time (ms). Identity when no clip. */
+function localToMasterMs(localMs: number, clip: VideoClip | null): number {
+	if (!clip) return localMs;
+	return localMs - clip.startMs + clip.offsetMs;
+}
+
+/** Convert master timeline time (ms) back to local video time (ms). Identity when no clip. */
+function masterToLocalMs(masterMs: number, clip: VideoClip | null): number {
+	if (!clip) return masterMs;
+	return masterMs - clip.offsetMs + clip.startMs;
+}
 
 interface VideoEventHandlersParams {
 	video: HTMLVideoElement;
@@ -19,6 +31,8 @@ interface VideoEventHandlersParams {
 	isScrubbingRef?: React.MutableRefObject<boolean>;
 	scrubEndTimerRef?: React.MutableRefObject<number | null>;
 	onScrubChange?: (scrubbing: boolean) => void;
+	/** Active clip for multi-clip time conversion. null in single-video mode. */
+	activeClipRef?: React.MutableRefObject<VideoClip | null>;
 }
 
 export function createVideoEventHandlers(params: VideoEventHandlersParams) {
@@ -36,6 +50,7 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 		isScrubbingRef,
 		scrubEndTimerRef,
 		onScrubChange,
+		activeClipRef,
 	} = params;
 
 	const clearScrubEndTimer = () => {
@@ -70,12 +85,15 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 	function updateTime() {
 		if (!video) return;
 
-		const currentTimeMs = video.currentTime * 1000;
-		const activeTrimRegion = findActiveTrimRegion(currentTimeMs);
+		const clip = activeClipRef?.current ?? null;
+		const localTimeMs = video.currentTime * 1000;
+		const masterTimeMs = localToMasterMs(localTimeMs, clip);
+		const activeTrimRegion = findActiveTrimRegion(masterTimeMs);
 
 		// In a trim region during playback: skip to its end
 		if (activeTrimRegion && !video.paused && !video.ended) {
-			const skipToTime = activeTrimRegion.endMs / 1000;
+			const skipToLocalMs = masterToLocalMs(activeTrimRegion.endMs, clip);
+			const skipToTime = skipToLocalMs / 1000;
 
 			// Pause if the skip would run past the end
 			if (skipToTime >= video.duration) {
@@ -85,7 +103,7 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 				emitTime(skipToTime);
 			}
 		} else {
-			const activeSpeedRegion = findActiveSpeedRegion(currentTimeMs);
+			const activeSpeedRegion = findActiveSpeedRegion(masterTimeMs);
 			video.playbackRate = activeSpeedRegion ? activeSpeedRegion.speed : 1;
 			emitTime(video.currentTime);
 		}
@@ -136,12 +154,15 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 			}, SCRUB_END_DEBOUNCE_MS);
 		}
 
-		const currentTimeMs = video.currentTime * 1000;
-		const activeTrimRegion = findActiveTrimRegion(currentTimeMs);
+		const clip = activeClipRef?.current ?? null;
+		const localTimeMs = video.currentTime * 1000;
+		const masterTimeMs = localToMasterMs(localTimeMs, clip);
+		const activeTrimRegion = findActiveTrimRegion(masterTimeMs);
 
 		// Seeked into a trim region while playing: skip to the end
 		if (activeTrimRegion && isPlayingRef.current && !video.paused) {
-			const skipToTime = activeTrimRegion.endMs / 1000;
+			const skipToLocalMs = masterToLocalMs(activeTrimRegion.endMs, clip);
+			const skipToTime = skipToLocalMs / 1000;
 
 			if (skipToTime >= video.duration) {
 				video.pause();

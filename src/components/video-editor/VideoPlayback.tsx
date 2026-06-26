@@ -150,13 +150,17 @@ interface VideoPlaybackProps {
 	// Render the selected zoom at the playhead even while paused, so the editor can
 	// preview the effect without leaving the focus-edit view.
 	isPreviewingZoom?: boolean;
-	// Coherence AI caption overlay
+	// AI caption overlay
 	captionTrack?: import("@/lib/ai/types").CaptionTrack | null;
 	captionStyle?: import("@/lib/ai/types").CaptionStyle;
-	// Coherence animated background speed
+	// Animated background speed
 	animatedBgSpeed?: number;
 	// Multi-clip support
 	videoClips?: VideoClip[];
+	// Isolated intro clip
+	introClip?: VideoClip | null;
+	introDurationMs?: number;
+	isInIntroPhase?: boolean;
 }
 
 /** Resolve which clip is active at a given master timeline position (ms). */
@@ -182,6 +186,7 @@ export interface VideoPlaybackRef {
 	containerRef: React.RefObject<HTMLDivElement>;
 	play: () => Promise<void>;
 	pause: () => void;
+	introVideo: HTMLVideoElement | null;
 }
 
 function getResolvedVideoDuration(video: HTMLVideoElement): number | null {
@@ -298,12 +303,18 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			cursorTheme = DEFAULT_CURSOR_SETTINGS.theme,
 			isPreviewingZoom = false,
 			videoClips = [],
+			introClip,
+			isInIntroPhase = false,
 		},
 		ref,
 	) => {
 		const videoRef = useRef<HTMLVideoElement | null>(null);
+		const introVideoRef = useRef<HTMLVideoElement | null>(null);
 		// Track which clip source is currently loaded so we can switch on seek/play
 		const activeClipPathRef = useRef<string | null>(null);
+		const activeClipIdRef = useRef<string | null>(null);
+		const activeClipRef = useRef<VideoClip | null>(null);
+		const isClipTransitioningRef = useRef(false);
 		const videoClipsRef = useRef<VideoClip[]>(videoClips);
 		const supplementalAudioRef = useRef<HTMLAudioElement | null>(null);
 		const webcamVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -330,6 +341,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		const [webcamLayout, setWebcamLayout] = useState<StyledRenderRect | null>(null);
 		const [webcamDimensions, setWebcamDimensions] = useState<Size | null>(null);
 		const currentTimeRef = useRef(0);
+		const masterTimeRef = useRef(0);
 		const zoomRegionsRef = useRef<ZoomRegion[]>([]);
 		const cursorTelemetryRef = useRef<CursorTelemetryPoint[]>([]);
 		const cursorClickTimestampsRef = useRef<number[]>([]);
@@ -477,6 +489,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 						// no-op
 					}
 					currentTimeRef.current = 0;
+					masterTimeRef.current = 0;
 					finalize();
 				};
 
@@ -645,6 +658,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			videoSprite: videoSpriteRef.current,
 			videoContainer: videoContainerRef.current,
 			containerRef,
+			introVideo: introVideoRef.current,
 			play: async () => {
 				const vid = videoRef.current;
 				if (!vid) return;
@@ -903,6 +917,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		useEffect(() => {
 			if (videoClips.length === 0) {
 				activeClipPathRef.current = null;
+				activeClipIdRef.current = null;
+				activeClipRef.current = null;
 				return;
 			}
 
@@ -910,32 +926,54 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			const resolved = resolveClipAtTime(videoClips, masterTimeMs);
 			if (!resolved) return;
 
+			// Find the matching clip for ID tracking
+			const matchingClip = videoClips.find(
+				(c) => masterTimeMs >= c.offsetMs && masterTimeMs < c.offsetMs + c.durationMs,
+			);
+
 			const video = videoRef.current;
 			if (!video) return;
 
 			const currentSrc = activeClipPathRef.current;
 			if (currentSrc !== resolved.videoPath) {
+				const resolvedUrl = toFileUrl(resolved.videoPath);
+
+				// If ref was null (first time clips appeared) and the video already has
+				// this source loaded, just track it without reloading
+				if (currentSrc === null && video.readyState >= 2 && video.src === resolvedUrl) {
+					activeClipPathRef.current = resolved.videoPath;
+					activeClipIdRef.current = matchingClip?.id ?? null;
+					activeClipRef.current = matchingClip ?? null;
+					return;
+				}
+
 				// Need to switch video source
 				activeClipPathRef.current = resolved.videoPath;
+				activeClipIdRef.current = matchingClip?.id ?? null;
+				activeClipRef.current = matchingClip ?? null;
 				const wasPlaying = isPlaying;
 
 				// Preserve PIXI state - the texture will be recreated when videoReady fires
 				video.pause();
-				video.src = toFileUrl(resolved.videoPath);
+				video.src = resolvedUrl;
 				video.load();
 
 				const onReady = () => {
 					video.removeEventListener("loadeddata", onReady);
 					video.currentTime = resolved.localTimeMs / 1000;
 					if (wasPlaying) {
-						video.play().catch(() => {});
+						video.play().catch(() => {
+							/* intentional noop */
+						});
 					}
 				};
 				video.addEventListener("loadeddata", onReady);
 			} else {
-				// Same source, just seek to local time
+				activeClipIdRef.current = matchingClip?.id ?? null;
+				activeClipRef.current = matchingClip ?? null;
+				// Same source, just seek to local time (allow during playback for scrubber seeks)
 				const targetSec = resolved.localTimeMs / 1000;
-				if (Math.abs(video.currentTime - targetSec) > 0.1 && !isPlaying) {
+				if (Math.abs(video.currentTime - targetSec) > 0.1) {
 					video.currentTime = targetSec;
 				}
 			}
@@ -1297,24 +1335,152 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				currentTimeRef,
 				timeUpdateAnimationRef,
 				onPlayStateChange: (playing) => onPlayStateChangeRef.current(playing),
-				onTimeUpdate: (time) => onTimeUpdateRef.current(time),
+				onTimeUpdate: (localTimeSec) => {
+					// Map local video time → master timeline time for multi-clip
+					const clips = videoClipsRef.current;
+					const activeId = activeClipIdRef.current;
+					if (clips.length > 0 && activeId) {
+						const activeClip = clips.find((c) => c.id === activeId);
+						if (activeClip) {
+							const localTimeMs = localTimeSec * 1000;
+							// Check if the clip boundary has been exceeded during playback
+							if (
+								localTimeMs >= activeClip.endMs - 1 &&
+								isPlayingRef.current &&
+								!isClipTransitioningRef.current
+							) {
+								const masterTimeMs = activeClip.offsetMs + activeClip.durationMs;
+								masterTimeRef.current = masterTimeMs;
+								onTimeUpdateRef.current(masterTimeMs / 1000);
+								advanceClip(activeClip);
+								return;
+							}
+							const elapsed = localTimeMs - activeClip.startMs;
+							const masterTimeMs = activeClip.offsetMs + Math.max(0, elapsed);
+							masterTimeRef.current = masterTimeMs;
+							onTimeUpdateRef.current(masterTimeMs / 1000);
+							return;
+						}
+					}
+					// Single-video mode: local = master
+					masterTimeRef.current = localTimeSec * 1000;
+					onTimeUpdateRef.current(localTimeSec);
+				},
 				trimRegionsRef,
 				speedRegionsRef,
 				isScrubbingRef,
 				scrubEndTimerRef,
 				onScrubChange: (scrubbing) => setIsScrubbing(scrubbing),
+				activeClipRef,
 			});
 
+			// Advance playback to the next clip on the timeline, or pause if done
+			function advanceClip(currentClip: VideoClip) {
+				const vid = videoRef.current;
+				if (!vid) return;
+				const clips = videoClipsRef.current;
+				const clipEndMs = currentClip.offsetMs + currentClip.durationMs;
+				const nextClip = clips
+					.filter((c) => c.id !== currentClip.id && c.offsetMs >= clipEndMs - 1)
+					.sort((a, b) => a.offsetMs - b.offsetMs)[0];
+
+				if (!nextClip) {
+					// No more clips – end playback
+					isClipTransitioningRef.current = false;
+					handlePause();
+					return;
+				}
+
+				isClipTransitioningRef.current = true;
+				activeClipIdRef.current = nextClip.id;
+				activeClipRef.current = nextClip;
+				activeClipPathRef.current = nextClip.sourceVideoPath;
+
+				const resolvedUrl = toFileUrl(nextClip.sourceVideoPath);
+
+				if (vid.src === resolvedUrl) {
+					// Same source file – seek to the new clip's start and resume
+					vid.currentTime = nextClip.startMs / 1000;
+					isClipTransitioningRef.current = false;
+					allowPlaybackRef.current = true;
+					vid.play().catch(() => {
+						isClipTransitioningRef.current = false;
+						handlePause();
+					});
+				} else {
+					// Different source – switch and resume
+					vid.src = resolvedUrl;
+					vid.load();
+					const onReady = () => {
+						vid.removeEventListener("loadeddata", onReady);
+						vid.currentTime = nextClip.startMs / 1000;
+						isClipTransitioningRef.current = false;
+						allowPlaybackRef.current = true;
+						vid.play().catch(() => {
+							isClipTransitioningRef.current = false;
+							handlePause();
+						});
+					};
+					vid.addEventListener("loadeddata", onReady);
+				}
+			}
+
+			// Custom ended handler: advance to next clip instead of pausing
+			const handleVideoEnded = () => {
+				const clips = videoClipsRef.current;
+				const activeId = activeClipIdRef.current;
+				if (clips.length > 0 && activeId) {
+					const activeClip = clips.find((c) => c.id === activeId);
+					if (activeClip) {
+						const masterTimeSec = (activeClip.offsetMs + activeClip.durationMs) / 1000;
+						onTimeUpdateRef.current(masterTimeSec);
+						advanceClip(activeClip);
+						return;
+					}
+				}
+				handlePause();
+			};
+
+			// Suppress pause events during clip-to-clip transitions
+			const handlePauseWrapper = () => {
+				if (isClipTransitioningRef.current) return;
+
+				// When the video ends naturally, the browser fires `pause` before
+				// `ended`. If there are more clips to play, suppress this pause so
+				// handleVideoEnded can seamlessly advance to the next clip.
+				const vid = videoRef.current;
+				if (vid?.ended) {
+					const clips = videoClipsRef.current;
+					const activeId = activeClipIdRef.current;
+					if (clips.length > 0 && activeId) {
+						const activeClip = clips.find((c) => c.id === activeId);
+						if (activeClip) {
+							const clipEndMs = activeClip.offsetMs + activeClip.durationMs;
+							const hasNext = clips.some(
+								(c) => c.id !== activeClip.id && c.offsetMs >= clipEndMs - 1,
+							);
+							if (hasNext) {
+								// Mark as transitioning so the ended handler can advance
+								isClipTransitioningRef.current = true;
+								return;
+							}
+						}
+					}
+				}
+
+				handlePause();
+			};
+
 			video.addEventListener("play", handlePlay);
-			video.addEventListener("pause", handlePause);
-			video.addEventListener("ended", handlePause);
+			video.addEventListener("pause", handlePauseWrapper);
+			video.addEventListener("ended", handleVideoEnded);
 			video.addEventListener("seeked", handleSeeked);
 			video.addEventListener("seeking", handleSeeking);
 
 			return () => {
 				video.removeEventListener("play", handlePlay);
-				video.removeEventListener("pause", handlePause);
-				video.removeEventListener("ended", handlePause);
+				video.removeEventListener("pause", handlePauseWrapper);
+				video.removeEventListener("ended", handleVideoEnded);
 				video.removeEventListener("seeked", handleSeeked);
 				video.removeEventListener("seeking", handleSeeking);
 
@@ -1422,7 +1588,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			const ticker = () => {
 				const { region, strength, blendedScale, rotation3D, transition } = findDominantRegion(
 					zoomRegionsRef.current,
-					currentTimeRef.current,
+					masterTimeRef.current,
 					{
 						connectZooms: true,
 						cursorTelemetry: cursorTelemetryRef.current,
@@ -1464,7 +1630,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 						const focusDtMs =
 							prevZoomTimeMsRef.current === null
 								? 0
-								: currentTimeRef.current - prevZoomTimeMsRef.current;
+								: masterTimeRef.current - prevZoomTimeMsRef.current;
 						if (targetProgress >= 0.999) {
 							// Full zoom: adaptive smoothing, faster when far, decelerating when close.
 							const prev = smoothedAutoFocusRef.current ?? raw;
@@ -1552,7 +1718,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				// Chase the eased target with a spring so the camera glides (no jerk at the steep
 				// start of the ease, no snap at close-region seams). Step by content time while
 				// playing; snap to the exact target when paused/seeking/scrubbing for crisp frames.
-				const nowMs = currentTimeRef.current;
+				const nowMs = masterTimeRef.current;
 				const prevMs = prevZoomTimeMsRef.current;
 				const animating = isPlayingRef.current && !isSeekingRef.current && !isScrubbingRef.current;
 				const dtMs = prevMs === null ? 0 : nowMs - prevMs;
@@ -1830,6 +1996,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			video.pause();
 			allowPlaybackRef.current = false;
 			currentTimeRef.current = 0;
+			masterTimeRef.current = 0;
 
 			if (videoReadyRafRef.current) {
 				cancelAnimationFrame(videoReadyRafRef.current);
@@ -2232,6 +2399,21 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				/>
 				{supplementalAudioPath && (
 					<audio ref={supplementalAudioRef} src={supplementalAudioPath} preload="auto" />
+				)}
+				{introClip && (
+					<video
+						ref={introVideoRef}
+						src={toFileUrl(introClip.sourceVideoPath)}
+						className="absolute inset-0 w-full h-full object-contain"
+						style={{
+							zIndex: 50,
+							display: isInIntroPhase ? "block" : "none",
+							background: "#000",
+						}}
+						preload="auto"
+						playsInline
+						muted={false}
+					/>
 				)}
 			</div>
 		);

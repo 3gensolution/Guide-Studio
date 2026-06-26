@@ -1,9 +1,67 @@
+// ── Encoding Mode (Recordly-inspired) ────────────────────────────────────────
+
+export type EncodingMode = "fast" | "balanced" | "quality";
+
+export interface EncodingModeProfile {
+	bitrateMultiplier: number;
+	keyframeIntervalSec: number;
+	latencyMode: "realtime" | "quality";
+	label: string;
+}
+
+export const ENCODING_MODE_PROFILES: Record<EncodingMode, EncodingModeProfile> = {
+	fast: {
+		bitrateMultiplier: 0.1,
+		keyframeIntervalSec: 4,
+		latencyMode: "realtime",
+		label: "Fast",
+	},
+	balanced: {
+		bitrateMultiplier: 0.75,
+		keyframeIntervalSec: 3,
+		latencyMode: "realtime",
+		label: "Balanced",
+	},
+	quality: {
+		bitrateMultiplier: 1.0,
+		keyframeIntervalSec: 2.5,
+		latencyMode: "quality",
+		label: "Quality",
+	},
+};
+
+export const ENCODING_MODES: { value: EncodingMode; label: string; description: string }[] = [
+	{ value: "fast", label: "Fast", description: "Smaller file, quicker export" },
+	{ value: "balanced", label: "Balanced", description: "Good quality, reasonable speed" },
+	{ value: "quality", label: "Quality", description: "Best quality, larger file" },
+];
+
+// ── Export Metrics ────────────────────────────────────────────────────────────
+
+export interface ExportMetrics {
+	metadataLoadTimeMs: number;
+	rendererInitTimeMs: number;
+	encodeLoopTimeMs: number;
+	audioProcessTimeMs: number;
+	finalizationTimeMs: number;
+	peakEncodeQueueSize: number;
+	peakDecodeQueueSize: number;
+	totalExportTimeMs: number;
+	backpressureProfile?: string;
+	audioStrategy?: string;
+	encodingMode?: string;
+	framesPerSecond?: number;
+}
+
+// ── Core Export Types ─────────────────────────────────────────────────────────
+
 export interface ExportConfig {
 	width: number;
 	height: number;
 	frameRate: number;
 	bitrate: number;
 	codec?: string;
+	encodingMode?: EncodingMode;
 }
 
 export interface ExportProgress {
@@ -11,8 +69,10 @@ export interface ExportProgress {
 	totalFrames: number;
 	percentage: number;
 	estimatedTimeRemaining: number; // seconds
-	phase?: "extracting" | "finalizing";
+	phase?: "extracting" | "finalizing" | "metadata" | "init" | "encoding" | "audio" | "muxing";
 	renderProgress?: number; // 0-100, GIF render phase
+	metrics?: Partial<ExportMetrics>;
+	framesPerSecond?: number;
 }
 
 export interface ExportResult {
@@ -20,6 +80,7 @@ export interface ExportResult {
 	blob?: Blob;
 	error?: string;
 	warnings?: string[];
+	metrics?: ExportMetrics;
 }
 
 export interface VideoFrameData {
@@ -52,6 +113,7 @@ export interface ExportSettings {
 	// MP4 settings
 	quality?: ExportQuality;
 	frameRate?: Mp4FrameRate;
+	encodingMode?: EncodingMode;
 	// GIF settings
 	gifConfig?: GifExportConfig;
 }
@@ -81,3 +143,7 @@ export const VALID_GIF_FRAME_RATES: readonly GifFrameRate[] = [15, 20, 25, 30] a
 export function isValidGifFrameRate(rate: number): rate is GifFrameRate {
 	return VALID_GIF_FRAME_RATES.includes(rate as GifFrameRate);
 }
+
+// ── Audio Strategy ────────────────────────────────────────────────────────────
+
+export type AudioStrategy = "copy-source" | "trim-source" | "speed-render" | "reencode";

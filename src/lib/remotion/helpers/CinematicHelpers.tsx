@@ -2138,7 +2138,7 @@ export const DeviceMockup: React.FC<{
 							fontFamily: "'Inter', sans-serif",
 						}}
 					>
-						getcoherence.io/studio
+						guideai.com/studio
 					</div>
 				</div>
 				<div style={{ overflow: "hidden", borderRadius: "0 0 0 0" }}>{children}</div>

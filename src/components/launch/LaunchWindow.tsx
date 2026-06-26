@@ -701,7 +701,7 @@ export function LaunchWindow() {
 				ref={setHudBarEl}
 				data-hud-interactive="true"
 				data-tray-layout={trayLayout}
-				className={`fixed bottom-5 left-1/2 -translate-x-1/2 flex rounded-2xl border border-[#00B8FF]/[0.15] bg-[#07080a]/92 shadow-[0_20px_60px_rgba(0,0,0,0.45),0_0_30px_rgba(0,184,255,0.06),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl backdrop-saturate-[140%] ${
+				className={`fixed bottom-5 left-1/2 -translate-x-1/2 flex rounded-2xl border border-[#A855F7]/20 bg-gradient-to-r from-[#1a0a3c]/90 via-[#12102e]/90 to-[#0a2420]/90 shadow-[0_20px_60px_rgba(0,0,0,0.5),0_0_24px_rgba(168,85,247,0.12),0_0_40px_rgba(0,184,255,0.08),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl backdrop-saturate-[140%] ${
 					trayLayout === "vertical"
 						? "max-h-[calc(100vh-2.5rem)] flex-col items-center gap-1 overflow-y-auto px-1 py-1.5"
 						: "items-center gap-1.5 px-2 py-1.5"
@@ -716,7 +716,9 @@ export function LaunchWindow() {
 				}}
 			>
 				{/* Gradient accent line */}
-				<div className={`absolute ${trayLayout === "vertical" ? "top-0 left-2 right-2 h-[1px]" : "top-0 left-3 right-3 h-[1px]"} bg-gradient-to-r from-[#00B8FF]/0 via-[#00B8FF]/30 to-[#A855F7]/0 rounded-full`} />
+				<div
+					className={`absolute ${trayLayout === "vertical" ? "top-0 left-2 right-2 h-[1px]" : "top-0 left-3 right-3 h-[1px]"} bg-gradient-to-r from-[#A855F7]/40 via-[#6366F1]/25 to-[#00B8FF]/40 rounded-full`}
+				/>
 
 				{/* Drag handle */}
 				<div
@@ -729,48 +731,47 @@ export function LaunchWindow() {
 					{getIcon("drag", "text-white/30")}
 				</div>
 
-				<Tooltip
-					content={
-						trayLayout === "horizontal"
-							? t("tooltips.useVerticalTray")
-							: t("tooltips.useHorizontalTray")
-					}
-				>
-					<button
-						data-testid="launch-tray-layout-button"
-						type="button"
-						aria-label={
-							trayLayout === "horizontal"
-								? t("tooltips.useVerticalTray")
-								: t("tooltips.useHorizontalTray")
-						}
-						aria-pressed={trayLayout === "vertical"}
-						className={`${hudIconBtnClasses} ${styles.electronNoDrag}`}
-						onClick={toggleTrayLayout}
-					>
-						{trayLayout === "horizontal" ? (
-							<Columns3 size={ICON_SIZE} className="text-white/60" />
-						) : (
-							<Rows3 size={ICON_SIZE} className="text-white/60" />
-						)}
-					</button>
-				</Tooltip>
-
-				{/* Source selector */}
+				{/* Record/Stop group */}
 				<button
-					data-testid="launch-source-selector-button"
-					className={`${hudGroupClasses} h-8 ${trayLayout === "vertical" ? "w-8 justify-center px-0" : "px-2.5"} ${styles.electronNoDrag}`}
-					onClick={openSourceSelector}
-					disabled={recording}
-					title={selectedSource}
-					aria-label={selectedSource}
+					data-testid="launch-record-button"
+					className={`flex items-center justify-center rounded-full p-2 transition-[min-width,background-color] duration-150 ${recording ? "min-w-[78px]" : "min-w-[36px]"} ${trayLayout === "vertical" ? "min-h-9" : ""} ${styles.electronNoDrag} ${
+						recording
+							? paused
+								? "bg-amber-500/10 hover:bg-amber-500/15"
+								: "bg-red-500/12 hover:bg-red-500/16"
+							: "bg-white/[0.06] hover:bg-white/[0.10]"
+					}`}
+					onClick={toggleRecording}
+					disabled={!hasSelectedSource && !recording}
+					style={{ flex: "0 0 auto" }}
 				>
-					{getIcon("monitor", "text-white/80")}
-					<span
-						className={`${trayLayout === "vertical" ? "sr-only" : "max-w-[86px]"} truncate text-[11px] font-medium text-white/75`}
-					>
-						{selectedSource}
-					</span>
+					<div className={`flex items-center justify-center ${recording ? "gap-1.5" : ""}`}>
+						{recording
+							? getIcon("stop", paused ? "text-amber-400" : "text-red-400")
+							: getIcon("record", hasSelectedSource ? "text-white/80" : "text-white/30")}
+						{recording && (
+							<span
+								className={`${paused ? "text-amber-400" : "text-red-400"} inline-block w-[34px] text-left text-xs font-semibold tabular-nums`}
+							>
+								{formatTimePadded(elapsedSeconds)}
+							</span>
+						)}
+					</div>
+				</button>
+
+				{/* Webcam toggle */}
+				<button
+					data-testid="launch-webcam-button"
+					className={`${hudIconBtnClasses} ${webcamEnabled ? "drop-shadow-[0_0_4px_rgba(0,184,255,0.4)]" : ""} ${styles.electronNoDrag}`}
+					onClick={async () => {
+						await setWebcamEnabled(!webcamEnabled);
+					}}
+					disabled={recording}
+					title={webcamEnabled ? t("webcam.disableWebcam") : t("webcam.enableWebcam")}
+				>
+					{webcamEnabled
+						? getIcon("webcamOn", "text-[#00B8FF]")
+						: getIcon("webcamOff", "text-white/40")}
 				</button>
 
 				{/* Audio controls group */}
@@ -804,19 +805,6 @@ export function LaunchWindow() {
 							? getIcon("micOn", "text-[#00B8FF]")
 							: getIcon("micOff", "text-white/40")}
 					</button>
-					<button
-						data-testid="launch-webcam-button"
-						className={`${hudIconBtnClasses} ${webcamEnabled ? "drop-shadow-[0_0_4px_rgba(0,184,255,0.4)]" : ""}`}
-						onClick={async () => {
-							await setWebcamEnabled(!webcamEnabled);
-						}}
-						disabled={recording}
-						title={webcamEnabled ? t("webcam.disableWebcam") : t("webcam.enableWebcam")}
-					>
-						{webcamEnabled
-							? getIcon("webcamOn", "text-[#00B8FF]")
-							: getIcon("webcamOff", "text-white/40")}
-					</button>
 					{supportsCursorModeToggle && (
 						<button
 							data-testid="launch-cursor-mode-button"
@@ -845,34 +833,6 @@ export function LaunchWindow() {
 						</button>
 					)}
 				</div>
-
-				{/* Record/Stop group */}
-				<button
-					data-testid="launch-record-button"
-					className={`flex items-center justify-center rounded-full p-2 transition-[min-width,background-color] duration-150 ${recording ? "min-w-[78px]" : "min-w-[36px]"} ${trayLayout === "vertical" ? "min-h-9" : ""} ${styles.electronNoDrag} ${
-						recording
-							? paused
-								? "bg-amber-500/10 hover:bg-amber-500/15"
-								: "bg-red-500/12 hover:bg-red-500/16"
-							: "bg-white/[0.06] hover:bg-white/[0.10]"
-					}`}
-					onClick={toggleRecording}
-					disabled={!hasSelectedSource && !recording}
-					style={{ flex: "0 0 auto" }}
-				>
-					<div className={`flex items-center justify-center ${recording ? "gap-1.5" : ""}`}>
-						{recording
-							? getIcon("stop", paused ? "text-amber-400" : "text-red-400")
-							: getIcon("record", hasSelectedSource ? "text-white/80" : "text-white/30")}
-						{recording && (
-							<span
-								className={`${paused ? "text-amber-400" : "text-red-400"} inline-block w-[34px] text-left text-xs font-semibold tabular-nums`}
-							>
-								{formatTimePadded(elapsedSeconds)}
-							</span>
-						)}
-					</div>
-				</button>
 
 				{recording && (
 					<div
@@ -986,6 +946,51 @@ export function LaunchWindow() {
 								document.body,
 							)
 						: null}
+
+					{/* Source selector */}
+					<button
+						data-testid="launch-source-selector-button"
+						className={`${hudGroupClasses} h-8 ${trayLayout === "vertical" ? "w-8 justify-center px-0" : "px-2.5"} ${styles.electronNoDrag}`}
+						onClick={openSourceSelector}
+						disabled={recording}
+						title={selectedSource}
+						aria-label={selectedSource}
+					>
+						{getIcon("monitor", "text-white/80")}
+						<span
+							className={`${trayLayout === "vertical" ? "sr-only" : "max-w-[86px]"} truncate text-[11px] font-medium text-white/75`}
+						>
+							{selectedSource}
+						</span>
+					</button>
+
+					{/* Tray layout toggle */}
+					<Tooltip
+						content={
+							trayLayout === "horizontal"
+								? t("tooltips.useVerticalTray")
+								: t("tooltips.useHorizontalTray")
+						}
+					>
+						<button
+							data-testid="launch-tray-layout-button"
+							type="button"
+							aria-label={
+								trayLayout === "horizontal"
+									? t("tooltips.useVerticalTray")
+									: t("tooltips.useHorizontalTray")
+							}
+							aria-pressed={trayLayout === "vertical"}
+							className={`${hudIconBtnClasses} ${styles.electronNoDrag}`}
+							onClick={toggleTrayLayout}
+						>
+							{trayLayout === "horizontal" ? (
+								<Columns3 size={ICON_SIZE} className="text-white/60" />
+							) : (
+								<Rows3 size={ICON_SIZE} className="text-white/60" />
+							)}
+						</button>
+					</Tooltip>
 
 					{/* Window controls */}
 					<div

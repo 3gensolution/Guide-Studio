@@ -67,6 +67,8 @@ export interface EditorState {
 	animatedBgSpeed: number;
 	// Multi-clip
 	videoClips: VideoClip[];
+	// Isolated intro clip (separate from videoClips — unaffected by editing tools)
+	introClip: VideoClip | null;
 }
 
 export const INITIAL_EDITOR_STATE: EditorState = {
@@ -103,6 +105,7 @@ export const INITIAL_EDITOR_STATE: EditorState = {
 	backgroundMusicVolume: 50,
 	animatedBgSpeed: 1,
 	videoClips: [],
+	introClip: null,
 };
 
 type StateUpdate = Partial<EditorState> | ((prev: EditorState) => Partial<EditorState>);

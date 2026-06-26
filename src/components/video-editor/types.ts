@@ -1,4 +1,5 @@
 import type { WebcamLayoutPreset } from "@/lib/compositeLayout";
+import type { IntroConfig } from "@/lib/intro/introTypes";
 
 export type ZoomDepth = 1 | 2 | 3 | 4 | 5 | 6;
 export type ZoomFocusMode = "manual" | "auto";
@@ -392,6 +393,11 @@ export interface VideoClip {
 	durationMs: number; // effective duration on master timeline
 	label?: string;
 	sourceType?: "recording" | "imported" | "intro";
+	introConfig?: {
+		templateId?: string;
+		fieldValues?: Record<string, string>;
+		config?: IntroConfig;
+	};
 }
 
 export const SPEED_OPTIONS: Array<{ speed: PlaybackSpeed; label: string }> = [

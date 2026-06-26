@@ -82,7 +82,12 @@ export function useAIService() {
 					height: options?.height,
 				});
 				if (result.success) {
-					return result.data.imageUrl;
+					// Backend returns { images: [{ url }] }
+					const firstImage = result.data.images?.[0];
+					if (firstImage?.url) {
+						return firstImage.url;
+					}
+					throw new Error("No image returned from backend");
 				}
 				throw new Error(result.error);
 			}

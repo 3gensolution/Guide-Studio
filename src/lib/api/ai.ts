@@ -1,7 +1,15 @@
 // ── AI Services API ──────────────────────────────────────────────────────
 //
-// AI capabilities integration with your Docker backend
-// Supports multiple AI providers and models
+// AI capabilities integration with the Docker backend (GuideAI).
+// All AI endpoints are routed through the gateway at /api/v1/studio/ai/*
+//
+// Available backend endpoints:
+//   POST /studio/ai/chat/completion  — Chat / script generation
+//   POST /studio/ai/image/generate   — Image generation (SDXL/Flux)
+//   POST /studio/ai/tts/generate     — Text-to-speech (Edge TTS / ElevenLabs)
+//   GET  /studio/ai/tts/voices       — List TTS voices
+//   POST /studio/ai/stt/transcribe   — Speech-to-text (Groq Whisper)
+//   POST /studio/ai/music/generate   — Music generation (MusicGen)
 
 import { apiClient } from "./client";
 
@@ -59,7 +67,7 @@ export interface ChatCompletionRequest {
 	messages: ChatMessage[];
 	model?: string;
 	temperature?: number;
-	maxTokens?: number;
+	max_tokens?: number;
 	stream?: boolean;
 }
 
@@ -67,39 +75,25 @@ export interface ChatCompletionRequest {
 export interface TTSRequest {
 	text: string;
 	voice?: string; // Voice ID
-	model?: string;
+	model?: string; // "edge-tts" or "elevenlabs"
 	speed?: number;
-	stability?: number;
-	similarityBoost?: number;
-}
-
-// Speech-to-Text (Whisper)
-export interface STTRequest {
-	audioUrl: string; // URL or base64
-	language?: string;
-	model?: string;
-	responseFormat?: "json" | "srt" | "vtt" | "text";
 }
 
 // Image Generation
 export interface ImageGenerationRequest {
 	prompt: string;
-	negativePrompt?: string;
-	model?: string;
+	negative_prompt?: string;
+	model?: string; // "sdxl" or "flux"
 	width?: number;
 	height?: number;
-	steps?: number;
-	guidanceScale?: number;
-	seed?: number;
+	num_outputs?: number;
 }
 
 // Music Generation
 export interface MusicGenerationRequest {
 	prompt: string;
-	duration?: number; // seconds
-	genre?: string;
-	mood?: string;
-	tempo?: number;
+	duration?: number; // seconds (5-30)
+	model_version?: string;
 }
 
 // Video Generation
@@ -114,105 +108,170 @@ export interface VideoGenerationRequest {
 
 // ── AI Service Class ──────────────────────────────────────────────────────
 
+const STUDIO_PREFIX = "/studio/ai";
+
 export class AIService {
-	// Get available capabilities
-	async getCapabilities(): Promise<
-		{ success: true; data: AICapabilities } | { success: false; error: string }
+	// Chat Completion (DeepSeek Flash via OpenRouter)
+	async chatCompletion(
+		request: ChatCompletionRequest,
+	): Promise<
+		{ success: true; data: { content: string; usage: unknown } } | { success: false; error: string }
 	> {
-		return apiClient.get<AICapabilities>("/ai/capabilities");
+		return apiClient.post(`${STUDIO_PREFIX}/chat/completion`, request);
 	}
 
-	// Chat Completion (GPT-4, DeepSeek, Qwen, etc.)
-	async chatCompletion(request: ChatCompletionRequest): Promise<
-		| { success: true; data: { content: string; usage: any } }
+	// Text-to-Speech (Edge TTS free / ElevenLabs premium)
+	async generateSpeech(
+		request: TTSRequest,
+	): Promise<{ success: true; data: { audioUrl: string } } | { success: false; error: string }> {
+		return apiClient.post(`${STUDIO_PREFIX}/tts/generate`, request);
+	}
+
+	// List available TTS voices
+	async listVoices(locale?: string): Promise<
+		| {
+				success: true;
+				data: { voices: Array<{ id: string; name: string; locale: string; gender: string }> };
+		  }
 		| { success: false; error: string }
 	> {
-		return apiClient.post("/ai/chat/completion", request);
+		const params = locale ? `?locale=${encodeURIComponent(locale)}` : "";
+		return apiClient.get(`${STUDIO_PREFIX}/tts/voices${params}`);
 	}
 
-	// List available models from backend
-	async getAvailableModels(): Promise<
-		| { success: true; data: { chat: string[]; tts: string[]; stt: string[]; image: string[] } }
-		| { success: false; error: string }
-	> {
-		return apiClient.get("/ai/models");
-	}
-
-	// Text-to-Speech
-	async generateSpeech(request: TTSRequest): Promise<
-		{ success: true; data: { audioUrl: string } } | { success: false; error: string }
-	> {
-		return apiClient.post("/ai/tts", request);
-	}
-
-	// Speech-to-Text (Whisper)
-	async transcribe(request: STTRequest): Promise<
-		| { success: true; data: { text: string; segments?: any[] } }
-		| { success: false; error: string }
-	> {
-		return apiClient.post("/ai/stt", request);
-	}
-
-	// Image Generation
-	async generateImage(request: ImageGenerationRequest): Promise<
-		{ success: true; data: { imageUrl: string } } | { success: false; error: string }
-	> {
-		return apiClient.post("/ai/image/generate", request);
-	}
-
-	// Music Generation
-	async generateMusic(request: MusicGenerationRequest): Promise<
-		{ success: true; data: { audioUrl: string } } | { success: false; error: string }
-	> {
-		return apiClient.post("/ai/music/generate", request);
-	}
-
-	// SFX Generation
-	async generateSFX(prompt: string, duration?: number): Promise<
-		{ success: true; data: { audioUrl: string } } | { success: false; error: string }
-	> {
-		return apiClient.post("/ai/sfx/generate", { prompt, duration });
-	}
-
-	// Video Generation
-	async generateVideo(request: VideoGenerationRequest): Promise<
-		{ success: true; data: { videoUrl: string; jobId?: string } } | { success: false; error: string }
-	> {
-		return apiClient.post("/ai/video/generate", request);
-	}
-
-	// Check video generation status (for async jobs)
-	async checkVideoStatus(jobId: string): Promise<
-		| { success: true; data: { status: "pending" | "processing" | "completed" | "failed"; videoUrl?: string } }
-		| { success: false; error: string }
-	> {
-		return apiClient.get(`/ai/video/status/${jobId}`);
-	}
-
-	// Lottie Animation Search
-	async searchLottie(query: string): Promise<
-		{ success: true; data: { results: Array<{ id: string; url: string; preview: string }> } } | { success: false; error: string }
-	> {
-		return apiClient.get(`/ai/lottie/search?q=${encodeURIComponent(query)}`);
-	}
-
-	// Auto-caption generation
-	async generateCaptions(
-		audioUrl: string,
+	// Speech-to-Text (Groq Whisper)
+	async transcribe(
+		audioFile: File | Blob,
 		language?: string,
+	): Promise<
+		| {
+				success: true;
+				data: {
+					segments: Array<{ start: number; end: number; text: string }>;
+					fullText: string;
+					language: string;
+				};
+		  }
+		| { success: false; error: string }
+	> {
+		// STT endpoint expects multipart/form-data, not JSON
+		const formData = new FormData();
+		formData.append("audio", audioFile);
+		if (language) {
+			formData.append("language", language);
+		}
+
+		const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
+		const url = `${baseUrl}${STUDIO_PREFIX}/stt/transcribe`;
+
+		try {
+			const token = apiClient.getAccessToken();
+			const headers: Record<string, string> = {};
+			if (token) {
+				headers.Authorization = `Bearer ${token}`;
+			}
+
+			const response = await fetch(url, {
+				method: "POST",
+				headers,
+				body: formData,
+			});
+
+			if (!response.ok) {
+				const error = await response.json().catch(() => ({ detail: response.statusText }));
+				return { success: false, error: error.detail || `HTTP ${response.status}` };
+			}
+
+			const data = await response.json();
+			return { success: true, data };
+		} catch (error) {
+			return {
+				success: false,
+				error: error instanceof Error ? error.message : "Transcription failed",
+			};
+		}
+	}
+
+	// Image Generation (Replicate SDXL/Flux)
+	async generateImage(
+		request: ImageGenerationRequest,
+	): Promise<
+		{ success: true; data: { images: Array<{ url: string }> } } | { success: false; error: string }
+	> {
+		return apiClient.post(`${STUDIO_PREFIX}/image/generate`, request);
+	}
+
+	// Music Generation (Replicate MusicGen)
+	async generateMusic(
+		request: MusicGenerationRequest,
+	): Promise<
+		| { success: true; data: { audioUrl: string; duration: number } }
+		| { success: false; error: string }
+	> {
+		return apiClient.post(`${STUDIO_PREFIX}/music/generate`, request);
+	}
+
+	// SFX Generation (not yet implemented in backend)
+	async generateSFX(
+		prompt: string,
+		duration?: number,
+	): Promise<{ success: true; data: { audioUrl: string } } | { success: false; error: string }> {
+		return apiClient.post(`${STUDIO_PREFIX}/music/generate`, {
+			prompt: `sound effect: ${prompt}`,
+			duration: duration || 5,
+		});
+	}
+
+	// Video Generation (not yet implemented in backend)
+	async generateVideo(
+		_request: VideoGenerationRequest,
+	): Promise<
+		| { success: true; data: { videoUrl: string; jobId?: string } }
+		| { success: false; error: string }
+	> {
+		return { success: false, error: "Video generation is not yet available" };
+	}
+
+	// Check video generation status
+	async checkVideoStatus(_jobId: string): Promise<
+		| {
+				success: true;
+				data: { status: "pending" | "processing" | "completed" | "failed"; videoUrl?: string };
+		  }
+		| { success: false; error: string }
+	> {
+		return { success: false, error: "Video generation is not yet available" };
+	}
+
+	// Lottie Animation Search (not yet implemented in backend)
+	async searchLottie(
+		_query: string,
+	): Promise<
+		| { success: true; data: { results: Array<{ id: string; url: string; preview: string }> } }
+		| { success: false; error: string }
+	> {
+		return { success: false, error: "Lottie search is not yet available" };
+	}
+
+	// Auto-caption generation (uses STT transcription under the hood)
+	async generateCaptions(
+		_audioUrl: string,
+		_language?: string,
 	): Promise<
 		| { success: true; data: { segments: Array<{ start: number; end: number; text: string }> } }
 		| { success: false; error: string }
 	> {
-		return apiClient.post("/ai/captions/generate", { audioUrl, language });
+		return { success: false, error: "Use the transcribe method with an audio file for captions" };
 	}
 
-	// AI Video Analysis
-	async analyzeVideo(videoUrl: string): Promise<
-		| { success: true; data: { scenes: any[]; keyframes: any[]; summary: string } }
+	// AI Video Analysis (not yet implemented in backend)
+	async analyzeVideo(
+		_videoUrl: string,
+	): Promise<
+		| { success: true; data: { scenes: unknown[]; keyframes: unknown[]; summary: string } }
 		| { success: false; error: string }
 	> {
-		return apiClient.post("/ai/video/analyze", { videoUrl });
+		return { success: false, error: "Video analysis is not yet available" };
 	}
 }
 
@@ -235,5 +294,5 @@ export async function getTokenUsage(
 	if (startDate) params.set("start", startDate);
 	if (endDate) params.set("end", endDate);
 
-	return apiClient.get(`/ai/usage?${params}`);
+	return apiClient.get(`/usage?${params}`);
 }

@@ -4,10 +4,10 @@
 // The backend is the "AI brain" — only AI features (chat, image, whisper)
 // go through it. Everything else stays local in Electron.
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { authService, type User } from "@/lib/api/auth";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { LoginDialog } from "@/components/auth/LoginDialog";
+import { authService, type User } from "@/lib/api/auth";
 
 interface BackendContextValue {
 	/** Whether the Docker backend is reachable */
@@ -26,11 +26,15 @@ const BackendContext = createContext<BackendContextValue>({
 	isBackendAvailable: false,
 	isAuthenticated: false,
 	user: null,
-	showLogin: () => {},
-	logout: async () => {},
+	showLogin: () => {
+		/* noop default */
+	},
+	logout: async () => {
+		/* noop default */
+	},
 });
 
-const HEALTH_URL = `${import.meta.env.VITE_API_URL || "http://localhost:8000/api"}/health`;
+const HEALTH_URL = import.meta.env.VITE_HEALTH_URL || "http://localhost:8000/health";
 
 export function BackendProvider({ children }: { children: ReactNode }) {
 	const [isBackendAvailable, setIsBackendAvailable] = useState(false);

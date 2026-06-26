@@ -78,7 +78,8 @@
 	.editor-workspace {
 		display: flex;
 		flex-direction: column;
-		padding: 14px;
+		padding: 12px;
+		gap: 10px;
 		background:
 			radial-gradient(circle at 18% 0%, rgba(0, 184, 255, 0.08), transparent 30%),
 			linear-gradient(180deg, #08090b 0%, #050606 100%);
@@ -86,8 +87,8 @@
 
 	.editor-main-deck {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) clamp(286px, 20vw, 352px);
-		gap: 14px;
+		grid-template-columns: minmax(0, 1fr) clamp(296px, 22vw, 368px);
+		gap: 12px;
 		min-height: 0;
 	}
 
@@ -111,7 +112,7 @@
 	}
 
 	.editor-timeline-panel {
-		border-radius: 16px;
+		border-radius: 14px;
 		background:
 			linear-gradient(180deg, rgba(18, 20, 24, 0.96), rgba(8, 9, 11, 0.98)),
 			#090a0c;
@@ -183,13 +184,13 @@
 
 	@media (max-width: 1240px) {
 		.editor-workspace {
-			gap: 10px;
-			padding: 10px;
+			gap: 8px;
+			padding: 8px;
 		}
 
 		.editor-main-deck {
-			grid-template-columns: minmax(0, 1fr) 286px;
-			gap: 10px;
+			grid-template-columns: minmax(0, 1fr) 296px;
+			gap: 8px;
 		}
 	}
 
@@ -206,13 +207,13 @@
 
 	@media (min-width: 1900px) {
 		.editor-workspace {
-			padding: 18px;
-			gap: 18px;
+			padding: 16px;
+			gap: 14px;
 		}
 
 		.editor-main-deck {
-			grid-template-columns: minmax(0, 1fr) 372px;
-			gap: 18px;
+			grid-template-columns: minmax(0, 1fr) 380px;
+			gap: 16px;
 		}
 	}
 

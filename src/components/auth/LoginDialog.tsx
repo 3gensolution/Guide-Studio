@@ -1,5 +1,6 @@
-import { LogIn, Mail, Lock, User, Sparkles } from "lucide-react";
+import { Lock, LogIn, Mail, Sparkles, User } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -9,7 +10,6 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { authService, type User as UserType } from "@/lib/api/auth";
-import { toast } from "sonner";
 
 interface LoginDialogProps {
 	isOpen: boolean;
@@ -22,6 +22,7 @@ export function LoginDialog({ isOpen, onClose, onLoginSuccess }: LoginDialogProp
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
 	const [name, setName] = useState("");
+	const [companyName, setCompanyName] = useState("");
 	const [isLoading, setIsLoading] = useState(false);
 
 	const handleSubmit = async (e: React.FormEvent) => {
@@ -39,16 +40,22 @@ export function LoginDialog({ isOpen, onClose, onLoginSuccess }: LoginDialogProp
 					toast.error(result.error);
 				}
 			} else {
-				const result = await authService.signup({ email, password, name });
+				const result = await authService.signup({
+					email,
+					password,
+					name,
+					company_name: companyName || name,
+				});
 				if (result.success) {
-					toast.success("Account created successfully!");
-					onLoginSuccess(result.user);
-					onClose();
+					toast.success(
+						result.message || "Account created! An admin needs to activate your account.",
+					);
+					setMode("login");
 				} else {
 					toast.error(result.error);
 				}
 			}
-		} catch (error) {
+		} catch (_error) {
 			toast.error("An unexpected error occurred");
 		} finally {
 			setIsLoading(false);
@@ -78,20 +85,36 @@ export function LoginDialog({ isOpen, onClose, onLoginSuccess }: LoginDialogProp
 
 				<form onSubmit={handleSubmit} className="space-y-4 mt-4">
 					{mode === "signup" && (
-						<div className="space-y-2">
-							<label className="text-sm font-medium text-white/80 flex items-center gap-2">
-								<User size={14} />
-								Full Name
-							</label>
-							<input
-								type="text"
-								value={name}
-								onChange={(e) => setName(e.target.value)}
-								className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/40 focus:outline-none focus:border-[#00B8FF]/50 focus:ring-2 focus:ring-[#00B8FF]/20 transition-all"
-								placeholder="John Doe"
-								required
-							/>
-						</div>
+						<>
+							<div className="space-y-2">
+								<label className="text-sm font-medium text-white/80 flex items-center gap-2">
+									<User size={14} />
+									Full Name
+								</label>
+								<input
+									type="text"
+									value={name}
+									onChange={(e) => setName(e.target.value)}
+									className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/40 focus:outline-none focus:border-[#00B8FF]/50 focus:ring-2 focus:ring-[#00B8FF]/20 transition-all"
+									placeholder="John Doe"
+									required
+								/>
+							</div>
+							<div className="space-y-2">
+								<label className="text-sm font-medium text-white/80 flex items-center gap-2">
+									<User size={14} />
+									Company Name
+								</label>
+								<input
+									type="text"
+									value={companyName}
+									onChange={(e) => setCompanyName(e.target.value)}
+									className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/40 focus:outline-none focus:border-[#00B8FF]/50 focus:ring-2 focus:ring-[#00B8FF]/20 transition-all"
+									placeholder="My Company"
+									required
+								/>
+							</div>
+						</>
 					)}
 
 					<div className="space-y-2">
@@ -150,13 +173,11 @@ export function LoginDialog({ isOpen, onClose, onLoginSuccess }: LoginDialogProp
 					>
 						{mode === "login" ? (
 							<>
-								Don't have an account?{" "}
-								<span className="text-[#00B8FF] font-medium">Sign up</span>
+								Don't have an account? <span className="text-[#00B8FF] font-medium">Sign up</span>
 							</>
 						) : (
 							<>
-								Already have an account?{" "}
-								<span className="text-[#00B8FF] font-medium">Sign in</span>
+								Already have an account? <span className="text-[#00B8FF] font-medium">Sign in</span>
 							</>
 						)}
 					</button>

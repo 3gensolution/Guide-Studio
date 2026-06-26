@@ -8,6 +8,7 @@ import {
 	type TextureSourceLike,
 } from "pixi.js";
 import { MotionBlurFilter } from "pixi-filters/motion-blur";
+import { RENDER_HOOKS_ENABLED } from "@/components/video-editor/featureFlags";
 import type {
 	AnnotationRegion,
 	CropRegion,
@@ -42,6 +43,7 @@ import {
 	createMotionBlurState,
 	type MotionBlurState,
 } from "@/components/video-editor/videoPlayback/zoomTransform";
+import type { CaptionStyle, CaptionTrack } from "@/lib/ai/types";
 import {
 	computeCompositeLayout,
 	getWebcamLayoutPresetDefinition,
@@ -60,7 +62,6 @@ import {
 	resolveInterpolatedNativeCursorFrame,
 	resolveNativeCursorRenderAsset,
 } from "@/lib/cursor/nativeCursor";
-import type { CaptionStyle, CaptionTrack } from "@/lib/ai/types";
 import { BackgroundLoadError, classifyWallpaper, resolveImageWallpaperUrl } from "@/lib/wallpaper";
 import { drawCanvasClipPath } from "@/lib/webcamMaskShapes";
 import type { CursorRecordingData } from "@/native/contracts";
@@ -72,6 +73,7 @@ import {
 	parseCssGradient,
 	resolveLinearGradientAngle,
 } from "./gradientParser";
+import { buildRenderHookContext, type RenderHookRegistry } from "./renderHooks";
 import { createThreeDPass, type ThreeDPass } from "./threeDPass";
 import { drawWebcamFrameImage } from "./webcamFrameDrawing";
 
@@ -111,6 +113,7 @@ interface FrameRenderConfig {
 	cursorClickTimestamps?: number[];
 	captionTrack?: CaptionTrack | null;
 	captionStyle?: CaptionStyle;
+	hookRegistry?: RenderHookRegistry;
 	platform: string;
 }
 
@@ -168,6 +171,7 @@ export class FrameRenderer {
 	private zoomSpringState = createZoomSpringState();
 	private prevTargetProgress = 0;
 	private isLinux = false;
+	private frameIndex = 0;
 
 	constructor(config: FrameRenderConfig) {
 		this.config = config;
@@ -449,7 +453,11 @@ export class FrameRenderer {
 		const willRotate = !isRotation3DIdentity(this.currentRotation3D);
 		this.compositeWithShadows(webcamFrame, !willRotate);
 
+		await this.executeHook("post-video", timeMs);
+
 		await this.drawNativeCursor(timeMs);
+
+		await this.executeHook("post-cursor", timeMs);
 
 		// Annotations go on top of foreground so they rotate with the recording
 		if (
@@ -484,6 +492,8 @@ export class FrameRenderer {
 				this.config.height,
 			);
 		}
+
+		await this.executeHook("post-annotations", timeMs);
 
 		// Rotate foreground only; wallpaper (on compositeCanvas) stays untouched
 		if (willRotate && this.threeDPass && this.foregroundCanvas && this.foregroundCtx) {
@@ -536,6 +546,24 @@ export class FrameRenderer {
 			// Flat path or 3D-without-shadow: stamp foreground directly
 			this.compositeCtx.drawImage(this.foregroundCanvas, 0, 0);
 		}
+
+		await this.executeHook("pre-final", timeMs);
+		await this.executeHook("final", timeMs);
+
+		this.frameIndex++;
+	}
+
+	private async executeHook(
+		phase: import("./renderHooks").RenderPhase,
+		timeMs: number,
+	): Promise<void> {
+		if (!RENDER_HOOKS_ENABLED) return;
+		const registry = this.config.hookRegistry;
+		if (!registry || !registry.hasHooks()) return;
+		const canvas = this.compositeCanvas || this.foregroundCanvas;
+		if (!canvas) return;
+		const context = buildRenderHookContext(canvas, timeMs, this.frameIndex);
+		await registry.execute(phase, context);
 	}
 
 	// Video's on-screen boundary including the zoom camera transform. The PIXI mask

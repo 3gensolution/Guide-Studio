@@ -209,6 +209,15 @@ interface Window {
 			message?: string;
 			error?: string;
 		}>;
+		saveIntroVideo: (videoData: ArrayBuffer) => Promise<{
+			success: boolean;
+			path?: string;
+			error?: string;
+		}>;
+		deleteTempFile: (filePath: string) => Promise<{
+			success: boolean;
+			error?: string;
+		}>;
 		concatVideos: (
 			inputPaths: string[],
 			outputPath: string,
@@ -683,9 +692,8 @@ interface Window {
 			error?: string;
 		}>;
 
-		/** Fetch the Studio showcase manifest from DO Spaces (same source as
-		 *  studio.getcoherence.io/showcase). Returns the list of community-
-		 *  uploaded videos, used by the Studio TV arcade tab. */
+		/** Fetch the Studio showcase manifest from DO Spaces. Returns the list of
+		 *  community-uploaded videos, used by the Studio TV arcade tab. */
 		showcaseFetchManifest: () => Promise<{
 			success: boolean;
 			entries?: Array<{

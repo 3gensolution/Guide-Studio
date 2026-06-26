@@ -6,9 +6,8 @@ import { Loader2, MessageSquare, Send, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { v4 as uuidv4 } from "uuid";
-
-import type { EditorState } from "@/hooks/useEditorHistory";
 import { useAIService } from "@/hooks/useAIService";
+import type { EditorState } from "@/hooks/useEditorHistory";
 import { buildSystemPrompt, type ChatPromptContext } from "@/lib/ai/chatPrompt";
 import { generatePolishEdits } from "@/lib/ai/oneClickPolish";
 import { analyzeRecording } from "@/lib/ai/recordingAnalyzer";
@@ -591,7 +590,7 @@ export function AIChatSidebar({
 		} finally {
 			setIsLoading(false);
 		}
-	}, [input, isLoading, messages, systemPromptContext, executeTool]);
+	}, [input, isLoading, messages, systemPromptContext, executeTool, analyze]);
 
 	// ── Keyboard handling ──
 

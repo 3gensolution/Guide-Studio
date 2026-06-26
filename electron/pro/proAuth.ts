@@ -1,17 +1,17 @@
 /**
- * Pro Authentication — Electron-side OAuth flow for Coherence.
+ * Pro Authentication — Electron-side OAuth flow for GuideAI.
  *
- * Uses a custom protocol (coherence-studio://) for the auth callback.
+ * Uses a custom protocol (guide-studio://) for the auth callback.
  * Flow:
- * 1. Register coherence-studio:// as default protocol client
- * 2. Open system browser to login page with redirect=coherence-studio://auth?token=...
- * 3. After login, web app redirects to coherence-studio://auth?token=<jwt>
+ * 1. Register guide-studio:// as default protocol client
+ * 2. Open system browser to login page with redirect=guide-studio://auth?token=...
+ * 3. After login, web app redirects to guide-studio://auth?token=<jwt>
  * 4. OS opens the URL in our app, we extract the token
  */
 
 import { app, BrowserWindow, shell } from "electron";
 
-const PROTOCOL = "coherence-studio";
+const PROTOCOL = "guide-studio";
 const CALLBACK_URL = `${PROTOCOL}://auth`;
 
 interface ProAuthConfig {
@@ -21,7 +21,7 @@ interface ProAuthConfig {
 const isDev = !app.isPackaged;
 const config: ProAuthConfig = isDev
 	? { authBaseUrl: "http://localhost:5175" }
-	: { authBaseUrl: "https://auth.getcoherence.io" };
+	: { authBaseUrl: "https://auth.guideai.com" };
 
 // Pending auth promise resolver
 let pendingResolve:
@@ -30,7 +30,7 @@ let pendingResolve:
 let authTimeout: ReturnType<typeof setTimeout> | null = null;
 
 /**
- * Register coherence-studio:// as the default protocol handler.
+ * Register guide-studio:// as the default protocol handler.
  * Call this before app.whenReady().
  */
 export function registerProAuthProtocol(): void {
@@ -44,7 +44,7 @@ export function registerProAuthProtocol(): void {
 }
 
 /**
- * Handle an incoming coherence-studio:// deep link.
+ * Handle an incoming guide-studio:// deep link.
  * Called from the main process when the OS opens a URL with our protocol.
  * Returns true if the URL was handled.
  */
@@ -89,10 +89,10 @@ export function handleProAuthDeepLink(url: string): boolean {
 }
 
 /**
- * Start the Coherence OAuth flow.
+ * Start the GuideAI OAuth flow.
  * Opens system browser, waits for deep link callback.
  */
-export async function authenticateCoherence(): Promise<{
+export async function authenticateGuideAI(): Promise<{
 	success: boolean;
 	token?: string;
 	refreshToken?: string;

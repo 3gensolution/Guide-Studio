@@ -58,9 +58,12 @@ export function normalizeProjectMedia(candidate: unknown): ProjectMedia | null {
 	const webcamVideoPath = normalizePath(raw.webcamVideoPath);
 	const cursorCaptureMode = normalizeCursorCaptureMode(raw.cursorCaptureMode);
 
-	const additionalClipPaths = Array.isArray((raw as { additionalClipPaths?: unknown }).additionalClipPaths)
-		? ((raw as { additionalClipPaths?: unknown[] }).additionalClipPaths ?? [])
-				.filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+	const additionalClipPaths = Array.isArray(
+		(raw as { additionalClipPaths?: unknown }).additionalClipPaths,
+	)
+		? ((raw as { additionalClipPaths?: unknown[] }).additionalClipPaths ?? []).filter(
+				(p): p is string => typeof p === "string" && p.trim().length > 0,
+			)
 		: undefined;
 
 	return {
