@@ -25,7 +25,7 @@ const CLICK_COLORS: Record<string, string> = {
 	left: "#2563eb", // green (matches the app's accent)
 	right: "#3B82F6", // blue
 	double: "#F59E0B", // amber
-	middle: "#8B5CF6", // purple
+	middle: "#F43F5E", // rose
 };
 
 export class ClickRingAnimation {

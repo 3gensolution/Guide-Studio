@@ -69,7 +69,7 @@ export function EditorEmptyState({ onVideoImported, onProjectOpened }: EditorEmp
 			const files = Array.from(e.dataTransfer.files);
 			if (files.length === 0) return;
 
-			const projectFile = files.find((f) => f.name.endsWith(".guidestudio"));
+			const projectFile = files.find((f) => f.name.endsWith(".gstudio"));
 			if (!projectFile) {
 				setDropError("unsupported-format");
 				return;
@@ -107,22 +107,22 @@ export function EditorEmptyState({ onVideoImported, onProjectOpened }: EditorEmp
 
 	return (
 		<div
-			className="flex h-full w-full flex-col items-center justify-center bg-[#09090b]"
+			className="flex h-full w-full flex-col items-center justify-center bg-[#1C1917]"
 			onDragOver={handleDragOver}
 			onDragLeave={handleDragLeave}
 			onDrop={handleDrop}
 		>
 			{/* Drop overlay */}
 			{isDraggingOver && (
-				<div className="pointer-events-none absolute inset-0 z-50 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-[#00B8FF] bg-[#00B8FF]/10">
-					<Upload className="mb-3 h-10 w-10 text-[#00B8FF]" />
-					<p className="text-base font-semibold text-[#00B8FF]">{te("emptyState.dropOverlay")}</p>
+				<div className="pointer-events-none absolute inset-0 z-50 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-[#F59E0B] bg-[#F59E0B]/10">
+					<Upload className="mb-3 h-10 w-10 text-[#F59E0B]" />
+					<p className="text-base font-semibold text-[#F59E0B]">{te("emptyState.dropOverlay")}</p>
 				</div>
 			)}
 
 			{/* Drop error dialog */}
 			<Dialog open={dropError !== null} onOpenChange={(open) => !open && setDropError(null)}>
-				<DialogContent className="bg-[#09090b] border-white/10 rounded-2xl max-w-sm p-6 gap-0">
+				<DialogContent className="bg-[#1C1917] border-white/10 rounded-2xl max-w-sm p-6 gap-0">
 					<DialogHeader className="mb-4">
 						<div className="flex items-center gap-3">
 							<img src={guideLogo} alt="" aria-hidden="true" className="w-9 h-9 flex-shrink-0" />
@@ -148,7 +148,7 @@ export function EditorEmptyState({ onVideoImported, onProjectOpened }: EditorEmp
 					<button
 						type="button"
 						onClick={() => setDropError(null)}
-						className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 font-medium text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b]"
+						className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 font-medium text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#1C1917]"
 					>
 						<X className="w-4 h-4" />
 						{tc("actions.close")}
@@ -175,7 +175,7 @@ export function EditorEmptyState({ onVideoImported, onProjectOpened }: EditorEmp
 					<button
 						type="button"
 						onClick={handleImportVideo}
-						className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[#00B8FF] hover:bg-[#00a8ec] active:bg-[#0098d4] text-white font-medium text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[#00B8FF] focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b]"
+						className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[#F59E0B] hover:bg-[#D97706] active:bg-[#B45309] text-white font-medium text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[#F59E0B] focus-visible:ring-offset-2 focus-visible:ring-offset-[#1C1917]"
 					>
 						<Film className="h-4 w-4" />
 						{te("emptyState.importVideoButton")}
@@ -183,7 +183,7 @@ export function EditorEmptyState({ onVideoImported, onProjectOpened }: EditorEmp
 					<button
 						type="button"
 						onClick={handleLoadProject}
-						className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 font-medium text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b]"
+						className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 font-medium text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#1C1917]"
 					>
 						<FolderOpen className="h-4 w-4" />
 						{te("emptyState.loadProjectButton")}

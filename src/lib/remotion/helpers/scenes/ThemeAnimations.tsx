@@ -31,12 +31,12 @@ const C = {
 		400: "#a1a1aa",
 		500: "#71717a",
 		600: "#52525b",
-		700: "#3f3f46",
-		800: "#27272a",
-		900: "#18181b",
+		700: "#44403C",
+		800: "#292524",
+		900: "#1C1917",
 		950: "#0c0c0d",
 	},
-	accent: "#6366f1",
+	accent: "#F59E0B",
 	secondary: "#ec4899",
 	tertiary: "#14b8a6",
 	success: "#22c55e",
@@ -1706,7 +1706,7 @@ export const ThemeDarkMode = ({ startDelay = 0 }: { startDelay?: number }) => {
 					width: 400,
 					height: 400,
 					borderRadius: "50%",
-					background: "radial-gradient(circle, #6366f120 0%, transparent 70%)",
+					background: "radial-gradient(circle, #F59E0B20 0%, transparent 70%)",
 					filter: "blur(60px)",
 					opacity: glowIntensity,
 				}}
@@ -1781,7 +1781,7 @@ export const ThemeDarkMode = ({ startDelay = 0 }: { startDelay?: number }) => {
 							width: 40,
 							height: 40,
 							borderRadius: "50%",
-							background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+							background: "linear-gradient(135deg, #F59E0B, #F97316)",
 						}}
 					/>
 					<div>
@@ -2468,7 +2468,7 @@ export const ThemeIsometric = ({ startDelay = 0 }: { startDelay?: number }) => {
 							config: { damping: 12, stiffness: 150 },
 						});
 
-						const colors = [C.accent, "#8b5cf6", "#a855f7"];
+						const colors = [C.accent, "#F43F5E", "#F97316"];
 						const color = colors[(row + col) % 3];
 
 						return (
@@ -3963,7 +3963,7 @@ export const ThemeTech = ({ startDelay = 0 }: { startDelay?: number }) => {
 						width: 36,
 						height: 36,
 						borderRadius: 10,
-						background: `linear-gradient(135deg, ${C.accent}, #8b5cf6)`,
+						background: `linear-gradient(135deg, ${C.accent}, #F43F5E)`,
 					}}
 				/>
 				<div style={{ fontFamily: font, fontSize: 18, fontWeight: 600, color: C.gray[900] }}>

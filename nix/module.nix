@@ -1,11 +1,11 @@
-# NixOS module for GuideStudio
+# NixOS module for Guide Studio
 # Usage in flake-based NixOS config:
 #
-#   inputs.guidestudio.url = "github:guidestudio/guide-studio";
+#   inputs.guide-studio.url = "github:guidestudio/guide-studio";
 #
 #   { inputs, ... }: {
-#     imports = [ inputs.guidestudio.nixosModules.default ];
-#     programs.guidestudio.enable = true;
+#     imports = [ inputs.guide-studio.nixosModules.default ];
+#     programs.guide-studio.enable = true;
 #   }
 self:
 {
@@ -16,17 +16,17 @@ self:
 }:
 
 let
-  cfg = config.programs.guidestudio;
+  cfg = config.programs.guide-studio;
 in
 {
-  options.programs.guidestudio = {
-    enable = lib.mkEnableOption "GuideStudio screen recorder";
+  options.programs.guide-studio = {
+    enable = lib.mkEnableOption "Guide Studio screen recorder";
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = self.packages.${pkgs.stdenv.hostPlatform.system}.guidestudio;
-      defaultText = lib.literalExpression "inputs.guidestudio.packages.\${pkgs.stdenv.hostPlatform.system}.guidestudio";
-      description = "The GuideStudio package to use.";
+      default = self.packages.${pkgs.stdenv.hostPlatform.system}.guide-studio;
+      defaultText = lib.literalExpression "inputs.guide-studio.packages.\${pkgs.stdenv.hostPlatform.system}.guide-studio";
+      description = "The Guide Studio package to use.";
     };
   };
 

@@ -193,7 +193,7 @@ export function createEditorWindow(): BrowserWindow {
 		alwaysOnTop: false,
 		skipTaskbar: false,
 		title: "Guide Studio",
-		backgroundColor: "#09090b",
+		backgroundColor: "#1C1917",
 		show: false, // shown via ready-to-show to avoid white flash on first load
 		webPreferences: {
 			preload: path.join(__dirname, "preload.mjs"),
@@ -221,7 +221,7 @@ export function createEditorWindow(): BrowserWindow {
 	// Inject dark background before any React paint so the sub-titlebar area never
 	// flashes white on a cold Vite load.
 	win.webContents.on("dom-ready", () => {
-		win.webContents.insertCSS("html, body, #root { background: #09090b !important; }").catch(() => {
+		win.webContents.insertCSS("html, body, #root { background: #1C1917 !important; }").catch(() => {
 			// Best-effort cosmetic; ignore if the page is mid-teardown.
 		});
 	});
@@ -354,7 +354,7 @@ export function createRecordingBarWindow(): BrowserWindow {
 		y: workAreaY + 8,
 		frame: false,
 		transparent: false,
-		backgroundColor: "#121216",
+		backgroundColor: "#1C1917",
 		resizable: false,
 		alwaysOnTop: true,
 		skipTaskbar: true,

@@ -44,7 +44,7 @@ import { patchWebmDurationOnDisk } from "../recording/webm-duration";
 import { registerNativeBridgeHandlers } from "./nativeBridge";
 import { RecordingStreamRegistry, registerRecordingStreamHandlers } from "./recordingStream";
 
-const PROJECT_FILE_EXTENSION = "guidestudio";
+const PROJECT_FILE_EXTENSION = "guide";
 export const SHORTCUTS_FILE = path.join(app.getPath("userData"), "shortcuts.json");
 const RECORDING_FILE_PREFIX = "recording-";
 const RECORDING_SESSION_SUFFIX = ".session.json";
@@ -611,7 +611,7 @@ function resolvePackagedResourcePath(...segments: string[]) {
 }
 
 function getNativeWindowsCaptureHelperCandidates() {
-	const envPath = process.env.GUIDESTUDIO_WGC_CAPTURE_EXE?.trim();
+	const envPath = process.env.GUIDE_WGC_CAPTURE_EXE?.trim();
 	const archTag = process.arch === "arm64" ? "win32-arm64" : "win32-x64";
 	return [
 		envPath,
@@ -647,9 +647,9 @@ async function findNativeWindowsCaptureHelperPath() {
 }
 
 function getNativeMacCaptureHelperCandidates() {
-	const envPath = process.env.GUIDESTUDIO_SCK_CAPTURE_EXE?.trim();
+	const envPath = process.env.GUIDE_SCK_CAPTURE_EXE?.trim();
 	const archTag = process.arch === "arm64" ? "darwin-arm64" : "darwin-x64";
-	const helperName = "guidestudio-screencapturekit-helper";
+	const helperName = "guide-screencapturekit-helper";
 	return [
 		envPath,
 		resolveUnpackedAppPath("electron", "native", "screencapturekit", "build", helperName),
@@ -1279,7 +1279,7 @@ export function registerIpcHandlers(
 			}
 
 			// Screen recording has no askForMediaAccess equivalent, so trigger the
-			// TCC prompt without opening GuideStudio's source selector above it.
+			// TCC prompt without opening Guide Studio's source selector above it.
 			if (status === "not-determined") {
 				const mainWin = getMainWindow();
 				if (mainWin && !mainWin.isDestroyed()) {
@@ -2633,7 +2633,7 @@ export function registerIpcHandlers(
 					defaultPath: path.join(RECORDINGS_DIR, defaultName),
 					filters: [
 						{
-							name: mainT("dialogs", "fileDialogs.guidestudioProject"),
+							name: mainT("dialogs", "fileDialogs.guideStudioProject"),
 							extensions: [PROJECT_FILE_EXTENSION],
 						},
 						{ name: "JSON", extensions: ["json"] },
@@ -2700,7 +2700,7 @@ export function registerIpcHandlers(
 					defaultPath: defaultDir,
 					filters: [
 						{
-							name: mainT("dialogs", "fileDialogs.guidestudioProject"),
+							name: mainT("dialogs", "fileDialogs.guideStudioProject"),
 							extensions: [PROJECT_FILE_EXTENSION],
 						},
 						{ name: "JSON", extensions: ["json"] },
@@ -2748,7 +2748,7 @@ export function registerIpcHandlers(
 			}
 			// Validate extension and readability
 			if (path.extname(filePath).toLowerCase() !== `.${PROJECT_FILE_EXTENSION}`) {
-				return { success: false, message: "Not an GuideStudio project file" };
+				return { success: false, message: "Not a Guide Studio project file" };
 			}
 			const stats = await fs.stat(filePath).catch(() => null);
 			if (!stats?.isFile()) {
@@ -2899,7 +2899,7 @@ export function registerIpcHandlers(
 		) => {
 			const { filePath, canceled } = await dialog.showSaveDialog({
 				title: "Save Diagnostic File",
-				defaultPath: `guidestudio-diagnostic-${Date.now()}.json`,
+				defaultPath: `guide-studio-diagnostic-${Date.now()}.json`,
 				filters: [{ name: "JSON", extensions: ["json"] }],
 			});
 

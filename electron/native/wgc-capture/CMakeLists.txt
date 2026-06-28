@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_LIBRARIES
   "kernel32.lib user32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib"
   CACHE STRING "" FORCE)
 
-project(guidestudio-wgc-capture LANGUAGES CXX)
+project(guide-wgc-capture LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

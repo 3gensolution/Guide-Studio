@@ -24,7 +24,7 @@ export function TutorialHelp() {
 					<span className="font-medium">{t("tutorial.triggerLabel")}</span>
 				</Button>
 			</DialogTrigger>
-			<DialogContent className="max-w-2xl bg-[#09090b] border-white/10 [&>button]:text-slate-400 [&>button:hover]:text-white">
+			<DialogContent className="max-w-2xl bg-[#1C1917] border-white/10 [&>button]:text-slate-400 [&>button:hover]:text-white">
 				<DialogHeader>
 					<DialogTitle className="text-xl font-semibold text-slate-200 flex items-center gap-2">
 						<Scissors className="w-5 h-5 text-[#ef4444]" /> {t("tutorial.title")}

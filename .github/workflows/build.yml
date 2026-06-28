@@ -145,7 +145,7 @@ jobs:
       - name: Build native macOS helpers
         run: npm run build:native:mac
         env:
-          GUIDESTUDIO_MAC_HELPER_ARCHS: ${{ matrix.arch }}
+          GUIDE_MAC_HELPER_ARCHS: ${{ matrix.arch }}
 
       # ─── Package with electron-builder ────────────────────────
       # electron-builder handles deep codesigning the .app bundle
@@ -244,7 +244,7 @@ jobs:
       - name: Upload notarized DMG
         uses: actions/upload-artifact@v4
         with:
-          name: guidestudio-mac-${{ matrix.arch }}
+          name: guide-studio-mac-${{ matrix.arch }}
           path: ${{ steps.dmg.outputs.dmg_path }}
           retention-days: 30
 

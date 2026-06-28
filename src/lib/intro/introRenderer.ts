@@ -28,10 +28,10 @@ const BACKGROUNDS: Record<
 	string,
 	{ type: "solid"; color: string } | { type: "gradient"; from: string; to: string }
 > = {
-	"brand-dark": { type: "solid", color: "#0a0a0f" },
+	"brand-dark": { type: "solid", color: "#171412" },
 	navy: { type: "solid", color: "#0f172a" },
 	"deep-purple": { type: "solid", color: "#1e1033" },
-	charcoal: { type: "solid", color: "#18181b" },
+	charcoal: { type: "solid", color: "#292524" },
 	slate: { type: "solid", color: "#1e293b" },
 	"gradient-blue": { type: "gradient", from: "#0f172a", to: "#1e3a5f" },
 	"gradient-green": { type: "gradient", from: "#0f172a", to: "#064e3b" },

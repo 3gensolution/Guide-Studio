@@ -23,8 +23,7 @@ const DURATION_MS = readPositiveIntEnv("CURSOR_TEST_DURATION_MS", 1800);
 const SCREEN_FRAME_INTERVAL_MS = readPositiveIntEnv("CURSOR_TEST_SCREEN_FRAME_INTERVAL_MS", 100);
 const READY_TIMEOUT_MS = readPositiveIntEnv("CURSOR_TEST_READY_TIMEOUT_MS", 5000);
 const OUTPUT_DIR =
-	process.env.CURSOR_TEST_OUTPUT_DIR ??
-	path.join(os.tmpdir(), `guidestudio-cursor-native-${Date.now()}`);
+	process.env.CURSOR_TEST_OUTPUT_DIR ?? path.join(os.tmpdir(), `guide-cursor-native-${Date.now()}`);
 
 if (process.platform !== "win32") {
 	console.error("This diagnostic is Windows-only.");
@@ -82,7 +81,7 @@ function runPowerShell(script) {
 function spawnPowerShell(script, { onStdout, onStderr } = {}) {
 	const scriptPath = path.join(
 		os.tmpdir(),
-		`guidestudio-powershell-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.ps1`,
+		`guide-powershell-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.ps1`,
 	);
 	fs.writeFileSync(scriptPath, script, "utf8");
 	const child = spawn(
@@ -129,7 +128,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
-public static class GuideStudioCursorDiagnosticInterop {
+public static class GuideCursorDiagnosticInterop {
     private const int WH_MOUSE_LL = 14;
     private const int WM_LBUTTONDOWN = 0x0201;
     private const int WM_LBUTTONUP = 0x0202;
@@ -251,20 +250,20 @@ public static class GuideStudioCursorDiagnosticInterop {
 Add-Type -TypeDefinition $source
 
 $standardCursors = @{
-    arrow = [GuideStudioCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32512))
-    text = [GuideStudioCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32513))
-    wait = [GuideStudioCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32514))
-    crosshair = [GuideStudioCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32515))
-    'up-arrow' = [GuideStudioCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32516))
-    'resize-nwse' = [GuideStudioCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32642))
-    'resize-nesw' = [GuideStudioCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32643))
-    'resize-ew' = [GuideStudioCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32644))
-    'resize-ns' = [GuideStudioCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32645))
-    move = [GuideStudioCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32646))
-    'not-allowed' = [GuideStudioCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32648))
-    pointer = [GuideStudioCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32649))
-    'app-starting' = [GuideStudioCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32650))
-    help = [GuideStudioCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32651))
+    arrow = [GuideCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32512))
+    text = [GuideCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32513))
+    wait = [GuideCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32514))
+    crosshair = [GuideCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32515))
+    'up-arrow' = [GuideCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32516))
+    'resize-nwse' = [GuideCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32642))
+    'resize-nesw' = [GuideCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32643))
+    'resize-ew' = [GuideCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32644))
+    'resize-ns' = [GuideCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32645))
+    move = [GuideCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32646))
+    'not-allowed' = [GuideCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32648))
+    pointer = [GuideCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32649))
+    'app-starting' = [GuideCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32650))
+    help = [GuideCursorDiagnosticInterop]::LoadCursor([IntPtr]::Zero, [IntPtr]::new(32651))
 }
 
 function Get-StandardCursorType($cursorHandle) {
@@ -342,13 +341,13 @@ function Get-CustomCursorType($bitmap, $hotspotX, $hotspotY) {
 }
 
 function Get-CursorAsset($cursorHandle, $cursorId) {
-    $copiedHandle = [GuideStudioCursorDiagnosticInterop]::CopyIcon($cursorHandle)
+    $copiedHandle = [GuideCursorDiagnosticInterop]::CopyIcon($cursorHandle)
     if ($copiedHandle -eq [IntPtr]::Zero) {
         return $null
     }
 
-    $iconInfo = New-Object GuideStudioCursorDiagnosticInterop+ICONINFO
-    $hasIconInfo = [GuideStudioCursorDiagnosticInterop]::GetIconInfo($copiedHandle, [ref]$iconInfo)
+    $iconInfo = New-Object GuideCursorDiagnosticInterop+ICONINFO
+    $hasIconInfo = [GuideCursorDiagnosticInterop]::GetIconInfo($copiedHandle, [ref]$iconInfo)
 
     try {
         $icon = [System.Drawing.Icon]::FromHandle($copiedHandle)
@@ -385,29 +384,29 @@ function Get-CursorAsset($cursorHandle, $cursorId) {
     finally {
         if ($hasIconInfo) {
             if ($iconInfo.hbmMask -ne [IntPtr]::Zero) {
-                [GuideStudioCursorDiagnosticInterop]::DeleteObject($iconInfo.hbmMask) | Out-Null
+                [GuideCursorDiagnosticInterop]::DeleteObject($iconInfo.hbmMask) | Out-Null
             }
             if ($iconInfo.hbmColor -ne [IntPtr]::Zero) {
-                [GuideStudioCursorDiagnosticInterop]::DeleteObject($iconInfo.hbmColor) | Out-Null
+                [GuideCursorDiagnosticInterop]::DeleteObject($iconInfo.hbmColor) | Out-Null
             }
         }
-        [GuideStudioCursorDiagnosticInterop]::DestroyIcon($copiedHandle) | Out-Null
+        [GuideCursorDiagnosticInterop]::DestroyIcon($copiedHandle) | Out-Null
     }
 }
 
-[GuideStudioCursorDiagnosticInterop]::InstallMouseHook() | Out-Null
-[GuideStudioCursorDiagnosticInterop]::GetAsyncKeyState(0x01) | Out-Null
+[GuideCursorDiagnosticInterop]::InstallMouseHook() | Out-Null
+[GuideCursorDiagnosticInterop]::GetAsyncKeyState(0x01) | Out-Null
 Write-JsonLine @{ type = 'ready'; timestampMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() }
 
 $lastCursorId = $null
 $screenBounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
 while ($true) {
     [System.Windows.Forms.Application]::DoEvents()
-    $mouseEvents = [GuideStudioCursorDiagnosticInterop]::ConsumeMouseButtonEvents()
-    $cursorInfo = New-Object GuideStudioCursorDiagnosticInterop+CURSORINFO
-    $cursorInfo.cbSize = [Runtime.InteropServices.Marshal]::SizeOf([type][GuideStudioCursorDiagnosticInterop+CURSORINFO])
+    $mouseEvents = [GuideCursorDiagnosticInterop]::ConsumeMouseButtonEvents()
+    $cursorInfo = New-Object GuideCursorDiagnosticInterop+CURSORINFO
+    $cursorInfo.cbSize = [Runtime.InteropServices.Marshal]::SizeOf([type][GuideCursorDiagnosticInterop+CURSORINFO])
 
-    if (-not [GuideStudioCursorDiagnosticInterop]::GetCursorInfo([ref]$cursorInfo)) {
+    if (-not [GuideCursorDiagnosticInterop]::GetCursorInfo([ref]$cursorInfo)) {
         Write-JsonLine @{ type = 'error'; timestampMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds(); message = 'GetCursorInfo failed' }
         Start-Sleep -Milliseconds ${SAMPLE_INTERVAL_MS}
         continue
@@ -416,7 +415,7 @@ while ($true) {
     $visible = ($cursorInfo.flags -band 1) -ne 0
     $cursorId = if ($cursorInfo.hCursor -eq [IntPtr]::Zero) { $null } else { ('0x{0:X}' -f $cursorInfo.hCursor.ToInt64()) }
     $cursorType = Get-StandardCursorType $cursorInfo.hCursor
-    $leftButtonState = [GuideStudioCursorDiagnosticInterop]::GetAsyncKeyState(0x01)
+    $leftButtonState = [GuideCursorDiagnosticInterop]::GetAsyncKeyState(0x01)
     $leftButtonDown = ($leftButtonState -band 0x8000) -ne 0
     $leftButtonPressed = ($mouseEvents.LeftDownCount -gt 0) -or (($leftButtonState -band 0x0001) -ne 0)
     $leftButtonReleased = $mouseEvents.LeftUpCount -gt 0
@@ -469,7 +468,7 @@ $source = @"
 using System.Runtime.InteropServices;
 using System;
 
-public static class GuideStudioMouseDiagnosticInterop {
+public static class GuideMouseDiagnosticInterop {
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool SetCursorPos(int X, int Y);
@@ -493,11 +492,11 @@ for ($i = 0; $i -lt ${steps}; $i++) {
 
 for ($i = 0; $i -lt $points.Count; $i++) {
     $point = $points[$i]
-    [GuideStudioMouseDiagnosticInterop]::SetCursorPos($point.x, $point.y) | Out-Null
+    [GuideMouseDiagnosticInterop]::SetCursorPos($point.x, $point.y) | Out-Null
     if ($i -eq [int]([Math]::Floor($points.Count / 2))) {
-        [GuideStudioMouseDiagnosticInterop]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+        [GuideMouseDiagnosticInterop]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
         Start-Sleep -Milliseconds 12
-        [GuideStudioMouseDiagnosticInterop]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+        [GuideMouseDiagnosticInterop]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
     }
     Start-Sleep -Milliseconds ${stepMs}
 }
@@ -669,7 +668,7 @@ function buildVisualReportHtml(report, recordingData) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GuideStudio native cursor diagnostic</title>
+<title>Guide Studio native cursor diagnostic</title>
 <style>
 body { margin: 0; background: #111; color: #eee; font-family: Arial, sans-serif; }
 main { max-width: 1180px; margin: 0 auto; padding: 24px; }
@@ -686,7 +685,7 @@ canvas { width: 100%; height: auto; background: #181818; border: 1px solid #333;
 </head>
 <body>
 <main>
-<h1>GuideStudio native cursor diagnostic</h1>
+<h1>Guide Studio native cursor diagnostic</h1>
 <div class="metrics">
 <div class="metric"><b>${report.sampleCount}</b>samples</div>
 <div class="metric"><b>${report.assetCount}</b>assets</div>
@@ -918,7 +917,7 @@ function buildRealCaptureHtml(report, recordingData, screenFrames) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GuideStudio native cursor real capture diagnostic</title>
+<title>Guide Studio native cursor real capture diagnostic</title>
 <style>
 body { margin: 0; background: #080808; color: #eee; font-family: Arial, sans-serif; }
 main { max-width: 1180px; margin: 0 auto; padding: 20px; }

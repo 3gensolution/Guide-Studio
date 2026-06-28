@@ -230,7 +230,7 @@ describe("wallpaper legacy normalization", () => {
 
 	it("rewrites Windows-style file URLs with drive letter", () => {
 		const normalized = normalizeProjectEditor({
-			wallpaper: "file:///C:/Users/me/guidestudio/resources/wallpapers/wallpaper2.jpg",
+			wallpaper: "file:///C:/Users/me/guide-studio/resources/wallpapers/wallpaper2.jpg",
 		});
 		expect(normalized.wallpaper).toBe("/wallpapers/wallpaper2.jpg");
 	});

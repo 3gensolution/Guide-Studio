@@ -1,5 +1,6 @@
 import { Download, Loader2, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { useScopedT } from "@/contexts/I18nContext";
 import type { ExportProgress } from "@/lib/exporter";
@@ -85,19 +86,22 @@ export function ExportDialog({
 		return t("export.exportingFormat", { format: formatLabel });
 	};
 
-	return (
+	const dialog = (
 		<>
 			<div
-				className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 animate-in fade-in duration-200"
+				className="fixed inset-0 bg-black/80 backdrop-blur-md z-[9998] animate-in fade-in duration-200"
 				onClick={isExporting ? undefined : onClose}
 			/>
-			<div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[60] bg-[#09090b] rounded-2xl shadow-2xl border border-white/10 p-8 w-[90vw] max-w-md animate-in zoom-in-95 duration-200">
+			<div
+				className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[9999] bg-[#1C1917] rounded-2xl shadow-2xl border border-white/10 p-8 w-[90vw] max-w-md animate-in zoom-in-95 duration-200"
+				onClick={(e) => e.stopPropagation()}
+			>
 				<div className="flex items-center justify-between mb-6">
 					<div className="flex items-center gap-4">
 						{showSuccess ? (
 							<>
-								<div className="w-12 h-12 rounded-full bg-[#00B8FF]/20 flex items-center justify-center ring-1 ring-[#00B8FF]/50">
-									<Download className="w-6 h-6 text-[#00B8FF]" />
+								<div className="w-12 h-12 rounded-full bg-[#F59E0B]/20 flex items-center justify-center ring-1 ring-[#F59E0B]/50">
+									<Download className="w-6 h-6 text-[#F59E0B]" />
 								</div>
 								<div className="flex flex-col gap-2">
 									<span className="text-xl font-bold text-slate-200 block">
@@ -125,8 +129,8 @@ export function ExportDialog({
 						) : (
 							<>
 								{isExporting ? (
-									<div className="w-12 h-12 rounded-full bg-[#00B8FF]/10 flex items-center justify-center">
-										<Loader2 className="w-6 h-6 text-[#00B8FF] animate-spin" />
+									<div className="w-12 h-12 rounded-full bg-[#F59E0B]/10 flex items-center justify-center">
+										<Loader2 className="w-6 h-6 text-[#F59E0B] animate-spin" />
 									</div>
 								) : (
 									<div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
@@ -162,6 +166,14 @@ export function ExportDialog({
 								{error}
 							</p>
 						</div>
+						<div className="mt-4">
+							<Button
+								onClick={onClose}
+								className="w-full py-5 bg-white/10 text-slate-200 hover:bg-white/20 rounded-xl"
+							>
+								Close
+							</Button>
+						</div>
 					</div>
 				)}
 
@@ -191,16 +203,15 @@ export function ExportDialog({
 							</div>
 							<div className="h-2 bg-white/5 rounded-full overflow-hidden border border-white/5">
 								{isCompiling || isFinalizing ? (
-									// Real progress if we have it, otherwise an indeterminate bar.
 									renderProgress !== undefined && renderProgress > 0 ? (
 										<div
-											className="h-full bg-[#00B8FF] shadow-[0_0_20px_rgba(0,184,255,0.4)] transition-all duration-300 ease-out"
+											className="h-full bg-[#F59E0B] shadow-[0_0_20px_rgba(245,158,11,0.4)] transition-all duration-300 ease-out"
 											style={{ width: `${renderProgress}%` }}
 										/>
 									) : (
 										<div className="h-full w-full relative overflow-hidden">
 											<div
-												className="absolute h-full w-1/3 bg-[#00B8FF] shadow-[0_0_20px_rgba(0,184,255,0.4)]"
+												className="absolute h-full w-1/3 bg-[#F59E0B] shadow-[0_0_20px_rgba(245,158,11,0.4)]"
 												style={{
 													animation: "indeterminate 1.5s ease-in-out infinite",
 												}}
@@ -215,33 +226,23 @@ export function ExportDialog({
 									)
 								) : (
 									<div
-										className="h-full bg-[#00B8FF] shadow-[0_0_20px_rgba(0,184,255,0.4)] transition-all duration-300 ease-out"
+										className="h-full bg-[#F59E0B] shadow-[0_0_20px_rgba(245,158,11,0.4)] transition-all duration-300 ease-out"
 										style={{ width: `${Math.min(progress.percentage, 100)}%` }}
 									/>
 								)}
 							</div>
 						</div>
 
-						<div className="grid grid-cols-2 gap-4">
-							<div className="bg-white/5 rounded-xl p-3 border border-white/5">
-								<div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">
-									{isCompiling || isFinalizing ? t("export.status") : t("export.format")}
-								</div>
-								<div className="text-slate-200 font-medium text-sm">
-									{isFinalizing && exportFormat === "mp4"
-										? t("export.finalizing")
-										: isCompiling || isFinalizing
-											? t("export.compilingStatus")
-											: formatLabel}
-								</div>
+						<div className="bg-white/5 rounded-xl p-3 border border-white/5">
+							<div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">
+								{isCompiling || isFinalizing ? t("export.status") : t("export.format")}
 							</div>
-							<div className="bg-white/5 rounded-xl p-3 border border-white/5">
-								<div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">
-									{t("export.frames")}
-								</div>
-								<div className="text-slate-200 font-medium text-sm">
-									{progress.currentFrame} / {progress.totalFrames}
-								</div>
+							<div className="text-slate-200 font-medium text-sm">
+								{isFinalizing && exportFormat === "mp4"
+									? t("export.finalizing")
+									: isCompiling || isFinalizing
+										? t("export.compilingStatus")
+										: formatLabel}
 							</div>
 						</div>
 
@@ -269,4 +270,6 @@ export function ExportDialog({
 			</div>
 		</>
 	);
+
+	return createPortal(dialog, document.body);
 }

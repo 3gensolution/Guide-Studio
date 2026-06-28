@@ -14,6 +14,7 @@ import type {
 	SceneLayer,
 	ShapeContent,
 	TextContent,
+	VideoContent,
 } from "./types";
 
 // Cache loaded images by src to avoid reloading every frame
@@ -50,7 +51,7 @@ function renderBackground(
 		}
 	}
 	// Solid color fallback
-	ctx.fillStyle = background || "#09090b";
+	ctx.fillStyle = background || "#1C1917";
 	ctx.fillRect(0, 0, width, height);
 }
 
@@ -433,9 +434,9 @@ export function renderScene(
 				renderImageLayer(
 					ctx,
 					{
-						src: (layer.content as any).src,
-						fit: (layer.content as any).fit,
-						borderRadius: (layer.content as any).borderRadius,
+						src: (layer.content as VideoContent).src,
+						fit: (layer.content as VideoContent).fit,
+						borderRadius: (layer.content as VideoContent).borderRadius,
 						shadow: false,
 					} as ImageContent,
 					layerX,

@@ -17,7 +17,11 @@ import { BackgroundLoadError } from "@/lib/wallpaper";
 import type { CursorRecordingData } from "@/native/contracts";
 import { getPlatform } from "@/utils/platformUtils";
 import { AudioProcessor } from "./audioEncoder";
-import { getBackpressureLimits, selectBackpressureProfile } from "./backpressure";
+import {
+	getBackpressureLimits,
+	getEncoderPreferencesForPipeline,
+	selectBackpressureProfile,
+} from "./backpressure";
 import { FrameRenderer } from "./frameRenderer";
 import { VideoMuxer } from "./muxer";
 import { StreamingVideoDecoder } from "./streamingDecoder";
@@ -26,6 +30,7 @@ import type {
 	EncodingMode,
 	ExportConfig,
 	ExportMetrics,
+	ExportPipelineModel,
 	ExportProgress,
 	ExportResult,
 } from "./types";
@@ -72,6 +77,7 @@ export interface VideoExporterConfig extends ExportConfig {
 	cursorClickTimestamps?: number[];
 	captionTrack?: CaptionTrack | null;
 	captionStyle?: CaptionStyle;
+	pipelineModel?: ExportPipelineModel;
 	onProgress?: (progress: ExportProgress) => void;
 }
 
@@ -182,11 +188,16 @@ export class VideoExporter {
 
 	async export(): Promise<ExportResult> {
 		const encoderPreferences = this.getEncoderPreferences();
+
+		// Probe encoder support upfront so we skip encoders that the system
+		// flat-out doesn't support (avoids the common double-render case).
+		// Returns an ordered list: resolved first, then remaining fallbacks.
+		const orderedPreferences = await this.resolveEncoderOrder(encoderPreferences);
 		let lastError: Error | null = null;
 
-		for (const encoderPreference of encoderPreferences) {
+		for (const preference of orderedPreferences) {
 			try {
-				return await this.exportWithEncoderPreference(encoderPreference);
+				return await this.exportWithEncoderPreference(preference);
 			} catch (error) {
 				const normalizedError = error instanceof Error ? error : new Error(String(error));
 				lastError = normalizedError;
@@ -199,10 +210,11 @@ export class VideoExporter {
 					throw normalizedError;
 				}
 
-				if (encoderPreferences.length > 1) {
+				// If there's another preference to try, log and continue.
+				if (orderedPreferences.indexOf(preference) < orderedPreferences.length - 1) {
 					console.warn(
-						`[VideoExporter] ${encoderPreference} export attempt failed:`,
-						normalizedError,
+						`[VideoExporter] ${preference} encoder failed at runtime, falling back:`,
+						normalizedError.message,
 					);
 				}
 			} finally {
@@ -214,6 +226,57 @@ export class VideoExporter {
 			success: false,
 			error: lastError?.message || "Export failed",
 		};
+	}
+
+	/**
+	 * Probes each encoder preference using `VideoEncoder.isConfigSupported()`
+	 * and returns them sorted: supported encoders first, unsupported last.
+	 *
+	 * This eliminates the common double-render case (hardware not supported
+	 * at all) while still allowing a runtime fallback if the chosen encoder
+	 * stalls or crashes during the actual export (e.g. macOS VideoToolbox
+	 * reporting support but hanging during flush).
+	 */
+	private async resolveEncoderOrder(
+		preferences: HardwareAcceleration[],
+	): Promise<HardwareAcceleration[]> {
+		const mode = this.config.encodingMode || "quality";
+		const profile = ENCODING_MODE_PROFILES[mode];
+		const effectiveBitrate = Math.max(2_000_000, this.config.bitrate);
+
+		const probeConfig: VideoEncoderConfig = {
+			codec: this.config.codec || "avc1.640033",
+			width: this.config.width,
+			height: this.config.height,
+			bitrate: effectiveBitrate,
+			framerate: this.config.frameRate,
+			latencyMode: profile.latencyMode,
+			bitrateMode: "variable",
+			hardwareAcceleration: preferences[0],
+		};
+
+		const supported: HardwareAcceleration[] = [];
+		const unsupported: HardwareAcceleration[] = [];
+
+		for (const preference of preferences) {
+			try {
+				probeConfig.hardwareAcceleration = preference;
+				const support = await VideoEncoder.isConfigSupported(probeConfig);
+				if (support.supported) {
+					supported.push(preference);
+				} else {
+					unsupported.push(preference);
+				}
+			} catch {
+				unsupported.push(preference);
+			}
+		}
+
+		const ordered = [...supported, ...unsupported];
+		console.log(
+			`[VideoExporter] Encoder order: ${ordered.map((p) => (p === "prefer-hardware" ? "hw" : "sw")).join(" → ")} (${supported.length} passed probe)`,
+		);
+		return ordered;
 	}
 
 	private async exportWithEncoderPreference(
@@ -822,10 +885,11 @@ export class VideoExporter {
 	}
 
 	private getEncoderPreferences(): HardwareAcceleration[] {
-		if (typeof navigator !== "undefined" && /\bWindows\b/i.test(navigator.userAgent)) {
-			return ["prefer-software", "prefer-hardware"];
-		}
-		return ["prefer-hardware", "prefer-software"];
+		const pipelineModel = this.config.pipelineModel || "legacy";
+		console.log(
+			`[VideoExporter] Pipeline model: ${pipelineModel === "modern" ? "Lightning (Beta)" : "Legacy"}`,
+		);
+		return getEncoderPreferencesForPipeline(pipelineModel);
 	}
 
 	private async trySourceCopyFastPath(videoInfo: { width: number; height: number }) {

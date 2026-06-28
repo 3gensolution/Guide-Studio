@@ -1,11 +1,11 @@
 # Windows Native Recorder Roadmap
 
-GuideStudio's Windows recorder should be owned by one native backend. Electron capture can remain available for non-Windows platforms and temporary developer diagnostics, but Windows production recording should not silently fall back to `getDisplayMedia` / `MediaRecorder`.
+Guide Studio's Windows recorder should be owned by one native backend. Electron capture can remain available for non-Windows platforms and temporary developer diagnostics, but Windows production recording should not silently fall back to `getDisplayMedia` / `MediaRecorder`.
 
 ## Goals
 
 - Capture displays and windows through Windows Graphics Capture (WGC).
-- Render the native Windows cursor as GuideStudio's high-quality scalable cursor overlay.
+- Render the native Windows cursor as Guide Studio's high-quality scalable cursor overlay.
 - Capture system audio through WASAPI loopback.
 - Capture microphone audio through WASAPI.
 - Mix system audio and microphone audio into the primary screen recording.
@@ -141,11 +141,11 @@ SSOT rules for this phase:
 
 ### 3. WASAPI Microphone
 
-Status: initial implementation in progress. The helper can open the default WASAPI capture endpoint, apply the GuideStudio microphone gain, encode mic-only audio, and mix system loopback plus microphone through a single queued `AudioMixer` timeline when both endpoints expose the same runtime format. Audio endpoints are warmed before WGC starts, the mixer drops pre-roll and begins its paced timeline on the first encoded video frame, then cuts queued tail audio on stop so the MP4 does not drift past the video. Browser `deviceId` to MMDevice id mapping, resampling between mismatched endpoint formats, and drift correction remain follow-up hardening work.
+Status: initial implementation in progress. The helper can open the default WASAPI capture endpoint, apply the Guide Studio microphone gain, encode mic-only audio, and mix system loopback plus microphone through a single queued `AudioMixer` timeline when both endpoints expose the same runtime format. Audio endpoints are warmed before WGC starts, the mixer drops pre-roll and begins its paced timeline on the first encoded video frame, then cuts queued tail audio on stop so the MP4 does not drift past the video. Browser `deviceId` to MMDevice id mapping, resampling between mismatched endpoint formats, and drift correction remain follow-up hardening work.
 
 - Add microphone device enumeration and stable device-id mapping.
 - Capture selected/default microphone through WASAPI.
-- Apply GuideStudio's current mic gain policy.
+- Apply Guide Studio's current mic gain policy.
 - Mix microphone and system audio before AAC encoding.
 
 Acceptance:
@@ -229,7 +229,7 @@ What has already been tried:
 Current diagnosis:
 
 - The diagnostic can observe synthetic click events, but this has not translated into a visible `Click Bounce` effect in the real packaged app.
-- The test currently proves that some click metadata can be recorded, not that the full GuideStudio record -> preview -> export path displays a bounce at the expected time.
+- The test currently proves that some click metadata can be recorded, not that the full Guide Studio record -> preview -> export path displays a bounce at the expected time.
 - The current native implementation may be animating from metadata that is not present in the real recording session, may be using the wrong timestamp origin, or may be applying a scale change too subtle to notice on the DOM/native cursor path.
 
 Next investigation when resumed:

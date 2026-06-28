@@ -1056,7 +1056,7 @@ export const Underline: React.FC<{
 // ── GradientText ────────────────────────────────────────────────────────
 
 /** Animated gradient/shimmer text — Apple/Linear style */
-export const GradientText: React.FC<any> = (props: any) => {
+export const GradientText: React.FC<Record<string, unknown>> = (props: Record<string, unknown>) => {
 	const {
 		text,
 		value,
@@ -2176,7 +2176,7 @@ export const GlowFrame: React.FC<{
 	perspectiveY?: number;
 }> = ({
 	children,
-	colors = ["#ff006e", "#ff6b35", "#a855f7"],
+	colors = ["#ff006e", "#ff6b35", "#F97316"],
 	intensity = 1,
 	padding = 40,
 	borderRadius = 20,
@@ -2253,7 +2253,7 @@ export const TypewriterInput: React.FC<{
 	placeholder,
 	width = 900,
 	bg = "#0a0a0a",
-	glowColors = ["#ff006e", "#ff6b35", "#a855f7"],
+	glowColors = ["#ff006e", "#ff6b35", "#F97316"],
 	charsPerFrame = 0.5,
 	delay = 0,
 	showCursor = true,
@@ -2366,7 +2366,7 @@ export const FloatingOrbs: React.FC<{
 	blurAmount = 120,
 }) => {
 	const frame = useCurrentFrame();
-	const isPreview = (window as any).__STUDIO_PREVIEW_MODE__;
+	const isPreview = (window as unknown as Record<string, unknown>).__STUDIO_PREVIEW_MODE__;
 	const effectiveCount = isPreview ? Math.min(count, 2) : count;
 	const effectiveBlur = isPreview ? Math.round(blurAmount * 0.6) : blurAmount;
 	const orbs = Array.from({ length: Math.min(effectiveCount, 5) }, (_, i) => {
@@ -2545,7 +2545,7 @@ export const AnimatedBackground: React.FC<{
 	intensity?: number;
 }> = ({ variant, colors = ["#2563eb", "#7c3aed", "#06b6d4", "#ec4899"], intensity = 1 }) => {
 	const frame = useCurrentFrame();
-	const isPreview = (window as any).__STUDIO_PREVIEW_MODE__;
+	const isPreview = (window as unknown as Record<string, unknown>).__STUDIO_PREVIEW_MODE__;
 	if (isPreview) intensity = Math.min(intensity, 0.4);
 
 	if (variant === "none") return null;
@@ -3379,7 +3379,7 @@ export const ChatMessageFlow: React.FC<{
 		"#f59e0b",
 		"#10b981",
 		"#3b82f6",
-		"#8b5cf6",
+		"#F43F5E",
 		"#ec4899",
 		"#14b8a6",
 	];
@@ -3549,7 +3549,9 @@ export const BackgroundVideo: React.FC<{
 				.then(() => {
 					playingRef.current = true;
 				})
-				.catch(() => {});
+				.catch(() => {
+					/* intentional no-op */
+				});
 			return;
 		}
 
@@ -3558,7 +3560,10 @@ export const BackgroundVideo: React.FC<{
 		const drift = Math.abs(video.currentTime - targetTime);
 		if (drift > 1.5) {
 			video.currentTime = targetTime;
-			if (video.paused) video.play().catch(() => {});
+			if (video.paused)
+				video.play().catch(() => {
+					/* intentional no-op */
+				});
 		}
 	});
 

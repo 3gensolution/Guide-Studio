@@ -249,7 +249,9 @@ describe("BackgroundLoadError", () => {
 	});
 
 	it("displayUrl hides parent directories to avoid leaking PII", () => {
-		const err = new BackgroundLoadError("file:///home/enrique/projects/guidestudio/wallpaper1.jpg");
+		const err = new BackgroundLoadError(
+			"file:///home/enrique/projects/guide-studio/wallpaper1.jpg",
+		);
 		expect(err.displayUrl).toBe("wallpaper1.jpg");
 	});
 

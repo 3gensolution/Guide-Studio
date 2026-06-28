@@ -127,7 +127,7 @@ const isMac = process.platform === "darwin";
 const trayIconSize = isMac ? 16 : 24;
 
 // Tray Icons
-const defaultTrayIcon = getTrayIcon("guidestudio.png", trayIconSize);
+const defaultTrayIcon = getTrayIcon("guide-logo.png", trayIconSize);
 const recordingTrayIcon = getTrayIcon("rec-button.png", trayIconSize);
 
 /** Returns the focused editor window, or any open editor as a fallback,
@@ -234,7 +234,9 @@ function buildOpenWindowMenuItems(): Electron.MenuItemConstructorOptions[] {
 }
 
 function triggerManualUpdateCheck() {
-	checkForUpdates({ manual: true }).catch(() => {});
+	checkForUpdates({ manual: true }).catch(() => {
+		/* intentional no-op */
+	});
 }
 
 function handleChannelSelect(channel: UpdateChannel) {
@@ -253,7 +255,7 @@ function handleChannelSelect(channel: UpdateChannel) {
 			})
 			.then((result) => {
 				if (result.response === 1) {
-					shell.openExternal("https://getguidestudio.com/pro");
+					shell.openExternal("https://guidestudio.app/pro");
 				}
 			});
 		// Rebuild menu so the checkmark stays on "Stable".
@@ -261,7 +263,9 @@ function handleChannelSelect(channel: UpdateChannel) {
 		return;
 	}
 	setUpdateChannel(channel);
-	setSetting("updateChannel", channel).catch(() => {});
+	setSetting("updateChannel", channel).catch(() => {
+		/* intentional no-op */
+	});
 	setupApplicationMenu();
 }
 
@@ -498,11 +502,11 @@ function setupApplicationMenu() {
 				{ type: "separator" },
 				{
 					label: "Documentation",
-					click: () => shell.openExternal("https://github.com/guidestudioapp/guidestudio#readme"),
+					click: () => shell.openExternal("https://guidestudio.app/docs"),
 				},
 				{
 					label: "Report a Bug",
-					click: () => shell.openExternal("https://github.com/guidestudioapp/guidestudio/issues"),
+					click: () => shell.openExternal("https://guidestudio.app/support"),
 				},
 				{ type: "separator" },
 				{ role: "toggleDevTools" },
@@ -527,15 +531,13 @@ function setupApplicationMenu() {
 											detail:
 												"AI-powered screen recording and editing.\n\n" +
 												`Version ${app.getVersion()}\n` +
-												"https://getguidestudio.com",
-											buttons: ["OK", "Visit Website", "View on GitHub"],
+												"https://guidestudio.app",
+											buttons: ["OK", "Visit Website"],
 											defaultId: 0,
 										})
 										.then((result) => {
 											if (result.response === 1) {
-												shell.openExternal("https://getguidestudio.com");
-											} else if (result.response === 2) {
-												shell.openExternal("https://github.com/guidestudioapp/guidestudio");
+												shell.openExternal("https://guidestudio.app");
 											}
 										});
 								},
@@ -1075,7 +1077,7 @@ app.whenReady().then(async () => {
 		callback(allowed.includes(permission));
 	});
 
-	// GuideStudio display media request handler (source selector flow)
+	// Display media request handler (source selector flow)
 	session.defaultSession.setDisplayMediaRequestHandler(
 		(request, callback) => {
 			const source = getSelectedDesktopSource();
@@ -1137,7 +1139,7 @@ app.whenReady().then(async () => {
 	registerDemoHandlers(getFocusedEditorWindow);
 
 	// Core IPC handlers (sources, recording, file ops, etc.)
-	// Uses the GuideStudio 8-param signature that supports HUD overlay,
+	// Uses the 8-param signature that supports HUD overlay,
 	// countdown overlay, and source selector windows.
 	registerIpcHandlers(
 		createEditorWindowWrapper,

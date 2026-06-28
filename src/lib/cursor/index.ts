@@ -1,7 +1,7 @@
 // Guide Studio cursor modules
 export type { ClickRingState } from "./clickRing";
 export { ClickRingAnimation, ClickRingPool } from "./clickRing";
-// GuideStudio cursor modules
+// Cursor path smoothing modules
 export type { SmoothedCursorPath, SmoothedCursorPosition } from "./cursorPathSmoothing";
 export { getSmoothedCursorPath } from "./cursorPathSmoothing";
 export type { RenderCursorOptions } from "./cursorRenderer";

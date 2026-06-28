@@ -605,7 +605,7 @@ export function AIChatSidebar({
 	);
 
 	return (
-		<div className="h-full flex flex-col bg-[#09090b] rounded-b-2xl border border-t-0 border-white/5 shadow-lg overflow-hidden">
+		<div className="h-full flex flex-col bg-[#1C1917] rounded-b-2xl border border-t-0 border-white/5 shadow-lg overflow-hidden">
 			{/* Header */}
 			<div className="flex items-center gap-2 px-3 py-2.5 border-b border-white/5">
 				<MessageSquare size={14} className="text-[#2563eb]" />

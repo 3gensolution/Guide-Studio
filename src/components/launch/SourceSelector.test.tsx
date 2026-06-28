@@ -18,10 +18,10 @@ vi.mock("@/contexts/I18nContext", () => ({
 			if (key === "sourceSelector.loading") return "Loading sources...";
 			if (key === "sourceSelector.emptyTitle") return "No screens or windows found";
 			if (key === "sourceSelector.emptyDescription") {
-				return "If you just granted screen recording permission, reload this picker. On macOS you may need to reopen GuideStudio.";
+				return "If you just granted screen recording permission, reload this picker. On macOS you may need to reopen Guide Studio.";
 			}
 			if (key === "sourceSelector.loadFailedDescription") {
-				return "GuideStudio could not load capture sources. Reload this picker and try again.";
+				return "Guide Studio could not load capture sources. Reload this picker and try again.";
 			}
 			if (key === "sourceSelector.screens") return `Screens (${vars?.count ?? "0"})`;
 			if (key === "sourceSelector.windows") return `Windows (${vars?.count ?? "0"})`;

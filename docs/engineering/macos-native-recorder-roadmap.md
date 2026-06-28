@@ -1,13 +1,13 @@
 # macOS Native Recorder Roadmap
 
-GuideStudio's macOS recorder should follow the same architecture boundaries as the Windows native recorder: Electron owns session orchestration and persistence, while a platform-native helper owns capture, timing, encoding, and platform-specific permissions.
+Guide Studio's macOS recorder should follow the same architecture boundaries as the Windows native recorder: Electron owns session orchestration and persistence, while a platform-native helper owns capture, timing, encoding, and platform-specific permissions.
 
 This work is intentionally scoped as a macOS-only port. Windows native capture remains owned by the WGC helper, and Linux remains on the existing Electron path.
 
 ## Goals
 
 - Capture displays and windows through ScreenCaptureKit.
-- Exclude the real system cursor during capture when using the editable GuideStudio cursor overlay.
+- Exclude the real system cursor during capture when using the editable Guide Studio cursor overlay.
 - Preserve the current high-quality cursor overlay path in preview and export.
 - Capture macOS system audio through ScreenCaptureKit on supported macOS versions.
 - Capture microphone audio through the same native timing domain where the OS supports it, or through an explicit companion path until it can be moved into the helper.
@@ -89,8 +89,8 @@ The helper receives a single JSON argument:
     "mode": "editable-overlay"
   },
   "outputs": {
-    "screenPath": "/Users/me/Library/Application Support/guidestudio/recordings/recording-123.mp4",
-    "manifestPath": "/Users/me/Library/Application Support/guidestudio/recordings/recording-123.session.json"
+    "screenPath": "/Users/me/Library/Application Support/guide-studio/recordings/recording-123.mp4",
+    "manifestPath": "/Users/me/Library/Application Support/guide-studio/recordings/recording-123.session.json"
   }
 }
 ```
@@ -160,7 +160,7 @@ Acceptance:
 
 - Resolve the selected microphone device from the renderer-provided browser `deviceId` and user-visible label.
 - Capture microphone audio in the helper timing domain.
-- Apply GuideStudio microphone gain policy.
+- Apply Guide Studio microphone gain policy.
 - Mix system and microphone audio before final AAC output.
 
 Acceptance:

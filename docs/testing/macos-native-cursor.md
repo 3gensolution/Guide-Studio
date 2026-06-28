@@ -1,10 +1,10 @@
 # macOS native cursor test pipeline
 
-This document covers manual and diagnostic testing for macOS native cursor capture — the path that records real system cursor bitmaps via `NSCursor.currentSystem` and surfaces them through the GuideStudio editor and export pipeline.
+This document covers manual and diagnostic testing for macOS native cursor capture — the path that records real system cursor bitmaps via `NSCursor.currentSystem` and surfaces them through the Guide Studio editor and export pipeline.
 
 ## How the macOS cursor helper works
 
-The helper binary (`guidestudio-macos-cursor-helper`) runs as a child process of Electron during recording. It:
+The helper binary (`guide-macos-cursor-helper`) runs as a child process of Electron during recording. It:
 
 - polls `NSCursor.currentSystem` at the configured sample interval
 - converts each cursor image to PNG and computes a SHA-256 content hash as a stable asset id
@@ -28,7 +28,7 @@ Each sample line is newline-delimited JSON:
 npm run build:native:mac
 ```
 
-This builds both Swift helpers (`guidestudio-screencapturekit-helper` and `guidestudio-macos-cursor-helper`) and copies them to:
+This builds both Swift helpers (`guide-screencapturekit-helper` and `guide-macos-cursor-helper`) and copies them to:
 
 - `electron/native/screencapturekit/build/` — used by the local dev server
 - `electron/native/bin/darwin-arm64/` or `darwin-x64/` — used by packaged builds
@@ -45,7 +45,7 @@ sudo xcodebuild -license accept
 You can run the cursor helper standalone to inspect its raw output before involving the full app:
 
 ```bash
-BIN=electron/native/screencapturekit/build/guidestudio-macos-cursor-helper
+BIN=electron/native/screencapturekit/build/guide-macos-cursor-helper
 ("$BIN" '{"sampleIntervalMs":100}' & PID=$!; sleep 2; kill $PID) | head -20
 ```
 
@@ -69,7 +69,7 @@ Move the cursor over a text input while the helper is running and check that a n
 ## Point the app at a custom helper binary
 
 ```bash
-export GUIDESTUDIO_MAC_CURSOR_HELPER_EXE=/path/to/guidestudio-macos-cursor-helper
+export GUIDE_MAC_CURSOR_HELPER_EXE=/path/to/guide-macos-cursor-helper
 npm run dev
 ```
 
@@ -117,11 +117,11 @@ After granting either permission in System Settings, **fully quit and relaunch**
 - [ ] Remove **both** build-output copies of the helper binary and start a recording. The session should succeed with `provider: "none"` (position-only telemetry, default arrow rendered). Restore both binaries afterward.
   ```bash
   ARCH=$([ "$(uname -m)" = "arm64" ] && echo darwin-arm64 || echo darwin-x64)
-  mv electron/native/screencapturekit/build/guidestudio-macos-cursor-helper /tmp/cursor-helper-build
-  mv electron/native/bin/$ARCH/guidestudio-macos-cursor-helper /tmp/cursor-helper-bin
+  mv electron/native/screencapturekit/build/guide-macos-cursor-helper /tmp/cursor-helper-build
+  mv electron/native/bin/$ARCH/guide-macos-cursor-helper /tmp/cursor-helper-bin
   # ... start recording, then restore:
-  mv /tmp/cursor-helper-bin electron/native/bin/$ARCH/guidestudio-macos-cursor-helper
-  mv /tmp/cursor-helper-build electron/native/screencapturekit/build/guidestudio-macos-cursor-helper
+  mv /tmp/cursor-helper-bin electron/native/bin/$ARCH/guide-macos-cursor-helper
+  mv /tmp/cursor-helper-build electron/native/screencapturekit/build/guide-macos-cursor-helper
   ```
 - [ ] Revoke Accessibility. Confirm recording still works and cursors render from bitmaps (no SVG substitution).
 
@@ -131,7 +131,7 @@ After granting either permission in System Settings, **fully quit and relaunch**
 
 ### P2 — long recording memory
 
-- [ ] Record for 3–5 minutes while switching between many apps (browser, terminal, editor). The helper should not grow in memory because each iteration drains Cocoa objects via `autoreleasepool`. Check `Activity Monitor` → `guidestudio-macos-cursor-helper` RSS stays flat after the first few seconds.
+- [ ] Record for 3–5 minutes while switching between many apps (browser, terminal, editor). The helper should not grow in memory because each iteration drains Cocoa objects via `autoreleasepool`. Check `Activity Monitor` → `guide-macos-cursor-helper` RSS stays flat after the first few seconds.
 
 ## What a healthy recording looks like
 
@@ -155,12 +155,12 @@ Inspect the cursor sidecar file written alongside the recorded video (`<videoPat
 
 ## Native macOS capture backend
 
-The app routes macOS recordings through the ScreenCaptureKit helper (`guidestudio-screencapturekit-helper`) when it is available, so the real system cursor is excluded from the video frame. The cursor position and bitmap are captured separately by the cursor helper and composited in the editor and export pipeline.
+The app routes macOS recordings through the ScreenCaptureKit helper (`guide-screencapturekit-helper`) when it is available, so the real system cursor is excluded from the video frame. The cursor position and bitmap are captured separately by the cursor helper and composited in the editor and export pipeline.
 
 Current native availability rules:
 
 - macOS 13 (Ventura) or newer
-- `guidestudio-screencapturekit-helper` binary is present
+- `guide-screencapturekit-helper` binary is present
 - Screen Recording permission is granted
 
 Build both helpers locally:
@@ -172,7 +172,7 @@ npm run build:native:mac
 For local diagnostics with a custom helper binary, use the environment override:
 
 ```bash
-export GUIDESTUDIO_MAC_CURSOR_HELPER_EXE=/path/to/guidestudio-macos-cursor-helper
+export GUIDE_MAC_CURSOR_HELPER_EXE=/path/to/guide-macos-cursor-helper
 npm run dev
 ```
 

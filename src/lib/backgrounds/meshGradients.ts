@@ -68,14 +68,14 @@ const appleDark: AnimatedBackground = {
 	type: "mesh",
 	category: "Mesh Gradients",
 	available: true,
-	previewColor: "#09090b",
+	previewColor: "#1C1917",
 	render(ctx, w, h, timeMs) {
 		renderMesh(
 			ctx,
 			w,
 			h,
 			timeMs,
-			"#09090b",
+			"#1C1917",
 			[
 				{
 					cx: 0.3,

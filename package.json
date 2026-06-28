@@ -34,7 +34,7 @@
 		"test:wgc-mixed-audio:win": "node scripts/test-windows-wgc-helper.mjs --system-audio --microphone",
 		"test:wgc-webcam:win": "node scripts/test-windows-wgc-helper.mjs --webcam",
 		"test:wgc-full:win": "node scripts/test-windows-wgc-helper.mjs --webcam --system-audio --microphone",
-		"capture:guidestudio-preview": "node scripts/capture-guidestudio-preview.mjs",
+		"capture:guide-studio-preview": "node scripts/capture-guide-studio-preview.mjs",
 		"inspect:cursor-click-bounce": "node scripts/inspect-native-cursor-click-bounce.mjs",
 		"build-vite": "tsc && vite build",
 		"test:browser": "vitest --config vitest.browser.config.ts --run",

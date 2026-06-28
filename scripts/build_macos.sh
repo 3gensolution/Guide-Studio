@@ -1,7 +1,7 @@
 #!/bin/bash
 #
-# GuideStudio macOS Build Script
-# Produces: release/<version>/GuideStudio-Mac-<arch>-<version>.dmg
+# Guide Studio macOS Build Script
+# Produces: release/<version>/Guide Studio-Mac-<arch>-<version>.dmg
 #
 # Usage: chmod +x scripts/build_macos.sh && ./scripts/build_macos.sh
 #

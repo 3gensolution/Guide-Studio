@@ -106,19 +106,19 @@ export default function App() {
 					<ShortcutsProvider>
 						<Suspense
 							fallback={
-								<div className="flex flex-col items-center justify-center gap-4 h-screen bg-[#09090b]">
+								<div className="flex flex-col items-center justify-center gap-4 h-screen bg-[#1C1917]">
 									<img src={guideLogo} alt="Guide Studio" className="w-12 h-12 animate-pulse" />
 									<div className="flex items-center gap-2">
 										<div
-											className="w-1.5 h-1.5 rounded-full bg-[#00B8FF] animate-bounce"
+											className="w-1.5 h-1.5 rounded-full bg-[#F59E0B] animate-bounce"
 											style={{ animationDelay: "0ms" }}
 										/>
 										<div
-											className="w-1.5 h-1.5 rounded-full bg-[#6366F1] animate-bounce"
+											className="w-1.5 h-1.5 rounded-full bg-[#EF4444] animate-bounce"
 											style={{ animationDelay: "150ms" }}
 										/>
 										<div
-											className="w-1.5 h-1.5 rounded-full bg-[#A855F7] animate-bounce"
+											className="w-1.5 h-1.5 rounded-full bg-[#F97316] animate-bounce"
 											style={{ animationDelay: "300ms" }}
 										/>
 									</div>

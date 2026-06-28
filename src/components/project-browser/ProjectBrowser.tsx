@@ -138,7 +138,7 @@ export function ProjectBrowser({ open, onOpenChange, onProjectOpened }: ProjectB
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="bg-[#09090b] border-white/10 text-white max-w-[480px] max-h-[70vh] flex flex-col">
+			<DialogContent className="bg-[#1C1917] border-white/10 text-white max-w-[480px] max-h-[70vh] flex flex-col">
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2 text-sm">
 						<FolderOpen className="w-4 h-4 text-[#2563eb]" />

@@ -10,3 +10,4 @@ export const MEMORY_SAFE_EXPORT_ENABLED = true;
 export const CLICK_ZOOM_SUGGESTIONS_ENABLED = true;
 export const RENDER_HOOKS_ENABLED = true;
 export const SPEED_VALIDATION_ENABLED = true;
+export const LIGHTNING_PIPELINE_ENABLED = true;

@@ -3,27 +3,23 @@
 
 
 <p align="center">
-  <img src="public/guidestudio.png" alt="GuideStudio Logo" width="64" />
+  <img src="public/guide-logo.png" alt="Guide Studio Logo" width="64" />
   <br />
   <br />
-	<a href="https://trendshift.io/repositories/17427" target="_blank"><img src="https://trendshift.io/api/badge/repositories/17427" alt="guidestudio%2Fguide-studio | Trendshift" style="width: 256px; height: 64px;" width="256" height="64"/></a>
-
-
-  </a>
 </p>
 
-# <p align="center">GuideStudio</p>
+# <p align="center">Guide Studio</p>
 
-<p align="center"><strong>GuideStudio is your free, open-source alternative to Screen Studio.</strong></p>
+<p align="center"><strong>Guide Studio is your free, open-source alternative to Screen Studio.</strong></p>
 
-If you don't want to pay $29/month for Screen Studio but want a version that does what most people seem to need - quick, polished product demos and walkthroughs you'd post on X, Reddit or Youtube. GuideStudio does not offer every Screen Studio feature, but covers a lot of the core functionality.
+If you don't want to pay $29/month for Screen Studio but want a version that does what most people seem to need - quick, polished product demos and walkthroughs you'd post on X, Reddit or Youtube. Guide Studio does not offer every Screen Studio feature, but covers a lot of the core functionality.
 
 Screen Studio is an awesome product and this is definitely not a 1:1 clone. If you just want something fully free and open source, this project should cover most of your needs.
 
 **100% free** for both **personal** and **commercial** use. Use it, modify it, distribute it. Please respect the License. 
 
 > [!NOTE]
->Software should be accessible. GuideStudio has no paid tiers, premium features, upsells, or functionality locked behind a paywall.
+>Software should be accessible. Guide Studio has no paid tiers, premium features, upsells, or functionality locked behind a paywall.
 
 <p align="center">
 	<img src="public/demo.png" alt="" style="height: 0.2467; margin-right: 12px;" />
@@ -56,13 +52,13 @@ Download the latest installer for your platform from the [GitHub Releases](https
 The easiest way to install on macOS is via [Homebrew](https://brew.sh):
 
 ```bash
-brew install --cask guidestudio/guide-studio/guidestudio
+brew install --cask guidestudio/tap/guide-studio
 ```
 
 Brew automatically picks the right build for Apple Silicon or Intel, and verifies the download against a notarized signature so Gatekeeper won't block it.
 
-To update later: `brew upgrade --cask guidestudio`
-To uninstall: `brew uninstall --cask guidestudio` (add `--zap` to also remove app data)
+To update later: `brew upgrade --cask guide-studio`
+To uninstall: `brew uninstall --cask guide-studio` (add `--zap` to also remove app data)
 
 #### Manual install (if you prefer)
 
@@ -77,18 +73,18 @@ Note: Give your terminal Full Disk Access in **System Settings > Privacy & Secur
 After running this command, proceed to **System Preferences > Security & Privacy** to grant the necessary permissions for "screen recording" and "accessibility". Once permissions are granted, you can launch the app.
 
 > [!NOTE]
-> **Upgrading from an older version and hitting permission issues?** If you already had GuideStudio installed and the new version won't record (Screen Recording or Accessibility keep failing even after you grant them), uninstall the old version, remove GuideStudio's existing entries under **System Settings > Privacy & Security** (both Screen Recording and Accessibility), then do a fresh install and grant the permissions again when prompted.
+> **Upgrading from an older version and hitting permission issues?** If you already had Guide Studio installed and the new version won't record (Screen Recording or Accessibility keep failing even after you grant them), uninstall the old version, remove Guide Studio's existing entries under **System Settings > Privacy & Security** (both Screen Recording and Accessibility), then do a fresh install and grant the permissions again when prompted.
 
 ### Windows
 
 Install via [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/):
 
 ```bash
-winget install SiddharthVaddem.GuideStudio
+winget install GuideStudio.GuideStudio
 ```
 
-To update later: `winget upgrade SiddharthVaddem.GuideStudio`
-To uninstall: `winget uninstall SiddharthVaddem.GuideStudio`
+To update later: `winget upgrade GuideStudio.GuideStudio`
+To uninstall: `winget uninstall GuideStudio.GuideStudio`
 
 If you'd rather grab the `.exe` installer directly, download it from the [Releases page](https://github.com/guidestudio/guide-studio/releases).
 
@@ -127,20 +123,20 @@ nix profile install github:guidestudio/guide-studio
 For a NixOS system config (flake):
 ```nix
 {
-  inputs.guidestudio.url = "github:guidestudio/guide-studio";
+  inputs.guide-studio.url = "github:guidestudio/guide-studio";
 
-  outputs = { nixpkgs, guidestudio, ... }: {
+  outputs = { nixpkgs, guide-studio, ... }: {
     nixosConfigurations.<host> = nixpkgs.lib.nixosSystem {
       modules = [
-        guidestudio.nixosModules.default
-        { programs.guidestudio.enable = true; }
+        guide-studio.nixosModules.default
+        { programs.guide-studio.enable = true; }
       ];
     };
   };
 }
 ```
 
-For Home Manager, use `guidestudio.homeManagerModules.default` with the same `programs.guidestudio.enable = true;`.
+For Home Manager, use `guide-studio.homeManagerModules.default` with the same `programs.guide-studio.enable = true;`.
 
 You may need to grant screen recording permissions depending on your desktop environment.
 

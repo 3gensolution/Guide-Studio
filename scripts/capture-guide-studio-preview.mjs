@@ -10,10 +10,10 @@ const ROOT = path.join(__dirname, "..");
 const MAIN_JS = path.join(ROOT, "dist-electron", "main.js");
 const TEST_VIDEO = path.join(ROOT, "tests", "fixtures", "sample.webm");
 const OUTPUT_DIR =
-	process.env.GUIDESTUDIO_PREVIEW_OUTPUT_DIR ??
-	path.join(os.tmpdir(), `guidestudio-real-preview-${Date.now()}`);
-const FRAME_COUNT = Number(process.env.GUIDESTUDIO_PREVIEW_FRAME_COUNT ?? 90);
-const FPS = Number(process.env.GUIDESTUDIO_PREVIEW_FPS ?? 30);
+	process.env.GUIDE_STUDIO_PREVIEW_OUTPUT_DIR ??
+	path.join(os.tmpdir(), `guide-studio-real-preview-${Date.now()}`);
+const FRAME_COUNT = Number(process.env.GUIDE_STUDIO_PREVIEW_FRAME_COUNT ?? 90);
+const FPS = Number(process.env.GUIDE_STUDIO_PREVIEW_FPS ?? 30);
 
 function findLatestCursorRecordingData() {
 	const explicit = process.env.CURSOR_RECORDING_DATA_PATH;
@@ -27,7 +27,7 @@ function findLatestCursorRecordingData() {
 	const tempDir = os.tmpdir();
 	const candidates = fs
 		.readdirSync(tempDir, { withFileTypes: true })
-		.filter((entry) => entry.isDirectory() && entry.name.startsWith("guidestudio-cursor-native-"))
+		.filter((entry) => entry.isDirectory() && entry.name.startsWith("guide-studio-cursor-native-"))
 		.map((entry) => path.join(tempDir, entry.name, "cursor-recording-data.json"))
 		.filter((candidate) => fs.existsSync(candidate))
 		.map((candidate) => ({ path: candidate, mtimeMs: fs.statSync(candidate).mtimeMs }))
@@ -73,7 +73,7 @@ function ensureBuildExists() {
 }
 
 function runNpmBuildViteIfRequested() {
-	if (process.env.GUIDESTUDIO_PREVIEW_SKIP_BUILD === "true") {
+	if (process.env.GUIDE_STUDIO_PREVIEW_SKIP_BUILD === "true") {
 		ensureBuildExists();
 		return Promise.resolve();
 	}
@@ -161,8 +161,8 @@ window.__encode = async function() {
 
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 const cursorRecordingDataPath = findLatestCursorRecordingData();
-const fixtureVideoPath = path.join(OUTPUT_DIR, "guidestudio-preview-fixture.webm");
-const outputVideoPath = path.join(OUTPUT_DIR, "guidestudio-preview.webm");
+const fixtureVideoPath = path.join(OUTPUT_DIR, "guide-studio-preview-fixture.webm");
+const outputVideoPath = path.join(OUTPUT_DIR, "guide-studio-preview.webm");
 fs.copyFileSync(TEST_VIDEO, fixtureVideoPath);
 fs.copyFileSync(cursorRecordingDataPath, `${fixtureVideoPath}.cursor.json`);
 
@@ -195,7 +195,7 @@ try {
 				await new Promise((resolve) => setTimeout(resolve, 100));
 			}
 		}
-		throw new Error("Timed out waiting for GuideStudio IPC handlers.");
+		throw new Error("Timed out waiting for Guide Studio IPC handlers.");
 	});
 
 	try {

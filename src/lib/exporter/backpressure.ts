@@ -48,3 +48,31 @@ export function selectBackpressureProfile(
 export function getBackpressureLimits(profile: BackpressureProfile): BackpressureLimits {
 	return PROFILES[profile];
 }
+
+// ── Lightning pipeline backend routing ──────────────────────────────────────
+
+import type { ExportPipelineModel } from "./types";
+
+/**
+ * Returns an ordered list of hardware acceleration preferences based on
+ * the selected pipeline model.
+ *
+ * - **modern** (Lightning): Always tries hardware acceleration first, then
+ *   falls back to software. This is the fastest path on systems with capable
+ *   GPU encoders.
+ * - **legacy**: Uses the platform-specific heuristic (Windows prefers software
+ *   first to avoid flaky GPU drivers; other platforms prefer hardware).
+ */
+export function getEncoderPreferencesForPipeline(
+	pipelineModel: ExportPipelineModel,
+): HardwareAcceleration[] {
+	if (pipelineModel === "modern") {
+		return ["prefer-hardware", "prefer-software"];
+	}
+
+	// Legacy: platform-based heuristic
+	if (typeof navigator !== "undefined" && /\bWindows\b/i.test(navigator.userAgent)) {
+		return ["prefer-software", "prefer-hardware"];
+	}
+	return ["prefer-hardware", "prefer-software"];
+}

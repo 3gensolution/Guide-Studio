@@ -56,6 +56,7 @@ import {
 	calculateOutputDimensions,
 	type EncodingMode,
 	type ExportFormat,
+	type ExportPipelineModel,
 	type ExportProgress,
 	type ExportQuality,
 	type ExportSettings,
@@ -266,6 +267,9 @@ export default function VideoEditor() {
 	const [encodingMode, setEncodingMode] = useState<EncodingMode>(
 		DEFAULT_EXPORT_SETTINGS.encodingMode,
 	);
+	const [pipelineModel, setPipelineModel] = useState<ExportPipelineModel>(
+		DEFAULT_EXPORT_SETTINGS.pipelineModel,
+	);
 	const [gifFrameRate, setGifFrameRate] = useState<GifFrameRate>(DEFAULT_GIF_SETTINGS.frameRate);
 	const [gifLoop, setGifLoop] = useState(DEFAULT_GIF_SETTINGS.loop);
 	const [gifSizePreset, setGifSizePreset] = useState<GifSizePreset>(
@@ -334,7 +338,7 @@ export default function VideoEditor() {
 
 	const { shortcuts, isMac } = useShortcuts();
 	// Windows recordings include captured cursor assets. macOS hides the system
-	// cursor in ScreenCaptureKit and renders telemetry samples with GuideStudio's
+	// cursor in ScreenCaptureKit and renders telemetry samples with the
 	// default arrow asset for the editable overlay.
 	const hasEditableCursorRecording =
 		recordingCursorCaptureMode === "editable-overlay" &&
@@ -460,6 +464,9 @@ export default function VideoEditor() {
 			if (normalizedEditor.encodingMode) {
 				setEncodingMode(normalizedEditor.encodingMode);
 			}
+			if (normalizedEditor.pipelineModel) {
+				setPipelineModel(normalizedEditor.pipelineModel);
+			}
 			setGifFrameRate(normalizedEditor.gifFrameRate);
 			setGifLoop(normalizedEditor.gifLoop);
 			setGifSizePreset(normalizedEditor.gifSizePreset);
@@ -537,6 +544,7 @@ export default function VideoEditor() {
 			exportQuality,
 			exportFormat,
 			encodingMode,
+			pipelineModel,
 			gifFrameRate,
 			gifLoop,
 			gifSizePreset,
@@ -571,6 +579,7 @@ export default function VideoEditor() {
 		exportQuality,
 		exportFormat,
 		encodingMode,
+		pipelineModel,
 		gifFrameRate,
 		gifLoop,
 		gifSizePreset,
@@ -702,6 +711,7 @@ export default function VideoEditor() {
 				exportQuality,
 				exportFormat,
 				encodingMode,
+				pipelineModel,
 				gifFrameRate,
 				gifLoop,
 				gifSizePreset,
@@ -781,6 +791,7 @@ export default function VideoEditor() {
 			t,
 			editorState.introClip,
 			editorState,
+			pipelineModel,
 		],
 	);
 
@@ -2271,6 +2282,7 @@ export default function VideoEditor() {
 						bitrate,
 						codec: "avc1.640033",
 						encodingMode,
+						pipelineModel,
 						wallpaper,
 						zoomRegions,
 						trimRegions,
@@ -2435,9 +2447,6 @@ export default function VideoEditor() {
 			} finally {
 				setIsExporting(false);
 				exporterRef.current = null;
-				// Reset so the next export can reopen the dialog (second export
-				// otherwise wouldn't show the save dialog).
-				setShowExportDialog(false);
 				setExportProgress(null);
 			}
 		},
@@ -2468,6 +2477,7 @@ export default function VideoEditor() {
 			exportQuality,
 			mp4FrameRate,
 			encodingMode,
+			pipelineModel,
 			handleExportSaved,
 			cursorTelemetry,
 			cursorClickTimestamps,
@@ -2905,7 +2915,7 @@ export default function VideoEditor() {
 					<button
 						type="button"
 						onClick={handleLoadProject}
-						className="px-3 py-1.5 rounded-md bg-[#00B8FF] text-white text-sm hover:bg-[#00B8FF]/90"
+						className="px-3 py-1.5 rounded-md bg-[#F59E0B] text-white text-sm hover:bg-[#F59E0B]/90"
 					>
 						{ts("project.load")}
 					</button>
@@ -2915,7 +2925,7 @@ export default function VideoEditor() {
 	}
 
 	return (
-		<div className="flex flex-col h-screen bg-[#09090b] text-slate-200 overflow-hidden selection:bg-[#00B8FF]/30">
+		<div className="flex flex-col h-screen bg-[#1C1917] text-slate-200 overflow-hidden selection:bg-[#F59E0B]/30">
 			<Dialog open={showNewRecordingDialog} onOpenChange={setShowNewRecordingDialog}>
 				<DialogContent
 					className="sm:max-w-[425px]"
@@ -2936,7 +2946,7 @@ export default function VideoEditor() {
 						<button
 							type="button"
 							onClick={handleNewRecordingConfirm}
-							className="px-4 py-2 rounded-md bg-[#00B8FF] text-white hover:bg-[#00B8FF]/90 text-sm font-medium transition-colors"
+							className="px-4 py-2 rounded-md bg-[#F59E0B] text-white hover:bg-[#F59E0B]/90 text-sm font-medium transition-colors"
 						>
 							{t("newRecording.confirm")}
 						</button>
@@ -3015,7 +3025,7 @@ export default function VideoEditor() {
 								setShowAutoCaptionsDialog(false);
 								void generateAutoCaptions(captionWordsMin, captionWordsMax);
 							}}
-							className="bg-[#00B8FF] text-white hover:bg-[#00B8FF]/90"
+							className="bg-[#F59E0B] text-white hover:bg-[#F59E0B]/90"
 						>
 							{t("autoCaptions.generate")}
 						</Button>
@@ -3024,104 +3034,111 @@ export default function VideoEditor() {
 			</Dialog>
 
 			<div
-				className="h-12 flex-shrink-0 bg-[#08090b]/98 backdrop-blur-2xl border-b border-white/[0.06] flex items-center px-4 z-50 relative"
+				className="h-12 flex-shrink-0 bg-[#1C1917]/98 backdrop-blur-2xl border-b border-white/[0.06] flex items-center px-4 z-50 relative"
 				style={{ WebkitAppRegion: "drag" } as CSSProperties}
 			>
 				{/* Gradient accent line */}
-				<div className="absolute bottom-0 left-0 right-0 h-[1px] bg-gradient-to-r from-[#00B8FF]/0 via-[#00B8FF]/25 to-[#A855F7]/0" />
+				<div className="absolute bottom-0 left-0 right-0 h-[1px] bg-gradient-to-r from-[#F59E0B]/0 via-[#F59E0B]/25 to-[#F97316]/0" />
 
-				{/* Left: Logo + Brand */}
+				{/* Left: Export + Screenshot */}
 				<div
-					className={`flex items-center gap-3 ${isMac ? "ml-16" : "ml-0"}`}
+					className={`flex items-center gap-1.5 ${isMac ? "ml-16" : "ml-0"}`}
+					style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
+				>
+					{videoPath && (
+						<>
+							<button
+								type="button"
+								onClick={handleOpenExportDialog}
+								className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#F59E0B]/10 hover:bg-[#F59E0B]/20 border border-[#F59E0B]/20 transition-all duration-150"
+								title="Export"
+							>
+								<Download size={14} className="text-[#F59E0B] transition-colors" />
+								<span className="text-[11px] font-semibold text-[#F59E0B]">Export</span>
+							</button>
+							<div className="w-px h-4 bg-white/[0.08] mx-0.5" />
+							<button
+								type="button"
+								onClick={handleScreenshot}
+								className="group p-1.5 rounded-lg hover:bg-white/[0.06] transition-all duration-150"
+								title="Screenshot"
+							>
+								<Camera
+									size={14}
+									className="text-white/50 group-hover:text-white/80 transition-colors"
+								/>
+							</button>
+						</>
+					)}
+				</div>
+
+				{/* Center: Logo + Brand */}
+				<div
+					className="flex-1 flex justify-center"
 					style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
 				>
 					<div className="flex items-center gap-2">
 						<img src={guideLogo} alt="Guide" className="w-6 h-6" />
-						<span className="text-[11px] font-bold tracking-wider uppercase bg-gradient-to-r from-[#00B8FF] to-[#A855F7] bg-clip-text text-transparent">
+						<span className="text-[11px] font-bold tracking-wider uppercase bg-gradient-to-r from-[#F59E0B] to-[#F97316] bg-clip-text text-transparent">
 							Guide
 						</span>
 					</div>
-
-					<div className="w-px h-5 bg-white/[0.06]" />
-
-					{/* File operations */}
-					<div className="flex items-center gap-0.5">
-						<button
-							type="button"
-							onClick={() => setShowNewRecordingDialog(true)}
-							className="group flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-white/[0.06] transition-all duration-150"
-							title="New Recording"
-						>
-							<Video
-								size={14}
-								className="text-white/50 group-hover:text-[#00B8FF] transition-colors"
-							/>
-							<span className="text-[11px] font-medium text-white/50 group-hover:text-white/80">
-								{t("newRecording.title")}
-							</span>
-						</button>
-						<button
-							type="button"
-							onClick={handleLoadProject}
-							className="group p-1.5 rounded-lg hover:bg-white/[0.06] transition-all duration-150"
-							title="Load Project"
-						>
-							<FolderOpen
-								size={14}
-								className="text-white/50 group-hover:text-white/80 transition-colors"
-							/>
-						</button>
-						<button
-							type="button"
-							onClick={handleSaveProject}
-							className="group p-1.5 rounded-lg hover:bg-white/[0.06] transition-all duration-150"
-							title="Save Project"
-						>
-							<Save
-								size={14}
-								className="text-white/50 group-hover:text-white/80 transition-colors"
-							/>
-						</button>
-						<div className="w-px h-4 bg-white/[0.08] mx-1" />
-						<button
-							type="button"
-							onClick={handleAddVideoClip}
-							className="group flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-white/[0.06] transition-all duration-150"
-							title="Add Video Clip"
-						>
-							<FilePlus2
-								size={14}
-								className="text-white/50 group-hover:text-[#14b8a6] transition-colors"
-							/>
-							<span className="text-[11px] font-medium text-white/50 group-hover:text-white/80">
-								Add Video
-							</span>
-						</button>
-					</div>
 				</div>
 
-				{/* Center spacer */}
-				<div className="flex-1" />
-
-				{/* Right: Quick actions + Export */}
+				{/* Right: File operations + Language */}
 				<div
-					className="flex items-center gap-1.5"
+					className="flex items-center gap-0.5"
 					style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
 				>
-					{videoPath && (
-						<button
-							type="button"
-							onClick={handleScreenshot}
-							className="group p-1.5 rounded-lg hover:bg-white/[0.06] transition-all duration-150"
-							title="Screenshot"
-						>
-							<Camera
-								size={14}
-								className="text-white/50 group-hover:text-white/80 transition-colors"
-							/>
-						</button>
-					)}
-
+					<button
+						type="button"
+						onClick={handleAddVideoClip}
+						className="group flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-white/[0.06] transition-all duration-150"
+						title="Add Video Clip"
+					>
+						<FilePlus2
+							size={14}
+							className="text-white/50 group-hover:text-[#14b8a6] transition-colors"
+						/>
+						<span className="text-[11px] font-medium text-white/50 group-hover:text-white/80">
+							Add Video
+						</span>
+					</button>
+					<div className="w-px h-4 bg-white/[0.08] mx-1" />
+					<button
+						type="button"
+						onClick={() => setShowNewRecordingDialog(true)}
+						className="group flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-white/[0.06] transition-all duration-150"
+						title="New Recording"
+					>
+						<Video
+							size={14}
+							className="text-white/50 group-hover:text-[#F59E0B] transition-colors"
+						/>
+						<span className="text-[11px] font-medium text-white/50 group-hover:text-white/80">
+							{t("newRecording.title")}
+						</span>
+					</button>
+					<button
+						type="button"
+						onClick={handleLoadProject}
+						className="group p-1.5 rounded-lg hover:bg-white/[0.06] transition-all duration-150"
+						title="Load Project"
+					>
+						<FolderOpen
+							size={14}
+							className="text-white/50 group-hover:text-white/80 transition-colors"
+						/>
+					</button>
+					<button
+						type="button"
+						onClick={handleSaveProject}
+						className="group p-1.5 rounded-lg hover:bg-white/[0.06] transition-all duration-150"
+						title="Save Project"
+					>
+						<Save size={14} className="text-white/50 group-hover:text-white/80 transition-colors" />
+					</button>
+					<div className="w-px h-4 bg-white/[0.08] mx-1" />
 					{/* Language selector */}
 					<div className="relative group">
 						<div className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-white/[0.06] transition-all duration-150">
@@ -3132,28 +3149,13 @@ export default function VideoEditor() {
 								className="bg-transparent text-[10px] font-medium outline-none cursor-pointer appearance-none text-white/50 hover:text-white/70 w-7"
 							>
 								{availableLocales.map((loc) => (
-									<option key={loc} value={loc} className="bg-[#09090b] text-white">
+									<option key={loc} value={loc} className="bg-[#1C1917] text-white">
 										{getLocaleName(loc)}
 									</option>
 								))}
 							</select>
 						</div>
 					</div>
-
-					{videoPath && (
-						<>
-							<div className="w-px h-4 bg-white/[0.08] mx-0.5" />
-							<button
-								type="button"
-								onClick={handleOpenExportDialog}
-								className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#00B8FF]/10 hover:bg-[#00B8FF]/20 border border-[#00B8FF]/20 transition-all duration-150"
-								title="Export"
-							>
-								<Download size={14} className="text-[#00B8FF] transition-colors" />
-								<span className="text-[11px] font-semibold text-[#00B8FF]">Export</span>
-							</button>
-						</>
-					)}
 				</div>
 			</div>
 
@@ -3181,118 +3183,8 @@ export default function VideoEditor() {
 				<div className="editor-workspace flex-1 min-h-0 relative">
 					<PanelGroup direction="vertical" className="gap-2 min-h-0">
 						{/* Top section: preview and contextual settings */}
-						<Panel defaultSize={65} maxSize={76} minSize={44} className="min-h-[280px]">
+						<Panel defaultSize={60} maxSize={76} minSize={44} className="min-h-[280px]">
 							<div className="editor-main-deck h-full min-h-0">
-								<div className="editor-preview-zone min-w-0 h-full">
-									<div
-										ref={playerContainerRef}
-										className={
-											isFullscreen
-												? "fixed inset-0 z-[99999] w-full h-full flex flex-col items-center justify-center bg-[#09090b]"
-												: "editor-preview-panel w-full h-full flex flex-col items-center justify-center overflow-hidden relative"
-										}
-									>
-										{/* Video preview */}
-										<div className="w-full min-h-0 flex justify-center items-center flex-auto px-3 pt-3">
-											<div
-												className="relative flex justify-center items-center w-auto h-full max-w-full box-border"
-												style={{
-													aspectRatio:
-														aspectRatio === "native"
-															? getNativeAspectRatioValue(
-																	videoPlaybackRef.current?.video?.videoWidth ||
-																		DEFAULT_SOURCE_DIMENSIONS.width,
-																	videoPlaybackRef.current?.video?.videoHeight ||
-																		DEFAULT_SOURCE_DIMENSIONS.height,
-																	cropRegion,
-																)
-															: getAspectRatioValue(aspectRatio),
-												}}
-											>
-												<VideoPlayback
-													key={`${videoPath || "no-video"}:${webcamVideoPath || "no-webcam"}`}
-													aspectRatio={aspectRatio}
-													ref={videoPlaybackRef}
-													videoPath={videoPath || ""}
-													webcamVideoPath={webcamVideoPath || undefined}
-													introClip={introClip}
-													introDurationMs={introDurationMs}
-													isInIntroPhase={isInIntroPhase}
-													webcamLayoutPreset={webcamLayoutPreset}
-													webcamMaskShape={webcamMaskShape}
-													webcamMirrored={webcamMirrored}
-													webcamReactiveZoom={webcamReactiveZoom}
-													webcamSizePreset={webcamSizePreset}
-													webcamPosition={webcamPosition}
-													onWebcamPositionChange={(pos) => updateState({ webcamPosition: pos })}
-													onWebcamPositionDragEnd={commitState}
-													onDurationChange={setDuration}
-													onTimeUpdate={(t) => setCurrentTime(t + introDurationMs / 1000)}
-													currentTime={Math.max(0, currentTime - introDurationMs / 1000)}
-													onPlayStateChange={setIsPlaying}
-													onError={setError}
-													wallpaper={previewWallpaper ?? wallpaper}
-													zoomRegions={zoomRegions}
-													selectedZoomId={selectedZoomId}
-													onSelectZoom={handleSelectZoom}
-													onZoomFocusChange={handleZoomFocusChange}
-													onZoomFocusDragEnd={commitState}
-													isPlaying={isPlaying}
-													showShadow={shadowIntensity > 0}
-													shadowIntensity={shadowIntensity}
-													showBlur={showBlur}
-													motionBlurAmount={motionBlurAmount}
-													borderRadius={borderRadius}
-													padding={padding}
-													cropRegion={cropRegion}
-													cursorRecordingData={cursorRecordingData}
-													trimRegions={trimRegions}
-													speedRegions={speedRegions}
-													annotationRegions={annotationOnlyRegions}
-													selectedAnnotationId={selectedAnnotationId}
-													onSelectAnnotation={handleSelectAnnotation}
-													onAnnotationPositionChange={handleAnnotationPositionChange}
-													onAnnotationSizeChange={handleAnnotationSizeChange}
-													blurRegions={blurRegions}
-													selectedBlurId={selectedBlurId}
-													onSelectBlur={handleSelectBlur}
-													onBlurPositionChange={handleAnnotationPositionChange}
-													onBlurSizeChange={handleAnnotationSizeChange}
-													onBlurDataChange={handleBlurDataPreviewChange}
-													onBlurDataCommit={commitState}
-													cursorTelemetry={cursorTelemetry}
-													cursorClickTimestamps={cursorClickTimestamps}
-													showCursor={effectiveShowCursor}
-													cursorSize={cursorSize}
-													cursorSmoothing={cursorSmoothing}
-													cursorMotionBlur={cursorMotionBlur}
-													cursorClickBounce={cursorClickBounce}
-													cursorClipToBounds={cursorClipToBounds}
-													cursorTheme={cursorTheme}
-													isPreviewingZoom={isPreviewingZoom}
-													captionTrack={editorState.captionTrack ?? null}
-													captionStyle={editorState.captionStyle}
-													videoClips={editorState.videoClips}
-												/>
-											</div>
-										</div>
-										{/* Playback controls */}
-										<div className="w-full flex justify-center items-center h-12 flex-shrink-0 px-3 py-1.5">
-											<div className="w-full max-w-[760px]">
-												<PlaybackControls
-													isPlaying={isPlaying}
-													currentTime={currentTime}
-													duration={masterDuration}
-													isFullscreen={isFullscreen}
-													onToggleFullscreen={toggleFullscreen}
-													onTogglePlayPause={togglePlayPause}
-													onSeek={handleSeek}
-												/>
-											</div>
-										</div>
-									</div>
-								</div>
-
 								<div className="editor-settings-rail min-w-0 h-full flex flex-col">
 									{/* AI tools toggle bar */}
 									<div className="flex items-center gap-1.5 px-2.5 py-2 border-b border-white/[0.06] flex-shrink-0">
@@ -3313,11 +3205,11 @@ export default function VideoEditor() {
 											type="button"
 											onClick={handleMagicPolish}
 											disabled={cursorTelemetry.length === 0}
-											className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all duration-150 bg-gradient-to-r from-[#00B8FF]/10 to-[#A855F7]/10 hover:from-[#00B8FF]/20 hover:to-[#A855F7]/20 disabled:opacity-30 disabled:cursor-not-allowed"
+											className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all duration-150 bg-gradient-to-r from-[#F59E0B]/10 to-[#F97316]/10 hover:from-[#F59E0B]/20 hover:to-[#F97316]/20 disabled:opacity-30 disabled:cursor-not-allowed"
 											title="Magic Polish"
 										>
-											<Wand2 size={12} className="text-[#00B8FF]" />
-											<span className="bg-gradient-to-r from-[#00B8FF] to-[#A855F7] bg-clip-text text-transparent">
+											<Wand2 size={12} className="text-[#F59E0B]" />
+											<span className="bg-gradient-to-r from-[#F59E0B] to-[#F97316] bg-clip-text text-transparent">
 												Polish
 											</span>
 										</button>
@@ -3329,7 +3221,7 @@ export default function VideoEditor() {
 											}}
 											className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all duration-150 ${
 												showAIPanel && aiPanelMode === "tools"
-													? "bg-[#00B8FF]/15 text-[#00B8FF] shadow-sm"
+													? "bg-[#F59E0B]/15 text-[#F59E0B] shadow-sm"
 													: "text-white/40 hover:text-white/60 hover:bg-white/[0.04]"
 											}`}
 										>
@@ -3344,7 +3236,7 @@ export default function VideoEditor() {
 											}}
 											className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all duration-150 ${
 												showAIPanel && aiPanelMode === "chat"
-													? "bg-[#A855F7]/15 text-[#A855F7] shadow-sm"
+													? "bg-[#F97316]/15 text-[#F97316] shadow-sm"
 													: "text-white/40 hover:text-white/60 hover:bg-white/[0.04]"
 											}`}
 										>
@@ -3492,6 +3384,8 @@ export default function VideoEditor() {
 											onMp4FrameRateChange={setMp4FrameRate}
 											encodingMode={encodingMode}
 											onEncodingModeChange={setEncodingMode}
+											pipelineModel={pipelineModel}
+											onPipelineModelChange={setPipelineModel}
 											gifFrameRate={gifFrameRate}
 											onGifFrameRateChange={setGifFrameRate}
 											gifLoop={gifLoop}
@@ -3599,15 +3493,125 @@ export default function VideoEditor() {
 										/>
 									)}
 								</div>
+
+								<div className="editor-preview-zone min-w-0 h-full">
+									<div
+										ref={playerContainerRef}
+										className={
+											isFullscreen
+												? "fixed inset-0 z-[99999] w-full h-full flex flex-col items-center justify-center bg-[#1C1917]"
+												: "editor-preview-panel w-full h-full flex flex-col items-center justify-center overflow-hidden relative"
+										}
+									>
+										{/* Video preview */}
+										<div className="w-full min-h-0 flex justify-center items-center flex-auto px-3 pt-3">
+											<div
+												className="relative flex justify-center items-center w-auto h-full max-w-full box-border"
+												style={{
+													aspectRatio:
+														aspectRatio === "native"
+															? getNativeAspectRatioValue(
+																	videoPlaybackRef.current?.video?.videoWidth ||
+																		DEFAULT_SOURCE_DIMENSIONS.width,
+																	videoPlaybackRef.current?.video?.videoHeight ||
+																		DEFAULT_SOURCE_DIMENSIONS.height,
+																	cropRegion,
+																)
+															: getAspectRatioValue(aspectRatio),
+												}}
+											>
+												<VideoPlayback
+													key={`${videoPath || "no-video"}:${webcamVideoPath || "no-webcam"}`}
+													aspectRatio={aspectRatio}
+													ref={videoPlaybackRef}
+													videoPath={videoPath || ""}
+													webcamVideoPath={webcamVideoPath || undefined}
+													introClip={introClip}
+													introDurationMs={introDurationMs}
+													isInIntroPhase={isInIntroPhase}
+													webcamLayoutPreset={webcamLayoutPreset}
+													webcamMaskShape={webcamMaskShape}
+													webcamMirrored={webcamMirrored}
+													webcamReactiveZoom={webcamReactiveZoom}
+													webcamSizePreset={webcamSizePreset}
+													webcamPosition={webcamPosition}
+													onWebcamPositionChange={(pos) => updateState({ webcamPosition: pos })}
+													onWebcamPositionDragEnd={commitState}
+													onDurationChange={setDuration}
+													onTimeUpdate={(t) => setCurrentTime(t + introDurationMs / 1000)}
+													currentTime={Math.max(0, currentTime - introDurationMs / 1000)}
+													onPlayStateChange={setIsPlaying}
+													onError={setError}
+													wallpaper={previewWallpaper ?? wallpaper}
+													zoomRegions={zoomRegions}
+													selectedZoomId={selectedZoomId}
+													onSelectZoom={handleSelectZoom}
+													onZoomFocusChange={handleZoomFocusChange}
+													onZoomFocusDragEnd={commitState}
+													isPlaying={isPlaying}
+													showShadow={shadowIntensity > 0}
+													shadowIntensity={shadowIntensity}
+													showBlur={showBlur}
+													motionBlurAmount={motionBlurAmount}
+													borderRadius={borderRadius}
+													padding={padding}
+													cropRegion={cropRegion}
+													cursorRecordingData={cursorRecordingData}
+													trimRegions={trimRegions}
+													speedRegions={speedRegions}
+													annotationRegions={annotationOnlyRegions}
+													selectedAnnotationId={selectedAnnotationId}
+													onSelectAnnotation={handleSelectAnnotation}
+													onAnnotationPositionChange={handleAnnotationPositionChange}
+													onAnnotationSizeChange={handleAnnotationSizeChange}
+													blurRegions={blurRegions}
+													selectedBlurId={selectedBlurId}
+													onSelectBlur={handleSelectBlur}
+													onBlurPositionChange={handleAnnotationPositionChange}
+													onBlurSizeChange={handleAnnotationSizeChange}
+													onBlurDataChange={handleBlurDataPreviewChange}
+													onBlurDataCommit={commitState}
+													cursorTelemetry={cursorTelemetry}
+													cursorClickTimestamps={cursorClickTimestamps}
+													showCursor={effectiveShowCursor}
+													cursorSize={cursorSize}
+													cursorSmoothing={cursorSmoothing}
+													cursorMotionBlur={cursorMotionBlur}
+													cursorClickBounce={cursorClickBounce}
+													cursorClipToBounds={cursorClipToBounds}
+													cursorTheme={cursorTheme}
+													isPreviewingZoom={isPreviewingZoom}
+													captionTrack={editorState.captionTrack ?? null}
+													captionStyle={editorState.captionStyle}
+													videoClips={editorState.videoClips}
+												/>
+											</div>
+										</div>
+										{/* Playback controls */}
+										<div className="w-full flex justify-center items-center h-12 flex-shrink-0 px-3 py-1.5">
+											<div className="w-full max-w-[760px]">
+												<PlaybackControls
+													isPlaying={isPlaying}
+													currentTime={currentTime}
+													duration={masterDuration}
+													isFullscreen={isFullscreen}
+													onToggleFullscreen={toggleFullscreen}
+													onTogglePlayPause={togglePlayPause}
+													onSeek={handleSeek}
+												/>
+											</div>
+										</div>
+									</div>
+								</div>
 							</div>
 						</Panel>
 
 						<PanelResizeHandle className="editor-resize-handle group">
-							<div className="w-12 h-1 bg-white/15 rounded-full transition-colors group-hover:bg-[#00B8FF]/60"></div>
+							<div className="w-12 h-1 bg-white/15 rounded-full transition-colors group-hover:bg-[#F59E0B]/60"></div>
 						</PanelResizeHandle>
 
 						{/* Full-width timeline */}
-						<Panel defaultSize={35} maxSize={56} minSize={26} className="min-h-[220px]">
+						<Panel defaultSize={40} maxSize={56} minSize={26} className="min-h-[220px]">
 							<div className="editor-timeline-panel h-full overflow-hidden flex flex-col">
 								<TimelineEditor
 									videoDuration={totalDuration}
@@ -3696,7 +3700,7 @@ export default function VideoEditor() {
 				>
 					<DialogHeader>
 						<DialogTitle className="flex items-center gap-2">
-							<Wand2 className="w-5 h-5 text-[#00B8FF]" />
+							<Wand2 className="w-5 h-5 text-[#F59E0B]" />
 							Magic Polish Preview
 						</DialogTitle>
 						<DialogDescription>
@@ -3708,7 +3712,7 @@ export default function VideoEditor() {
 						<div className="space-y-2 py-2 text-sm">
 							{polishPreview.zoomCount > 0 && (
 								<div className="flex items-center gap-2 text-slate-300">
-									<span className="w-5 h-5 rounded bg-[#00B8FF]/20 flex items-center justify-center text-[#00B8FF] text-xs font-bold">
+									<span className="w-5 h-5 rounded bg-[#F59E0B]/20 flex items-center justify-center text-[#F59E0B] text-xs font-bold">
 										{polishPreview.zoomCount}
 									</span>
 									zoom region{polishPreview.zoomCount !== 1 ? "s" : ""} to add
@@ -3738,7 +3742,7 @@ export default function VideoEditor() {
 						<button
 							type="button"
 							onClick={handleApplyPolish}
-							className="px-4 py-2 rounded-md bg-[#00B8FF] text-white hover:bg-[#00B8FF]/90 text-sm font-medium transition-colors"
+							className="px-4 py-2 rounded-md bg-[#F59E0B] text-white hover:bg-[#F59E0B]/90 text-sm font-medium transition-colors"
 						>
 							Apply Polish
 						</button>

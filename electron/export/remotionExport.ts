@@ -20,7 +20,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { renderMedia, selectComposition } from "@remotion/renderer";
 import { app } from "electron";
-import { getFfmpegPath } from "../ffmpeg";
+import { getFfmpegEnv, getFfmpegPath } from "../ffmpeg";
 
 /**
  * Resolve the directory containing Remotion's native binaries (remotion.exe,
@@ -280,7 +280,8 @@ async function reencodeForCompatibility(
 	// when the composition has no <Audio> elements, Remotion emits a silent
 	// track. When the scene plan has narration + SFX, those are in [0:a].
 	// When music is also provided, we amix Remotion audio with music.
-	const hasRemotionAudio = await checkForAudioStream(inputPath, ffmpegPath);
+	const env = getFfmpegEnv(ffmpegPath);
+	const hasRemotionAudio = await checkForAudioStream(inputPath, ffmpegPath, env);
 	const args: string[] = ["-i", inputPath];
 
 	if (musicPath) {
@@ -349,18 +350,22 @@ async function reencodeForCompatibility(
 		`[remotionExport] Post-processing (remotion-audio=${hasRemotionAudio}, music=${!!musicPath}): ffmpeg ${args.join(" ")}`,
 	);
 
-	await execFile(ffmpegPath, args, { timeout: 600_000 });
+	await execFile(ffmpegPath, args, { timeout: 600_000, env });
 }
 
 /** Probe a file with ffmpeg -i to detect whether it has an audio stream.
  *  ffmpeg prints stream info to stderr and always exits with code 1 when
  *  given no output file, so we parse stderr instead of checking exit code. */
-async function checkForAudioStream(filePath: string, ffmpegPath: string): Promise<boolean> {
+async function checkForAudioStream(
+	filePath: string,
+	ffmpegPath: string,
+	env?: NodeJS.ProcessEnv,
+): Promise<boolean> {
 	try {
-		await execFile(ffmpegPath, ["-i", filePath, "-hide_banner"], { timeout: 10_000 });
+		await execFile(ffmpegPath, ["-i", filePath, "-hide_banner"], { timeout: 10_000, env });
 		return false;
-	} catch (err: any) {
-		const stderr = String(err?.stderr || "");
+	} catch (err: unknown) {
+		const stderr = String((err as { stderr?: string })?.stderr || "");
 		// Match "Stream #0:1(und): Audio: aac" or similar
 		return /Stream #\d+:\d+[^:]*: Audio:/i.test(stderr);
 	}
@@ -377,12 +382,14 @@ async function logFileInfo(filePath: string) {
 		if (!ffmpegPath) return;
 
 		// Use ffmpeg -i to get stream info (ffprobe may not be bundled)
+		const env = getFfmpegEnv(ffmpegPath);
 		try {
-			await execFile(ffmpegPath, ["-i", filePath, "-hide_banner"], { timeout: 10_000 });
-		} catch (probeErr: any) {
+			await execFile(ffmpegPath, ["-i", filePath, "-hide_banner"], { timeout: 10_000, env });
+		} catch (probeErr: unknown) {
 			// ffmpeg -i always exits with code 1 but prints stream info to stderr
-			if (probeErr.stderr) {
-				console.log("[remotionExport] File info:\n" + probeErr.stderr);
+			const probeStderr = (probeErr as { stderr?: string })?.stderr;
+			if (probeStderr) {
+				console.log("[remotionExport] File info:\n" + probeStderr);
 			}
 		}
 	} catch (err) {

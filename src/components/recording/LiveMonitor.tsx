@@ -57,7 +57,7 @@ export function LiveMonitor({ screenStream, webcamStream, onStop, onMinimize }: 
 	}, [webcamStream]);
 
 	return (
-		<div className="flex flex-col items-center justify-center h-screen bg-[#09090b] gap-4 p-8">
+		<div className="flex flex-col items-center justify-center h-screen bg-[#1C1917] gap-4 p-8">
 			{/* Live preview */}
 			<div className="relative w-full max-w-4xl aspect-video rounded-xl overflow-hidden bg-black shadow-2xl border border-white/10">
 				{screenStream ? (

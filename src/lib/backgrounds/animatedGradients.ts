@@ -130,7 +130,7 @@ const neonPulse: AnimatedBackground = {
 		const pulse = remap(osc(timeMs, 30000), 0.3, 0.6);
 		grad.addColorStop(0, "#0f0326");
 		grad.addColorStop(pulse - 0.1, "#ec4899");
-		grad.addColorStop(pulse + 0.1, "#6366f1");
+		grad.addColorStop(pulse + 0.1, "#F59E0B");
 		grad.addColorStop(1, "#020617");
 
 		ctx.fillStyle = grad;

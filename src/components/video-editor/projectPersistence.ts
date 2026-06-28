@@ -90,6 +90,7 @@ export interface ProjectEditorState {
 	exportQuality: ExportQuality;
 	exportFormat: ExportFormat;
 	encodingMode?: import("@/lib/exporter").EncodingMode;
+	pipelineModel?: import("@/lib/exporter").ExportPipelineModel;
 	gifFrameRate: GifFrameRate;
 	gifLoop: boolean;
 	gifSizePreset: GifSizePreset;
@@ -556,6 +557,10 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 			editor.encodingMode === "quality"
 				? editor.encodingMode
 				: DEFAULT_EXPORT_SETTINGS.encodingMode,
+		pipelineModel:
+			editor.pipelineModel === "legacy" || editor.pipelineModel === "modern"
+				? editor.pipelineModel
+				: DEFAULT_EXPORT_SETTINGS.pipelineModel,
 		gifFrameRate:
 			editor.gifFrameRate === 15 ||
 			editor.gifFrameRate === 20 ||

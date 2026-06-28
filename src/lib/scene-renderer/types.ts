@@ -234,7 +234,7 @@ export function DEFAULT_SCENE(): Scene {
 	return {
 		id: uid(),
 		durationMs: 5000,
-		background: "#09090b",
+		background: "#1C1917",
 		animatedBgSpeed: 1,
 		transition: { type: "none", durationMs: 500 },
 		layers: [],

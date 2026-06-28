@@ -701,7 +701,7 @@ export function LaunchWindow() {
 				ref={setHudBarEl}
 				data-hud-interactive="true"
 				data-tray-layout={trayLayout}
-				className={`fixed bottom-5 left-1/2 -translate-x-1/2 flex rounded-2xl border border-[#A855F7]/20 bg-gradient-to-r from-[#1a0a3c]/90 via-[#12102e]/90 to-[#0a2420]/90 shadow-[0_20px_60px_rgba(0,0,0,0.5),0_0_24px_rgba(168,85,247,0.12),0_0_40px_rgba(0,184,255,0.08),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl backdrop-saturate-[140%] ${
+				className={`fixed bottom-5 left-1/2 -translate-x-1/2 flex rounded-2xl border border-[#F97316]/20 bg-gradient-to-r from-[#2C1A0A]/90 via-[#231208]/90 to-[#1A1008]/90 shadow-[0_20px_60px_rgba(0,0,0,0.5),0_0_24px_rgba(249,115,22,0.12),0_0_40px_rgba(245,158,11,0.08),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl backdrop-saturate-[140%] ${
 					trayLayout === "vertical"
 						? "max-h-[calc(100vh-2.5rem)] flex-col items-center gap-1 overflow-y-auto px-1 py-1.5"
 						: "items-center gap-1.5 px-2 py-1.5"
@@ -717,7 +717,7 @@ export function LaunchWindow() {
 			>
 				{/* Gradient accent line */}
 				<div
-					className={`absolute ${trayLayout === "vertical" ? "top-0 left-2 right-2 h-[1px]" : "top-0 left-3 right-3 h-[1px]"} bg-gradient-to-r from-[#A855F7]/40 via-[#6366F1]/25 to-[#00B8FF]/40 rounded-full`}
+					className={`absolute ${trayLayout === "vertical" ? "top-0 left-2 right-2 h-[1px]" : "top-0 left-3 right-3 h-[1px]"} bg-gradient-to-r from-[#F97316]/40 via-[#EF4444]/25 to-[#F59E0B]/40 rounded-full`}
 				/>
 
 				{/* Drag handle */}
@@ -762,7 +762,7 @@ export function LaunchWindow() {
 				{/* Webcam toggle */}
 				<button
 					data-testid="launch-webcam-button"
-					className={`${hudIconBtnClasses} ${webcamEnabled ? "drop-shadow-[0_0_4px_rgba(0,184,255,0.4)]" : ""} ${styles.electronNoDrag}`}
+					className={`${hudIconBtnClasses} ${webcamEnabled ? "drop-shadow-[0_0_4px_rgba(245,158,11,0.4)]" : ""} ${styles.electronNoDrag}`}
 					onClick={async () => {
 						await setWebcamEnabled(!webcamEnabled);
 					}}
@@ -770,7 +770,7 @@ export function LaunchWindow() {
 					title={webcamEnabled ? t("webcam.disableWebcam") : t("webcam.enableWebcam")}
 				>
 					{webcamEnabled
-						? getIcon("webcamOn", "text-[#00B8FF]")
+						? getIcon("webcamOn", "text-[#F59E0B]")
 						: getIcon("webcamOff", "text-white/40")}
 				</button>
 
@@ -780,7 +780,7 @@ export function LaunchWindow() {
 				>
 					<button
 						data-testid="launch-system-audio-button"
-						className={`${hudIconBtnClasses} ${systemAudioEnabled ? "drop-shadow-[0_0_4px_rgba(0,184,255,0.4)]" : ""}`}
+						className={`${hudIconBtnClasses} ${systemAudioEnabled ? "drop-shadow-[0_0_4px_rgba(245,158,11,0.4)]" : ""}`}
 						onClick={() => !recording && setSystemAudioEnabled(!systemAudioEnabled)}
 						disabled={recording}
 						title={
@@ -788,12 +788,12 @@ export function LaunchWindow() {
 						}
 					>
 						{systemAudioEnabled
-							? getIcon("volumeOn", "text-[#00B8FF]")
+							? getIcon("volumeOn", "text-[#F59E0B]")
 							: getIcon("volumeOff", "text-white/40")}
 					</button>
 					<button
 						data-testid="launch-microphone-button"
-						className={`${hudIconBtnClasses} ${microphoneEnabled ? "drop-shadow-[0_0_4px_rgba(0,184,255,0.4)]" : ""}`}
+						className={`${hudIconBtnClasses} ${microphoneEnabled ? "drop-shadow-[0_0_4px_rgba(245,158,11,0.4)]" : ""}`}
 						onClick={toggleMicrophone}
 						disabled={recording}
 						title={microphoneEnabled ? t("audio.disableMicrophone") : t("audio.enableMicrophone")}
@@ -802,7 +802,7 @@ export function LaunchWindow() {
 						}}
 					>
 						{microphoneEnabled
-							? getIcon("micOn", "text-[#00B8FF]")
+							? getIcon("micOn", "text-[#F59E0B]")
 							: getIcon("micOff", "text-white/40")}
 					</button>
 					{supportsCursorModeToggle && (
@@ -810,7 +810,7 @@ export function LaunchWindow() {
 							data-testid="launch-cursor-mode-button"
 							className={`${hudIconBtnClasses} ${
 								cursorCaptureMode === "editable-overlay"
-									? "drop-shadow-[0_0_4px_rgba(0,184,255,0.4)]"
+									? "drop-shadow-[0_0_4px_rgba(245,158,11,0.4)]"
 									: ""
 							}`}
 							onClick={() =>
@@ -828,7 +828,7 @@ export function LaunchWindow() {
 						>
 							{getIcon(
 								"cursor",
-								cursorCaptureMode === "editable-overlay" ? "text-[#00B8FF]" : "text-white/40",
+								cursorCaptureMode === "editable-overlay" ? "text-[#F59E0B]" : "text-white/40",
 							)}
 						</button>
 					)}

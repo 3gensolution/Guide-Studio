@@ -1,5 +1,5 @@
 {
-  description = "GuideStudio — desktop screen recorder with built-in editor";
+  description = "Guide Studio — desktop screen recorder with built-in editor";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -18,8 +18,8 @@
       # -- Per-system outputs (packages, dev shells) --
 
       packages = forAllSystems (pkgs: {
-        guidestudio = pkgs.callPackage ./nix/package.nix { };
-        default = self.packages.${pkgs.stdenv.hostPlatform.system}.guidestudio;
+        guide-studio = pkgs.callPackage ./nix/package.nix { };
+        default = self.packages.${pkgs.stdenv.hostPlatform.system}.guide-studio;
       });
 
       devShells = forAllSystems (
@@ -104,7 +104,7 @@
             PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
 
             shellHook = ''
-              echo "GuideStudio dev shell — node $(node --version), electron v$(electron --version 2>/dev/null | tr -d 'v')"
+              echo "Guide Studio dev shell — node $(node --version), electron v$(electron --version 2>/dev/null | tr -d 'v')"
             '';
           };
         }
@@ -113,7 +113,7 @@
       # -- System-wide outputs (modules, overlay) --
 
       overlays.default = final: _prev: {
-        guidestudio = self.packages.${final.stdenv.hostPlatform.system}.guidestudio;
+        guide-studio = self.packages.${final.stdenv.hostPlatform.system}.guide-studio;
       };
 
       nixosModules.default = import ./nix/module.nix self;

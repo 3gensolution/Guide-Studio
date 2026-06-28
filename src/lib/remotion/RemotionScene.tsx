@@ -86,6 +86,6 @@ function getBackgroundStyle(background: string): React.CSSProperties {
 				background: "linear-gradient(135deg, #e8dff0 0%, #d0e0f0 50%, #f0d8e8 100%)",
 			};
 		default:
-			return { backgroundColor: "#09090b" };
+			return { backgroundColor: "#1C1917" };
 	}
 }

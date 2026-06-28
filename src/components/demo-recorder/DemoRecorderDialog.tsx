@@ -79,18 +79,18 @@ export function DemoRecorderDialog({ open, onOpenChange, onStart }: DemoRecorder
 							<select
 								value={maxSteps}
 								onChange={(e) => setMaxSteps(Number(e.target.value))}
-								className="px-2 py-1 rounded bg-[#18181b] border border-white/10 text-xs text-white focus:outline-none cursor-pointer"
+								className="px-2 py-1 rounded bg-[#292524] border border-white/10 text-xs text-white focus:outline-none cursor-pointer"
 							>
-								<option value={8} className="bg-[#18181b] text-white">
+								<option value={8} className="bg-[#292524] text-white">
 									8 (short)
 								</option>
-								<option value={12} className="bg-[#18181b] text-white">
+								<option value={12} className="bg-[#292524] text-white">
 									12 (standard)
 								</option>
-								<option value={15} className="bg-[#18181b] text-white">
+								<option value={15} className="bg-[#292524] text-white">
 									15 (detailed)
 								</option>
-								<option value={20} className="bg-[#18181b] text-white">
+								<option value={20} className="bg-[#292524] text-white">
 									20 (thorough)
 								</option>
 							</select>

@@ -64,14 +64,14 @@ export function LoginDialog({ isOpen, onClose, onLoginSuccess }: LoginDialogProp
 
 	return (
 		<Dialog open={isOpen} onOpenChange={onClose}>
-			<DialogContent className="sm:max-w-md bg-gradient-to-b from-[#0a0a0f] to-[#070809] border border-white/10">
+			<DialogContent className="sm:max-w-md bg-gradient-to-b from-[#1C1917] to-[#070809] border border-white/10">
 				<DialogHeader>
 					<div className="flex items-center gap-3 mb-2">
-						<div className="w-12 h-12 rounded-xl bg-gradient-to-r from-[#00B8FF]/20 to-[#A855F7]/20 border border-[#00B8FF]/30 flex items-center justify-center">
-							<Sparkles className="w-6 h-6 text-[#00B8FF]" />
+						<div className="w-12 h-12 rounded-xl bg-gradient-to-r from-[#F59E0B]/20 to-[#F97316]/20 border border-[#F59E0B]/30 flex items-center justify-center">
+							<Sparkles className="w-6 h-6 text-[#F59E0B]" />
 						</div>
 						<div>
-							<DialogTitle className="text-2xl font-bold bg-gradient-to-r from-[#00B8FF] to-[#A855F7] bg-clip-text text-transparent">
+							<DialogTitle className="text-2xl font-bold bg-gradient-to-r from-[#F59E0B] to-[#F97316] bg-clip-text text-transparent">
 								{mode === "login" ? "Welcome Back" : "Create Account"}
 							</DialogTitle>
 							<DialogDescription className="text-white/60">
@@ -95,7 +95,7 @@ export function LoginDialog({ isOpen, onClose, onLoginSuccess }: LoginDialogProp
 									type="text"
 									value={name}
 									onChange={(e) => setName(e.target.value)}
-									className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/40 focus:outline-none focus:border-[#00B8FF]/50 focus:ring-2 focus:ring-[#00B8FF]/20 transition-all"
+									className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/40 focus:outline-none focus:border-[#F59E0B]/50 focus:ring-2 focus:ring-[#F59E0B]/20 transition-all"
 									placeholder="John Doe"
 									required
 								/>
@@ -109,7 +109,7 @@ export function LoginDialog({ isOpen, onClose, onLoginSuccess }: LoginDialogProp
 									type="text"
 									value={companyName}
 									onChange={(e) => setCompanyName(e.target.value)}
-									className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/40 focus:outline-none focus:border-[#00B8FF]/50 focus:ring-2 focus:ring-[#00B8FF]/20 transition-all"
+									className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/40 focus:outline-none focus:border-[#F59E0B]/50 focus:ring-2 focus:ring-[#F59E0B]/20 transition-all"
 									placeholder="My Company"
 									required
 								/>
@@ -126,7 +126,7 @@ export function LoginDialog({ isOpen, onClose, onLoginSuccess }: LoginDialogProp
 							type="email"
 							value={email}
 							onChange={(e) => setEmail(e.target.value)}
-							className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/40 focus:outline-none focus:border-[#00B8FF]/50 focus:ring-2 focus:ring-[#00B8FF]/20 transition-all"
+							className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/40 focus:outline-none focus:border-[#F59E0B]/50 focus:ring-2 focus:ring-[#F59E0B]/20 transition-all"
 							placeholder="you@example.com"
 							required
 						/>
@@ -141,7 +141,7 @@ export function LoginDialog({ isOpen, onClose, onLoginSuccess }: LoginDialogProp
 							type="password"
 							value={password}
 							onChange={(e) => setPassword(e.target.value)}
-							className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/40 focus:outline-none focus:border-[#00B8FF]/50 focus:ring-2 focus:ring-[#00B8FF]/20 transition-all"
+							className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/40 focus:outline-none focus:border-[#F59E0B]/50 focus:ring-2 focus:ring-[#F59E0B]/20 transition-all"
 							placeholder="••••••••"
 							required
 							minLength={8}
@@ -151,7 +151,7 @@ export function LoginDialog({ isOpen, onClose, onLoginSuccess }: LoginDialogProp
 					<Button
 						type="submit"
 						disabled={isLoading}
-						className="w-full py-6 text-base font-semibold bg-gradient-to-r from-[#00B8FF] to-[#A855F7] hover:shadow-[0_0_30px_rgba(0,184,255,0.3)] transition-all duration-200"
+						className="w-full py-6 text-base font-semibold bg-gradient-to-r from-[#F59E0B] to-[#F97316] hover:shadow-[0_0_30px_rgba(245,158,11,0.3)] transition-all duration-200"
 					>
 						<LogIn size={18} className="mr-2" />
 						{isLoading ? "Please wait..." : mode === "login" ? "Sign In" : "Create Account"}
@@ -173,11 +173,11 @@ export function LoginDialog({ isOpen, onClose, onLoginSuccess }: LoginDialogProp
 					>
 						{mode === "login" ? (
 							<>
-								Don't have an account? <span className="text-[#00B8FF] font-medium">Sign up</span>
+								Don't have an account? <span className="text-[#F59E0B] font-medium">Sign up</span>
 							</>
 						) : (
 							<>
-								Already have an account? <span className="text-[#00B8FF] font-medium">Sign in</span>
+								Already have an account? <span className="text-[#F59E0B] font-medium">Sign in</span>
 							</>
 						)}
 					</button>
@@ -188,19 +188,19 @@ export function LoginDialog({ isOpen, onClose, onLoginSuccess }: LoginDialogProp
 					<h4 className="text-sm font-semibold text-white/90 mb-3">With your account:</h4>
 					<ul className="space-y-2 text-xs text-white/60">
 						<li className="flex items-center gap-2">
-							<div className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-[#00B8FF] to-[#A855F7]" />
+							<div className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-[#F59E0B] to-[#F97316]" />
 							AI-powered video editing & narration
 						</li>
 						<li className="flex items-center gap-2">
-							<div className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-[#00B8FF] to-[#A855F7]" />
+							<div className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-[#F59E0B] to-[#F97316]" />
 							Auto-captions with speech-to-text
 						</li>
 						<li className="flex items-center gap-2">
-							<div className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-[#00B8FF] to-[#A855F7]" />
+							<div className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-[#F59E0B] to-[#F97316]" />
 							Music & sound effects generation
 						</li>
 						<li className="flex items-center gap-2">
-							<div className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-[#00B8FF] to-[#A855F7]" />
+							<div className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-[#F59E0B] to-[#F97316]" />
 							Cloud sync & project backup
 						</li>
 					</ul>

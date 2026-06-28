@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: vedantmgoyal9/winget-releaser@v2
         with:
-          identifier: SiddharthVaddem.GuideStudio
+          identifier: GuideStudio.GuideStudio
           # Match the Windows installer asset attached to each release.
           # Today: "GuideStudio.Setup.latest.exe". Adjust this regex if you
           # ever rename the installer to include a version (e.g. "Setup\.\d+\.\d+\.\d+\.exe").

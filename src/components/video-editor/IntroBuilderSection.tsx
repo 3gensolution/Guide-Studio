@@ -48,10 +48,10 @@ interface IntroBuilderSectionProps {
 }
 
 const BACKGROUND_SWATCHES: { key: string; label: string; color: string; color2?: string }[] = [
-	{ key: "brand-dark", label: "Dark", color: "#0a0a0f" },
+	{ key: "brand-dark", label: "Dark", color: "#171412" },
 	{ key: "navy", label: "Navy", color: "#0f172a" },
 	{ key: "deep-purple", label: "Purple", color: "#1e1033" },
-	{ key: "charcoal", label: "Charcoal", color: "#18181b" },
+	{ key: "charcoal", label: "Charcoal", color: "#292524" },
 	{ key: "slate", label: "Slate", color: "#1e293b" },
 	{ key: "gradient-blue", label: "Blue", color: "#0f172a", color2: "#1e3a5f" },
 	{ key: "gradient-green", label: "Green", color: "#0f172a", color2: "#064e3b" },

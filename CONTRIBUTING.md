@@ -10,7 +10,7 @@ Thank you for considering contributing to this project! By contributing, you hel
 2. **Clone Your Fork**
    - Clone your forked repository to your local machine:
      ```bash
-     git clone https://github.com/your-username/guidestudio.git
+     git clone https://github.com/your-username/guide-studio.git
      ```
 
 3. **Create a New Branch**

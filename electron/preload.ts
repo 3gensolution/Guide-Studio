@@ -25,12 +25,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return await ipcRenderer.invoke("get-asset-base-path");
 	},
 
-	// ── Native bridge (GuideStudio) ──
+	// ── Native bridge (Guide Studio) ──
 	invokeNativeBridge: <TData>(request: NativeBridgeRequest) => {
 		return ipcRenderer.invoke(NATIVE_BRIDGE_CHANNEL, request) as Promise<TData>;
 	},
 
-	// ── HUD overlay (GuideStudio) ──
+	// ── HUD overlay (Guide Studio) ──
 	hudOverlayHide: () => {
 		ipcRenderer.send("hud-overlay-hide");
 	},
@@ -99,7 +99,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return ipcRenderer.invoke("get-recorded-video-path");
 	},
 
-	// ── Recording state (GuideStudio's richer signature with recordingId + cursorCaptureMode) ──
+	// ── Recording state (Guide Studio's richer signature with recordingId + cursorCaptureMode) ──
 	setRecordingState: (
 		recording: boolean,
 		recordingId?: number,
@@ -108,7 +108,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return ipcRenderer.invoke("set-recording-state", recording, recordingId, cursorCaptureMode);
 	},
 
-	// ── Native Windows capture (GuideStudio) ──
+	// ── Native Windows capture (Guide Studio) ──
 	isNativeWindowsCaptureAvailable: () => {
 		return ipcRenderer.invoke("is-native-windows-capture-available");
 	},
@@ -128,7 +128,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return ipcRenderer.invoke("resume-native-windows-recording");
 	},
 
-	// ── Native Mac capture (GuideStudio) ──
+	// ── Native Mac capture (Guide Studio) ──
 	startNativeMacRecording: (request: NativeMacRecordingRequest) => {
 		return ipcRenderer.invoke("start-native-mac-recording", request);
 	},
@@ -343,7 +343,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return ipcRenderer.invoke("set-setting", key, value);
 	},
 
-	// ── Diagnostics (GuideStudio) ──
+	// ── Diagnostics (Guide Studio) ──
 	saveDiagnostic: (payload: {
 		error: string;
 		stack?: string;
@@ -380,7 +380,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		ipcRenderer.send("set-window-title", title);
 	},
 
-	// ── Countdown overlay (GuideStudio) ──
+	// ── Countdown overlay (Guide Studio) ──
 	showCountdownOverlay: (value: number, runId: number) => {
 		return ipcRenderer.invoke("countdown-overlay-show", value, runId);
 	},

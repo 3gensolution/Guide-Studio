@@ -9,11 +9,11 @@ let package = Package(
 	],
 	products: [
 		.executable(
-			name: "guidestudio-screencapturekit-helper",
+			name: "guide-screencapturekit-helper",
 			targets: ["GuideScreenCaptureKitHelper"]
 		),
 		.executable(
-			name: "guidestudio-macos-cursor-helper",
+			name: "guide-macos-cursor-helper",
 			targets: ["GuideMacOSCursorHelper"]
 		)
 	],

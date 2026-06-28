@@ -208,7 +208,7 @@ export function RecordingSetupDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="max-w-2xl bg-[#18181b] border-white/10 text-white">
+			<DialogContent className="max-w-2xl bg-[#292524] border-white/10 text-white">
 				<DialogHeader>
 					<DialogTitle className="text-white">New Recording</DialogTitle>
 					<DialogDescription className="text-white/40">
@@ -296,7 +296,7 @@ export function RecordingSetupDialog({
 											<option
 												key={d.deviceId}
 												value={d.deviceId}
-												className="bg-[#18181b] text-white"
+												className="bg-[#292524] text-white"
 											>
 												{d.label}
 											</option>
@@ -334,7 +334,7 @@ export function RecordingSetupDialog({
 											<option
 												key={d.deviceId}
 												value={d.deviceId}
-												className="bg-[#18181b] text-white"
+												className="bg-[#292524] text-white"
 											>
 												{d.label}
 											</option>

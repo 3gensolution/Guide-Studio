@@ -91,6 +91,8 @@ export interface VideoFrameData {
 
 export type ExportQuality = "medium" | "good" | "source";
 
+export type ExportPipelineModel = "legacy" | "modern";
+
 export type Mp4FrameRate = 24 | 30 | 60;
 
 // GIF Export Types
@@ -114,6 +116,7 @@ export interface ExportSettings {
 	quality?: ExportQuality;
 	frameRate?: Mp4FrameRate;
 	encodingMode?: EncodingMode;
+	pipelineModel?: ExportPipelineModel;
 	// GIF settings
 	gifConfig?: GifExportConfig;
 }

@@ -26,6 +26,7 @@ export type {
 	ExportConfig,
 	ExportFormat,
 	ExportMetrics,
+	ExportPipelineModel,
 	ExportProgress,
 	ExportQuality,
 	ExportResult,

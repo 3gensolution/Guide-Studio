@@ -54,13 +54,13 @@ export function buildTheme(opts: {
 	const base: ThemeConfig = {
 		primaryColor: accent,
 		accentColor: accent,
-		backgroundColor: isDark ? "#0a0a1a" : "#fafafa",
-		surfaceColor: isDark ? "#1a1a2e" : "#ffffff",
+		backgroundColor: isDark ? "#1C1917" : "#fafafa",
+		surfaceColor: isDark ? "#292524" : "#ffffff",
 		textColor: isDark ? "#f0f0f0" : "#1a1a1a",
 		mutedTextColor: isDark ? "#888888" : "#666666",
 
-		headingFont: "'Inter', system-ui, sans-serif",
-		bodyFont: "'Inter', system-ui, sans-serif",
+		headingFont: "'Plus Jakarta Sans', system-ui, sans-serif",
+		bodyFont: "'Plus Jakarta Sans', system-ui, sans-serif",
 		monoFont: "'JetBrains Mono', monospace",
 		fontScale: "default",
 
@@ -115,17 +115,17 @@ export function buildTheme(opts: {
 
 /** Pre-built theme presets */
 export const THEME_PRESETS: Record<string, ThemeConfig> = {
-	"clean-professional": buildTheme({ accentColor: "#2563eb", mood: "professional" }),
-	"bold-startup": buildTheme({ accentColor: "#7c3aed", mood: "bold" }),
+	"clean-professional": buildTheme({ accentColor: "#F59E0B", mood: "professional" }),
+	"bold-startup": buildTheme({ accentColor: "#F97316", mood: "bold" }),
 	"cinematic-dark": buildTheme({ accentColor: "#e2e8f0", mood: "cinematic" }),
 	"minimal-light": buildTheme({ accentColor: "#1a1a1a", mood: "minimal", darkMode: false }),
-	"neon-tech": buildTheme({ accentColor: "#00ff88", mood: "bold" }),
+	"warm-ember": buildTheme({ accentColor: "#EF4444", mood: "bold" }),
 	"warm-editorial": buildTheme({
 		accentColor: "#c2410c",
 		mood: "cinematic",
 		darkMode: false,
 	}),
-	"anime-pop": buildTheme({ accentColor: "#ec4899", mood: "playful" }),
+	"sunset-pop": buildTheme({ accentColor: "#F43F5E", mood: "playful" }),
 };
 
 /** Resolve a theme from either a full config, a preset name, or accent color fallback */

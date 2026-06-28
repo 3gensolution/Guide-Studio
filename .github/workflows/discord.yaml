@@ -37,7 +37,7 @@ jobs:
           DISCORD_ALERT_WEBHOOK_URL: ${{ secrets.DISCORD_ALERT_WEBHOOK_URL }}
         with:
           script: |
-            const WEBHOOK_USERNAME = (process.env.DISCORD_WEBHOOK_USERNAME || "GuideStudio").trim();
+            const WEBHOOK_USERNAME = (process.env.DISCORD_WEBHOOK_USERNAME || "Guide Studio").trim();
             const WEBHOOK_AVATAR = (process.env.DISCORD_WEBHOOK_AVATAR_URL || "").trim();
 
             const THREAD_MARKER_REGEX = /<!--\s*discord-thread-id:(\d+)\s*-->/i;
@@ -191,7 +191,7 @@ jobs:
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
-                    username: "GuideStudio",
+                    username: "Guide Studio",
                     avatar_url: WEBHOOK_AVATAR,
                     content: `⚠️ PR Discord sync failed\n${message}\nRun: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
                     allowed_mentions: { parse: [] }
@@ -430,7 +430,7 @@ jobs:
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                      username: "GuideStudio",
+                      username: "Guide Studio",
                       avatar_url: WEBHOOK_AVATAR,
                       content: `⚠️ PR->Discord sync failed\n${msg}\nRun: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
                       allowed_mentions: { parse: [] }
@@ -455,7 +455,7 @@ jobs:
         with:
           script: |
             const spotlightWebhook = (process.env.DISCORD_SPOTLIGHT_WEBHOOK_URL || "").trim();
-            const webhookUsername = (process.env.DISCORD_WEBHOOK_USERNAME || "GuideStudio").trim();
+            const webhookUsername = (process.env.DISCORD_WEBHOOK_USERNAME || "Guide Studio").trim();
             const webhookAvatar = (process.env.DISCORD_WEBHOOK_AVATAR_URL || "").trim();
             if (!spotlightWebhook) {
               core.info("DISCORD_SPOTLIGHT_WEBHOOK_URL missing. Skipping leaderboard post.");

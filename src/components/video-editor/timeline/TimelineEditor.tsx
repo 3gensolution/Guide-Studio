@@ -444,7 +444,7 @@ function PlaybackCursor({
 			}}
 		>
 			<div
-				className="absolute top-0 bottom-0 w-[2px] bg-[#6C55FF] shadow-[0_0_18px_rgba(108,85,255,0.68)] cursor-ew-resize pointer-events-auto hover:shadow-[0_0_24px_rgba(108,85,255,0.85)] transition-shadow"
+				className="absolute top-0 bottom-0 w-[2px] bg-[#F43F5E] shadow-[0_0_18px_rgba(244,63,94,0.68)] cursor-ew-resize pointer-events-auto hover:shadow-[0_0_24px_rgba(244,63,94,0.85)] transition-shadow"
 				style={{
 					[sideProperty]: `${offset}px`,
 				}}
@@ -458,7 +458,7 @@ function PlaybackCursor({
 					className="absolute -top-2 left-1/2 -translate-x-1/2 hover:scale-110 transition-transform"
 					style={{ width: "20px", height: "20px" }}
 				>
-					<div className="w-4 h-4 mx-auto mt-[2px] bg-[#6C55FF] rotate-45 rounded-[5px] shadow-lg shadow-[#6C55FF]/30 border border-white/30" />
+					<div className="w-4 h-4 mx-auto mt-[2px] bg-[#F43F5E] rotate-45 rounded-[5px] shadow-lg shadow-[#F43F5E]/30 border border-white/30" />
 				</div>
 				{isDragging && (
 					<div className="absolute -top-6 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded bg-black/80 text-[10px] text-white/90 font-medium tabular-nums whitespace-nowrap border border-white/10 shadow-lg pointer-events-none">
@@ -576,7 +576,7 @@ function TimelineAxis({
 							<span
 								className={cn(
 									"text-[10px] font-medium tabular-nums tracking-tight",
-									marker.time === currentTimeMs ? "text-[#00B8FF]" : "text-slate-500",
+									marker.time === currentTimeMs ? "text-[#F59E0B]" : "text-slate-500",
 								)}
 							>
 								{marker.label}
@@ -1682,7 +1682,7 @@ export default function TimelineEditor({
 
 	if (!videoDuration || videoDuration === 0) {
 		return (
-			<div className="flex-1 flex flex-col items-center justify-center rounded-lg bg-[#09090b] gap-3">
+			<div className="flex-1 flex flex-col items-center justify-center rounded-lg bg-[#1C1917] gap-3">
 				<div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center">
 					<Plus className="w-6 h-6 text-slate-600" />
 				</div>
@@ -1701,14 +1701,14 @@ export default function TimelineEditor({
 	}
 
 	return (
-		<div className="flex-1 min-h-0 flex flex-col bg-[#09090b] overflow-hidden">
-			<div className="flex items-center gap-2.5 px-3 py-2 border-b border-white/[0.06] bg-[#08090b]/95">
+		<div className="flex-1 min-h-0 flex flex-col bg-[#1C1917] overflow-hidden">
+			<div className="flex items-center gap-2.5 px-3 py-2 border-b border-white/[0.06] bg-[#1C1917]/95">
 				<div className="flex items-center gap-0.5 rounded-xl border border-white/[0.06] bg-white/[0.025] p-1">
 					<Button
 						onClick={handleAddZoom}
 						variant="ghost"
 						size="icon"
-						className="h-7 w-7 rounded-lg text-slate-400 hover:text-[#00B8FF] hover:bg-[#00B8FF]/10 transition-all"
+						className="h-7 w-7 rounded-lg text-slate-400 hover:text-[#F59E0B] hover:bg-[#F59E0B]/10 transition-all"
 						title={t("buttons.addZoom")}
 					>
 						<ZoomIn className="w-4 h-4" />
@@ -1782,7 +1782,7 @@ export default function TimelineEditor({
 									className="text-slate-300 hover:text-white hover:bg-white/10 cursor-pointer flex items-center justify-between gap-3"
 								>
 									<span>{getAspectRatioLabel(ratio)}</span>
-									{aspectRatio === ratio && <Check className="w-3 h-3 text-[#00B8FF]" />}
+									{aspectRatio === ratio && <Check className="w-3 h-3 text-[#F59E0B]" />}
 								</DropdownMenuItem>
 							))}
 						</DropdownMenuContent>
@@ -1791,13 +1791,13 @@ export default function TimelineEditor({
 				<div className="flex-1" />
 				<div className="hidden md:flex items-center gap-3 text-[10px] text-slate-500 font-medium">
 					<span className="flex items-center gap-1.5">
-						<kbd className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[#00B8FF] font-sans">
+						<kbd className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[#F59E0B] font-sans">
 							{scrollLabels.pan}
 						</kbd>
 						<span>{t("labels.pan")}</span>
 					</span>
 					<span className="flex items-center gap-1.5">
-						<kbd className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[#00B8FF] font-sans">
+						<kbd className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[#F59E0B] font-sans">
 							{scrollLabels.zoom}
 						</kbd>
 						<span>{t("labels.zoom")}</span>
@@ -1806,7 +1806,7 @@ export default function TimelineEditor({
 			</div>
 			<div
 				ref={timelineContainerRef}
-				className="flex-1 min-h-0 overflow-auto custom-scrollbar bg-[#09090b] relative"
+				className="flex-1 min-h-0 overflow-auto custom-scrollbar bg-[#1C1917] relative"
 				onClick={() => setSelectedKeyframeId(null)}
 			>
 				<TimelineWrapper

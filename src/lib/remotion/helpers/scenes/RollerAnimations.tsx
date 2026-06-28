@@ -24,12 +24,12 @@ const C = {
 		400: "#a1a1aa",
 		500: "#71717a",
 		600: "#52525b",
-		700: "#3f3f46",
-		800: "#27272a",
-		900: "#18181b",
+		700: "#44403C",
+		800: "#292524",
+		900: "#1C1917",
 		950: "#0c0c0d",
 	},
-	accent: "#6366f1",
+	accent: "#F59E0B",
 	secondary: "#ec4899",
 	tertiary: "#14b8a6",
 	success: "#22c55e",
@@ -1289,7 +1289,7 @@ export const RollerGradientWave = ({ startDelay = 0 }: { startDelay?: number }) 
 							height: "100%",
 							background: isFinal
 								? `linear-gradient(90deg, ${C.warning}, ${C.gold})`
-								: `linear-gradient(90deg, ${C.accent}, #8b5cf6)`,
+								: `linear-gradient(90deg, ${C.accent}, #F43F5E)`,
 							transition: "width 0.3s",
 						}}
 					/>
@@ -2870,7 +2870,7 @@ export const RollerWave = ({ startDelay = 0 }: { startDelay?: number }) => {
 									fontFamily: font,
 									fontSize: 56,
 									fontWeight: 700,
-									color: "#8b5cf6",
+									color: "#F43F5E",
 									transform: `translateY(${y}px)`,
 									opacity,
 								}}

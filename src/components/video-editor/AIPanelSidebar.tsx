@@ -196,7 +196,7 @@ export function AIPanelSidebar({
 	const hasTelemetry = cursorTelemetry.length > 0 && videoDurationMs > 0;
 
 	return (
-		<div className="h-full flex flex-col bg-[#09090b] rounded-2xl border border-white/5 shadow-lg overflow-hidden">
+		<div className="h-full flex flex-col bg-[#1C1917] rounded-2xl border border-white/5 shadow-lg overflow-hidden">
 			{/* Header */}
 			<div className="flex items-center gap-2 px-3 py-2.5 border-b border-white/5">
 				<Sparkles size={14} className="text-[#2563eb]" />
@@ -222,7 +222,7 @@ export function AIPanelSidebar({
 							onClick={() => onToggleAutoZoom?.(!autoZoomEnabled)}
 							className={`flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-medium transition-all ${
 								autoZoomEnabled
-									? "bg-[#00B8FF]/20 text-[#00B8FF] hover:bg-[#00B8FF]/30"
+									? "bg-[#F59E0B]/20 text-[#F59E0B] hover:bg-[#F59E0B]/30"
 									: "bg-white/10 text-white/80 hover:bg-white/15"
 							}`}
 						>
@@ -240,7 +240,7 @@ export function AIPanelSidebar({
 							onClick={() => onToggleAutoFocusAll?.(!autoFocusAll)}
 							className={`flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-medium transition-all ${
 								autoFocusAll
-									? "bg-[#00B8FF]/20 text-[#00B8FF] hover:bg-[#00B8FF]/30"
+									? "bg-[#F59E0B]/20 text-[#F59E0B] hover:bg-[#F59E0B]/30"
 									: "bg-white/10 text-white/80 hover:bg-white/15"
 							}`}
 						>

@@ -104,6 +104,8 @@ export async function mergeVideoWithAudio(
 	const audioCodec = isWebm ? "libopus" : "aac";
 	const audioBitrate = isWebm ? "128k" : "192k";
 
+	const env = getFfmpegEnv(ffmpegPath);
+
 	// Try simple merge first (video likely has no audio from html2canvas export)
 	try {
 		await execFileAsync(
@@ -129,7 +131,7 @@ export async function mergeVideoWithAudio(
 				"-y",
 				outputPath,
 			],
-			{ timeout: 120_000 },
+			{ timeout: 120_000, env },
 		);
 		return { success: true };
 	} catch (err1) {
@@ -159,7 +161,7 @@ export async function mergeVideoWithAudio(
 					"-y",
 					outputPath,
 				],
-				{ timeout: 120_000 },
+				{ timeout: 120_000, env },
 			);
 			return { success: true };
 		} catch (err2) {
@@ -170,8 +172,62 @@ export async function mergeVideoWithAudio(
 }
 
 /**
+ * Probe a file with ffmpeg -i to detect whether it has an audio stream.
+ * ffmpeg prints stream info to stderr and always exits with code 1 when
+ * given no output file, so we parse stderr.
+ */
+async function probeHasAudio(
+	filePath: string,
+	ffmpegPath: string,
+	execFileAsync: (
+		file: string,
+		args: string[],
+		opts: object,
+	) => Promise<{ stdout: string; stderr: string }>,
+	env: NodeJS.ProcessEnv,
+): Promise<boolean> {
+	try {
+		await execFileAsync(ffmpegPath, ["-i", filePath, "-hide_banner"], { timeout: 10_000, env });
+		return false;
+	} catch (err: unknown) {
+		const stderr = String((err as { stderr?: string })?.stderr || "");
+		return /Stream #\d+:\d+[^:]*: Audio:/i.test(stderr);
+	}
+}
+
+/**
+ * Probe a file with ffmpeg -i for its video resolution.
+ */
+async function probeResolution(
+	filePath: string,
+	ffmpegPath: string,
+	execFileAsync: (
+		file: string,
+		args: string[],
+		opts: object,
+	) => Promise<{ stdout: string; stderr: string }>,
+	env: NodeJS.ProcessEnv,
+): Promise<{ width: number; height: number } | null> {
+	try {
+		await execFileAsync(ffmpegPath, ["-i", filePath, "-hide_banner"], { timeout: 10_000, env });
+		return null;
+	} catch (err: unknown) {
+		const stderr = String((err as { stderr?: string })?.stderr || "");
+		const match = stderr.match(/Stream.*Video:.*?(\d{2,5})x(\d{2,5})/);
+		if (match) {
+			return { width: parseInt(match[1]), height: parseInt(match[2]) };
+		}
+		return null;
+	}
+}
+
+/**
  * Concatenate multiple video files into a single output file.
  * Uses the FFmpeg concat demuxer. Falls back to re-encoding if stream copy fails.
+ *
+ * Handles inputs with different resolutions and mixed audio (some inputs may
+ * lack an audio track — e.g. canvas-rendered intros). Inputs without audio
+ * get a synthesised silent track so the main video's audio is preserved.
  */
 export async function concatenateVideos(
 	inputPaths: string[],
@@ -188,38 +244,162 @@ export async function concatenateVideos(
 
 	const ffmpegPath = await getFfmpegPath();
 	if (!ffmpegPath) {
-		return { success: false, error: "FFmpeg not found" };
+		return { success: false, error: "FFmpeg not found — install FFmpeg to enable intro prepend" };
 	}
 
 	const { execFile } = await import("node:child_process");
 	const { promisify } = await import("node:util");
 	const execFileAsync = promisify(execFile);
 
+	// Verify all input files exist before attempting concat
+	for (const inputPath of inputPaths) {
+		try {
+			await fs.access(inputPath);
+		} catch {
+			return { success: false, error: `Input file not found: ${inputPath}` };
+		}
+	}
+
 	// Write a temporary concat list file
 	const concatListPath = `${outputPath}.concat.txt`;
 	const listContent = inputPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n");
 	await fs.writeFile(concatListPath, listContent);
 
+	const env = getFfmpegEnv(ffmpegPath);
+
 	try {
-		// Try stream copy first (fastest, same codec)
+		// Try stream copy first (fastest, same codec/resolution)
+		console.log("[ffmpeg] Trying concat with stream copy...");
 		await execFileAsync(
 			ffmpegPath,
 			["-f", "concat", "-safe", "0", "-i", concatListPath, "-c", "copy", "-y", outputPath],
-			{ timeout: 300_000 },
+			{ timeout: 300_000, env },
 		);
+		console.log("[ffmpeg] Stream copy concat succeeded");
 		return { success: true };
-	} catch {
-		// Fallback: re-encode if codecs or resolutions differ
+	} catch (streamCopyErr) {
+		console.warn("[ffmpeg] Stream copy failed, trying filter_complex concat:", streamCopyErr);
+	} finally {
+		await fs.unlink(concatListPath).catch(() => {
+			/* intentional noop */
+		});
+	}
+
+	// Probe each input for audio streams and resolution
+	const audioFlags: boolean[] = [];
+	const resolutions: ({ width: number; height: number } | null)[] = [];
+	for (const inputPath of inputPaths) {
+		audioFlags.push(await probeHasAudio(inputPath, ffmpegPath, execFileAsync, env));
+		resolutions.push(await probeResolution(inputPath, ffmpegPath, execFileAsync, env));
+	}
+
+	const anyHasAudio = audioFlags.some(Boolean);
+	const allHaveAudio = audioFlags.every(Boolean);
+
+	// Determine target resolution: use the last input (main video) as reference
+	const targetRes = resolutions[resolutions.length - 1] ?? { width: 1920, height: 1080 };
+	// Ensure even dimensions
+	const tw = Math.floor(targetRes.width / 2) * 2;
+	const th = Math.floor(targetRes.height / 2) * 2;
+
+	// Check if resolutions differ — if so we need to scale
+	const needsScale = resolutions.some((r) => r && (r.width !== tw || r.height !== th));
+
+	console.log(
+		`[ffmpeg] Probed inputs: audio=[${audioFlags.join(",")}], ` +
+			`resolutions=[${resolutions.map((r) => (r ? `${r.width}x${r.height}` : "?")).join(",")}], ` +
+			`target=${tw}x${th}, needsScale=${needsScale}`,
+	);
+
+	// Smart filter_complex concat: handle mixed audio and resolution differences
+	if (anyHasAudio) {
 		try {
+			const inputs: string[] = [];
+			const filterSegments: string[] = [];
+			const concatInputs: string[] = [];
+
+			for (let i = 0; i < inputPaths.length; i++) {
+				inputs.push("-i", inputPaths[i]);
+			}
+
+			for (let i = 0; i < inputPaths.length; i++) {
+				// Scale video to target resolution if needed
+				const videoLabel = needsScale ? `v${i}` : `${i}:v:0`;
+				if (needsScale) {
+					filterSegments.push(
+						`[${i}:v:0]scale=${tw}:${th}:force_original_aspect_ratio=decrease,` +
+							`pad=${tw}:${th}:(ow-iw)/2:(oh-ih)/2:black,setsar=1[v${i}]`,
+					);
+				}
+
+				if (audioFlags[i]) {
+					concatInputs.push(`[${videoLabel}][${i}:a:0]`);
+				} else {
+					// Generate a silent audio track for this input
+					filterSegments.push(`anullsrc=channel_layout=stereo:sample_rate=48000[silence${i}]`);
+					concatInputs.push(`[${videoLabel}][silence${i}]`);
+				}
+			}
+
+			const concatFilter = `${concatInputs.join("")}concat=n=${inputPaths.length}:v=1:a=1[outv][outa]`;
+			const filterComplex = [...filterSegments, concatFilter].join(";");
+
+			console.log("[ffmpeg] Trying smart filter_complex concat (mixed audio)...");
+			console.log("[ffmpeg] filter_complex:", filterComplex);
 			await execFileAsync(
 				ffmpegPath,
 				[
-					"-f",
-					"concat",
-					"-safe",
-					"0",
-					"-i",
-					concatListPath,
+					...inputs,
+					"-filter_complex",
+					filterComplex,
+					"-map",
+					"[outv]",
+					"-map",
+					"[outa]",
+					"-c:v",
+					"libx264",
+					"-preset",
+					"medium",
+					"-c:a",
+					"aac",
+					"-b:a",
+					"192k",
+					"-y",
+					outputPath,
+				],
+				{ timeout: 600_000, env },
+			);
+			console.log("[ffmpeg] Smart filter_complex concat succeeded");
+			return { success: true };
+		} catch (smartErr) {
+			console.warn("[ffmpeg] Smart filter_complex failed:", smartErr);
+		}
+	}
+
+	// Fallback: all inputs have audio — try standard filter_complex
+	if (allHaveAudio) {
+		try {
+			const inputs: string[] = [];
+			const filterParts: string[] = [];
+
+			for (let i = 0; i < inputPaths.length; i++) {
+				inputs.push("-i", inputPaths[i]);
+				filterParts.push(`[${i}:v:0][${i}:a:0]`);
+			}
+
+			const filterComplex = `${filterParts.join("")}concat=n=${inputPaths.length}:v=1:a=1[outv][outa]`;
+
+			console.log("[ffmpeg] Trying filter_complex concat (all have audio)...");
+			await execFileAsync(
+				ffmpegPath,
+				[
+					...inputs,
+					"-filter_complex",
+					filterComplex,
+					"-map",
+					"[outv]",
+					"-map",
+					"[outa]",
 					"-c:v",
 					"libx264",
 					"-preset",
@@ -229,17 +409,79 @@ export async function concatenateVideos(
 					"-y",
 					outputPath,
 				],
-				{ timeout: 600_000 },
+				{ timeout: 600_000, env },
 			);
+			console.log("[ffmpeg] filter_complex concat (all have audio) succeeded");
 			return { success: true };
-		} catch (err2) {
-			return { success: false, error: `FFmpeg concat failed: ${err2}` };
+		} catch (filterErr) {
+			console.warn("[ffmpeg] filter_complex with audio failed, trying video-only:", filterErr);
 		}
-	} finally {
-		await fs.unlink(concatListPath).catch(() => {
-			/* intentional noop */
-		});
 	}
+
+	// Final fallback: video-only concat (drops all audio)
+	try {
+		const inputs: string[] = [];
+		const filterParts: string[] = [];
+
+		for (let i = 0; i < inputPaths.length; i++) {
+			inputs.push("-i", inputPaths[i]);
+			if (needsScale) {
+				filterParts.push(
+					`[${i}:v:0]scale=${tw}:${th}:force_original_aspect_ratio=decrease,` +
+						`pad=${tw}:${th}:(ow-iw)/2:(oh-ih)/2:black,setsar=1[v${i}]`,
+				);
+			}
+		}
+
+		const concatInputs = inputPaths.map((_, i) => (needsScale ? `[v${i}]` : `[${i}:v:0]`)).join("");
+		const filterComplex = needsScale
+			? `${filterParts.join(";")};${concatInputs}concat=n=${inputPaths.length}:v=1:a=0[outv]`
+			: `${concatInputs}concat=n=${inputPaths.length}:v=1:a=0[outv]`;
+
+		console.log("[ffmpeg] Trying filter_complex concat (video-only)...");
+		await execFileAsync(
+			ffmpegPath,
+			[
+				...inputs,
+				"-filter_complex",
+				filterComplex,
+				"-map",
+				"[outv]",
+				"-c:v",
+				"libx264",
+				"-preset",
+				"medium",
+				"-an",
+				"-y",
+				outputPath,
+			],
+			{ timeout: 600_000, env },
+		);
+		console.log("[ffmpeg] filter_complex concat (video-only) succeeded");
+		return { success: true };
+	} catch (videoOnlyErr) {
+		console.error("[ffmpeg] All concat methods failed:", videoOnlyErr);
+		return { success: false, error: `FFmpeg concat failed: ${videoOnlyErr}` };
+	}
+}
+
+/**
+ * Build an environment object for running the Remotion-bundled FFmpeg.
+ * On macOS the dylibs (libavdevice.dylib etc.) sit alongside the binary;
+ * DYLD_LIBRARY_PATH must include that directory for dyld to locate them.
+ * On Linux the equivalent is LD_LIBRARY_PATH.
+ */
+export function getFfmpegEnv(ffmpegPath: string): NodeJS.ProcessEnv {
+	const ffmpegDir = path.dirname(ffmpegPath);
+	const env = { ...process.env };
+
+	if (process.platform === "darwin") {
+		env.DYLD_LIBRARY_PATH = ffmpegDir + (env.DYLD_LIBRARY_PATH ? `:${env.DYLD_LIBRARY_PATH}` : "");
+	} else if (process.platform === "linux") {
+		env.LD_LIBRARY_PATH = ffmpegDir + (env.LD_LIBRARY_PATH ? `:${env.LD_LIBRARY_PATH}` : "");
+	}
+
+	return env;
 }
 
 async function findSystemFfmpeg(): Promise<string | null> {

@@ -19,8 +19,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
     env:
       TAP_OWNER: siddharthvaddem
-      TAP_REPO: homebrew-guidestudio
-      CASK_NAME: guidestudio
+      TAP_REPO: homebrew-guide-studio
+      CASK_NAME: guide-studio
     steps:
       - name: Resolve tag and version
         id: meta
@@ -143,10 +143,10 @@ jobs:
 
             zap trash: [
               "~/Library/Application Support/GuideStudio",
-              "~/Library/Caches/com.siddharthvaddem.guidestudio",
+              "~/Library/Caches/com.guidestudio.guide-studio",
               "~/Library/Logs/GuideStudio",
-              "~/Library/Preferences/com.siddharthvaddem.guidestudio.plist",
-              "~/Library/Saved Application State/com.siddharthvaddem.guidestudio.savedState",
+              "~/Library/Preferences/com.guidestudio.guide-studio.plist",
+              "~/Library/Saved Application State/com.guidestudio.guide-studio.savedState",
             ]
           end
           EOF
