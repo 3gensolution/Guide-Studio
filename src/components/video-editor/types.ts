@@ -69,6 +69,8 @@ export function rotation3DPerspective(width: number, height: number): number {
  */
 export type ZoomRegionSource = "auto" | "manual";
 
+export type ZoomMode = "auto" | "manual";
+
 export interface ZoomRegion {
 	id: string;
 	startMs: number;
@@ -76,6 +78,7 @@ export interface ZoomRegion {
 	depth: ZoomDepth;
 	focus: ZoomFocus;
 	focusMode?: ZoomFocusMode;
+	mode?: ZoomMode;
 	rotationPreset?: Rotation3DPreset;
 	/** Custom scale overriding the preset depth (1.0-5.0, two decimal precision). */
 	customScale?: number;
@@ -284,6 +287,7 @@ export interface AnnotationTextStyle {
 	textDecoration: "none" | "underline";
 	textAlign: "left" | "center" | "right";
 	textAnimation?: AnnotationTextAnimation;
+	borderRadius?: number;
 }
 
 export interface AnnotationRegion {
@@ -300,8 +304,11 @@ export interface AnnotationRegion {
 	zIndex: number;
 	/** When set, layout/style edits on one region can sync to all auto-caption siblings. */
 	annotationSource?: "auto-caption";
+	trackIndex?: number;
 	figureData?: FigureData;
 	blurData?: BlurData;
+	blurIntensity?: number;
+	blurColor?: string;
 }
 
 export const DEFAULT_ANNOTATION_POSITION: AnnotationPosition = {
@@ -449,3 +456,259 @@ function clamp(value: number, min: number, max: number) {
 	if (Number.isNaN(value)) return (min + max) / 2;
 	return Math.min(max, Math.max(min, value));
 }
+
+// ─── Types needed by the Recordly export pipeline ───
+
+export type CursorStyle = "macos" | "tahoe" | "tahoe-inverted" | "dot" | "figma" | (string & {});
+export const DEFAULT_CURSOR_STYLE: CursorStyle = "tahoe";
+
+export type CursorClickEffectStyle = "none" | "spotlight" | "ripple" | "echo";
+export const DEFAULT_CURSOR_CLICK_EFFECT: CursorClickEffectStyle = "none";
+export const DEFAULT_CURSOR_CLICK_EFFECT_COLOR = "#2563EB";
+export const DEFAULT_CURSOR_CLICK_EFFECT_SCALE = 1;
+export const DEFAULT_CURSOR_CLICK_EFFECT_OPACITY = 1;
+export const DEFAULT_CURSOR_CLICK_EFFECT_DURATION_MS = 600;
+export const DEFAULT_CURSOR_CLICK_BOUNCE_DURATION = 350;
+export const DEFAULT_CURSOR_SWAY = 0.4;
+export const DEFAULT_ZOOM_SMOOTHNESS = 0.5;
+
+export function normalizeCursorClickEffectColor(
+	value: unknown,
+	fallback: string = DEFAULT_CURSOR_CLICK_EFFECT_COLOR,
+): string {
+	if (typeof value !== "string") return fallback;
+	const trimmed = value.trim();
+	if (!/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(trimmed)) return fallback;
+	if (trimmed.length === 4) {
+		const [r, g, b] = trimmed.slice(1).split("");
+		return `#${r}${r}${g}${g}${b}${b}`.toUpperCase();
+	}
+	return trimmed.toUpperCase();
+}
+
+export type ZoomTransitionEasing = "recordly" | "glide" | "smooth" | "snappy" | "linear";
+
+export const DEFAULT_ZOOM_IN_DURATION_MS = 1522.575;
+export const DEFAULT_ZOOM_IN_OVERLAP_MS = 500;
+export const DEFAULT_ZOOM_OUT_DURATION_MS = 1015.05;
+export const DEFAULT_CONNECTED_ZOOM_GAP_MS = 1500;
+export const DEFAULT_CONNECTED_ZOOM_DURATION_MS = 1000;
+export const DEFAULT_ZOOM_IN_EASING: ZoomTransitionEasing = "recordly";
+export const DEFAULT_ZOOM_OUT_EASING: ZoomTransitionEasing = "recordly";
+export const DEFAULT_CONNECTED_ZOOM_EASING: ZoomTransitionEasing = "glide";
+
+export interface ZoomMotionBlurTuning {
+	panVelocityThreshold: number;
+	zoomVelocityThreshold: number;
+	maxDirectionalBlurPx: number;
+	maxRadialBlurStrength: number;
+	panResponsePerSecond: number;
+	zoomResponsePerSecond: number;
+	zoomSafeZoneRadiusPx: number;
+}
+
+export const DEFAULT_ZOOM_MOTION_BLUR_TUNING: ZoomMotionBlurTuning = {
+	panVelocityThreshold: 0,
+	zoomVelocityThreshold: 0,
+	maxDirectionalBlurPx: 41.8,
+	maxRadialBlurStrength: 1,
+	panResponsePerSecond: 11,
+	zoomResponsePerSecond: 9,
+	zoomSafeZoneRadiusPx: 6,
+};
+
+export type WebcamCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
+export type WebcamPositionPreset =
+	| WebcamCorner
+	| "top-center"
+	| "center-left"
+	| "center"
+	| "center-right"
+	| "bottom-center"
+	| "custom";
+
+export interface WebcamOverlaySettings {
+	enabled: boolean;
+	sourcePath: string | null;
+	timeOffsetMs: number;
+	mirror: boolean;
+	cropRegion: CropRegion;
+	corner: WebcamCorner;
+	positionPreset: WebcamPositionPreset;
+	positionX: number;
+	positionY: number;
+	size: number;
+	width: number;
+	height: number;
+	reactToZoom: boolean;
+	cornerRadius: number;
+	shadow: number;
+	margin: number;
+}
+
+export const DEFAULT_WEBCAM_SIZE = 40;
+export const DEFAULT_WEBCAM_REACT_TO_ZOOM = true;
+export const DEFAULT_WEBCAM_CORNER_RADIUS = 90;
+export const DEFAULT_WEBCAM_SHADOW = 0.67;
+export const DEFAULT_WEBCAM_MARGIN = 24;
+export const DEFAULT_WEBCAM_POSITION_PRESET: WebcamPositionPreset = "bottom-right";
+
+export const DEFAULT_WEBCAM_OVERLAY: WebcamOverlaySettings = {
+	enabled: false,
+	sourcePath: null,
+	timeOffsetMs: 0,
+	mirror: true,
+	cropRegion: { x: 0, y: 0, width: 1, height: 1 },
+	corner: "bottom-right",
+	positionPreset: DEFAULT_WEBCAM_POSITION_PRESET,
+	positionX: 1,
+	positionY: 1,
+	size: DEFAULT_WEBCAM_SIZE,
+	width: DEFAULT_WEBCAM_SIZE,
+	height: DEFAULT_WEBCAM_SIZE,
+	reactToZoom: DEFAULT_WEBCAM_REACT_TO_ZOOM,
+	cornerRadius: DEFAULT_WEBCAM_CORNER_RADIUS,
+	shadow: DEFAULT_WEBCAM_SHADOW,
+	margin: DEFAULT_WEBCAM_MARGIN,
+};
+
+export const BLUR_ANNOTATION_STRENGTH = 20;
+export const BASE_PREVIEW_WIDTH = 1920;
+export const BASE_PREVIEW_HEIGHT = 1080;
+
+export const ADVANCED_VERTICAL_PADDING_MAX = 250;
+
+export interface Padding {
+	top: number;
+	bottom: number;
+	left: number;
+	right: number;
+	linked?: boolean;
+}
+
+export const DEFAULT_PADDING: Padding = {
+	top: 20,
+	bottom: 20,
+	left: 20,
+	right: 20,
+	linked: true,
+};
+
+export function getDefaultCaptionFontFamily() {
+	return '"SF Pro Text", "SF Pro Display", Helvetica, sans-serif';
+}
+
+export interface ClipRegion {
+	id: string;
+	startMs: number;
+	endMs: number;
+	speed: number;
+	muted?: boolean;
+	showSourceAudio?: boolean;
+}
+
+export function getClipSourceEndMs(clip: ClipRegion): number {
+	const displayDurationMs = Math.max(0, clip.endMs - clip.startMs);
+	const speed = Number.isFinite(clip.speed) && clip.speed > 0 ? clip.speed : 1;
+	return Math.round(clip.startMs + displayDurationMs * speed);
+}
+
+export function getTimelineDurationMs(clips: ClipRegion[], sourceDurationMs: number): number {
+	const baseDurationMs = Math.max(0, Math.round(sourceDurationMs));
+	if (clips.length === 0) return baseDurationMs;
+	return clips.reduce(
+		(durationMs, clip) => Math.max(durationMs, Math.max(0, Math.round(clip.endMs))),
+		baseDurationMs,
+	);
+}
+
+export function sortClipRegions(clips: ClipRegion[]): ClipRegion[] {
+	return [...clips].sort((left, right) => left.startMs - right.startMs);
+}
+
+function getSafeClipSpeed(clip: ClipRegion) {
+	return Number.isFinite(clip.speed) && clip.speed > 0 ? clip.speed : 1;
+}
+
+export function mapTimelineTimeToSourceTime(timeMs: number, clips: ClipRegion[]): number {
+	const roundedTimeMs = Math.round(timeMs);
+	const sortedClips = sortClipRegions(clips);
+	for (const clip of sortedClips) {
+		if (roundedTimeMs < clip.startMs || roundedTimeMs > clip.endMs) continue;
+		return Math.round(clip.startMs + (roundedTimeMs - clip.startMs) * getSafeClipSpeed(clip));
+	}
+	if (sortedClips.length === 0) return roundedTimeMs;
+	return roundedTimeMs;
+}
+
+export function mapSourceTimeToTimelineTime(timeMs: number, clips: ClipRegion[]): number {
+	const roundedTimeMs = Math.round(timeMs);
+	const sortedClips = sortClipRegions(clips);
+	for (const clip of sortedClips) {
+		const sourceEndMs = getClipSourceEndMs(clip);
+		if (roundedTimeMs < clip.startMs || roundedTimeMs > sourceEndMs) continue;
+		return Math.round(clip.startMs + (roundedTimeMs - clip.startMs) / getSafeClipSpeed(clip));
+	}
+	if (sortedClips.length === 0) return roundedTimeMs;
+	return roundedTimeMs;
+}
+
+export interface AudioRegion {
+	id: string;
+	startMs: number;
+	endMs: number;
+	audioPath: string;
+	volume: number;
+	normalize?: boolean;
+	trackIndex?: number;
+}
+
+export interface CaptionCue {
+	id: string;
+	startMs: number;
+	endMs: number;
+	text: string;
+	words?: CaptionCueWord[];
+}
+
+export interface CaptionCueWord {
+	text: string;
+	startMs: number;
+	endMs: number;
+	leadingSpace?: boolean;
+}
+
+export type AutoCaptionAnimation = "none" | "fade" | "rise" | "pop";
+
+export interface AutoCaptionSettings {
+	enabled: boolean;
+	language: string;
+	fontFamily: string;
+	fontSize: number;
+	bottomOffset: number;
+	maxWidth: number;
+	maxRows: number;
+	animationStyle: AutoCaptionAnimation;
+	boxRadius: number;
+	textColor: string;
+	inactiveTextColor: string;
+	backgroundOpacity: number;
+}
+
+export const DEFAULT_AUTO_CAPTION_SETTINGS: AutoCaptionSettings = {
+	enabled: false,
+	language: "auto",
+	fontFamily: getDefaultCaptionFontFamily(),
+	fontSize: 30,
+	bottomOffset: 3,
+	maxWidth: 62,
+	maxRows: 1,
+	animationStyle: "fade",
+	boxRadius: 17.5,
+	textColor: "#FFFFFF",
+	inactiveTextColor: "#A3A3A3",
+	backgroundOpacity: 0.9,
+};
+
+export type { SourceAudioTrackSettings } from "@/components/video-editor/audio/audioTypes";
+export { type SourceAudioTrackSetting } from "@/components/video-editor/audio/audioTypes";

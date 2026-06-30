@@ -839,6 +839,73 @@ interface Window {
 			success: boolean;
 			accessToken: string | null;
 		}>;
+
+		// ─── Recordly export pipeline IPC stubs ───
+		readLocalFile: (filePath: string) => Promise<{
+			success: boolean;
+			data: ArrayBuffer;
+			error?: string;
+		}>;
+		getLocalMediaUrl: (filePath: string) => Promise<{
+			success: boolean;
+			url: string;
+			error?: string;
+		}>;
+		generateWallpaperThumbnail: (wallpaperPath: string) => Promise<{
+			success: boolean;
+			data: string;
+			error?: string;
+		}>;
+		probeNativeVideoMetadata: (videoPath: string) => Promise<{
+			success: boolean;
+			metadata: {
+				width: number;
+				height: number;
+				durationMs: number;
+				frameRate: number;
+				codec?: string;
+			};
+			error?: string;
+		}>;
+		openExportStream: (options: { tempDir?: string; extension?: string }) => Promise<{
+			success: boolean;
+			streamId: string;
+			tempPath: string;
+			error?: string;
+		}>;
+		writeExportStreamChunk: (
+			streamId: string,
+			chunk: ArrayBuffer,
+			options?: { flush?: boolean },
+		) => Promise<{ success: boolean; error?: string }>;
+		closeExportStream: (
+			streamId: string,
+			options?: { discard?: boolean },
+		) => Promise<{ success: boolean; tempPath: string; error?: string }>;
+		discardExportedTemp: (tempPath: string) => Promise<void>;
+		listAssetDirectory: (dirPath: string) => Promise<{
+			success: boolean;
+			files: string[];
+			error?: string;
+		}>;
+		nativeStaticLayoutExport: (options: unknown) => Promise<unknown>;
+		nativeStaticLayoutExportCancel: () => Promise<void>;
+		onNativeStaticLayoutExportProgress: (
+			callback: (progress: unknown) => void,
+		) => (() => void) | undefined;
+		nativeVideoExportStart: (options: unknown) => Promise<unknown>;
+		nativeVideoExportWriteFrame: (frameData: unknown) => Promise<unknown>;
+		nativeVideoExportWriteFrames: (framesData: unknown) => Promise<unknown>;
+		nativeVideoExportCancel: () => Promise<void>;
+		nativeVideoExportFinish: () => Promise<unknown>;
+		muxExportedVideoAudio: (
+			videoBuffer: ArrayBuffer,
+			audioBuffer: ArrayBuffer,
+		) => Promise<{ success: boolean; blob?: Blob; error?: string }>;
+		muxExportedVideoAudioFromPath: (
+			videoPath: string,
+			audioBuffer: ArrayBuffer,
+		) => Promise<{ success: boolean; tempPath?: string; error?: string }>;
 	};
 }
 

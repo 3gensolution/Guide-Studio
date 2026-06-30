@@ -30,9 +30,10 @@ export function createMotionBlurState(): MotionBlurState {
 	};
 }
 
-interface TransformParams {
+export interface TransformParams {
 	cameraContainer: Container;
 	blurFilter: BlurFilter | null;
+	zoomBlurFilter?: unknown;
 	motionBlurFilter?: MotionBlurFilter | null;
 	stageSize: { width: number; height: number };
 	baseMask: { x: number; y: number; width: number; height: number };

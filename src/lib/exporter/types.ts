@@ -1,86 +1,168 @@
-// ── Encoding Mode (Recordly-inspired) ────────────────────────────────────────
-
-export type EncodingMode = "fast" | "balanced" | "quality";
-
-export interface EncodingModeProfile {
-	bitrateMultiplier: number;
-	keyframeIntervalSec: number;
-	latencyMode: "realtime" | "quality";
-	label: string;
-}
-
-export const ENCODING_MODE_PROFILES: Record<EncodingMode, EncodingModeProfile> = {
-	fast: {
-		bitrateMultiplier: 0.1,
-		keyframeIntervalSec: 4,
-		latencyMode: "realtime",
-		label: "Fast",
-	},
-	balanced: {
-		bitrateMultiplier: 0.75,
-		keyframeIntervalSec: 3,
-		latencyMode: "realtime",
-		label: "Balanced",
-	},
-	quality: {
-		bitrateMultiplier: 1.0,
-		keyframeIntervalSec: 2.5,
-		latencyMode: "quality",
-		label: "Quality",
-	},
-};
-
-export const ENCODING_MODES: { value: EncodingMode; label: string; description: string }[] = [
-	{ value: "fast", label: "Fast", description: "Smaller file, quicker export" },
-	{ value: "balanced", label: "Balanced", description: "Good quality, reasonable speed" },
-	{ value: "quality", label: "Quality", description: "Best quality, larger file" },
-];
-
-// ── Export Metrics ────────────────────────────────────────────────────────────
-
-export interface ExportMetrics {
-	metadataLoadTimeMs: number;
-	rendererInitTimeMs: number;
-	encodeLoopTimeMs: number;
-	audioProcessTimeMs: number;
-	finalizationTimeMs: number;
-	peakEncodeQueueSize: number;
-	peakDecodeQueueSize: number;
-	totalExportTimeMs: number;
-	backpressureProfile?: string;
-	audioStrategy?: string;
-	encodingMode?: string;
-	framesPerSecond?: number;
-}
-
-// ── Core Export Types ─────────────────────────────────────────────────────────
-
 export interface ExportConfig {
 	width: number;
 	height: number;
 	frameRate: number;
 	bitrate: number;
 	codec?: string;
-	encodingMode?: EncodingMode;
+	encodingMode?: ExportEncodingMode;
+	backendPreference?: ExportBackendPreference;
+	preferredRenderBackend?: ExportRenderBackend;
+	experimentalNativeExport?: boolean;
+	experimentalNvidiaCudaExport?: boolean;
+	maxEncodeQueue?: number;
+	maxDecodeQueue?: number;
+	maxPendingFrames?: number;
+	maxInFlightNativeWrites?: number;
+	sourceAudioFallbackStartDelayMsByPath?: Record<string, number>;
 }
+
+export type ExportRenderBackend = "webgpu" | "webgl";
+export type ExportEncodeBackend = "ffmpeg" | "webcodecs";
+export type ExportBackendPreference = "auto" | "webcodecs" | "breeze";
+export type ExportPipelineModel = "modern" | "legacy";
 
 export interface ExportProgress {
 	currentFrame: number;
 	totalFrames: number;
 	percentage: number;
-	estimatedTimeRemaining: number; // seconds
-	phase?: "extracting" | "finalizing" | "metadata" | "init" | "encoding" | "audio" | "muxing";
-	renderProgress?: number; // 0-100, GIF render phase
-	metrics?: Partial<ExportMetrics>;
-	framesPerSecond?: number;
+	estimatedTimeRemaining: number; // in seconds
+	renderFps?: number;
+	renderBackend?: ExportRenderBackend;
+	encodeBackend?: ExportEncodeBackend;
+	encoderName?: string;
+	nativeStaticLayoutSkipReason?: string;
+	nativeStaticLayoutSkipReasons?: string[];
+	phase?: "preparing" | "extracting" | "finalizing" | "saving"; // Phase of export
+	renderProgress?: number; // 0-100, progress of GIF rendering phase
+	audioProgress?: number; // 0-1, progress of real-time audio rendering (speed/audio regions)
+}
+
+export interface ExportFinalizationStageMetrics {
+	encoderFlushMs?: number;
+	queuedMuxingMs?: number;
+	audioProcessingMs?: number;
+	muxerFinalizeMs?: number;
+	editedAudioRenderMs?: number;
+	ffmpegAudioMuxMs?: number;
+	nativeExportFinalizeMs?: number;
+	nativeEncoderFlushMs?: number;
+	ffmpegAudioMuxBreakdown?: ExportFfmpegAudioMuxBreakdown;
+}
+
+export interface ExportFfmpegAudioMuxBreakdown {
+	tempVideoWriteMs?: number;
+	tempEditedAudioWriteMs?: number;
+	ffmpegExecMs?: number;
+	muxedVideoReadMs?: number;
+	tempVideoBytes?: number;
+	tempEditedAudioBytes?: number;
+	muxedVideoBytes?: number;
+	chunkCount?: number;
+	chunkDurationSec?: number;
+	chunkExecMs?: number;
+	concatExecMs?: number;
+	staticAssetExecMs?: number;
+	fallbackChunkCount?: number;
+	videoOnlyBytes?: number;
+	chunks?: Array<{
+		index: number;
+		startSec: number;
+		durationSec: number;
+		backend: string;
+		elapsedMs: number;
+		outputBytes: number;
+		fallbackReason?: string;
+		windowsGpuSummary?: {
+			success?: boolean;
+			width?: number;
+			height?: number;
+			fps?: number;
+			seconds?: number;
+			mediaMs?: number;
+			frames?: number;
+			gpuDecodeSurface?: boolean;
+			webcamOverlay?: boolean;
+			cursorOverlay?: boolean;
+			zoomOverlay?: boolean;
+			surfacePoolSize?: number;
+			adapterIndex?: number;
+			adapterVendorId?: number;
+			adapterDeviceId?: number;
+			adapterDedicatedVideoMemoryMB?: number;
+			encoderBackend?: string;
+			encoderTuningApplied?: boolean;
+			nvencOutputBytes?: number;
+			initializeMs?: number;
+			initCoInitializeMs?: number;
+			initMfStartupMs?: number;
+			initD3DDeviceMs?: number;
+			initSourceReaderMs?: number;
+			initWebcamReaderMs?: number;
+			initVideoProcessorMs?: number;
+			initTexturesMs?: number;
+			initShaderPipelineMs?: number;
+			initSinkWriterMs?: number;
+			totalMs?: number;
+			readMs?: number;
+			clearMs?: number;
+			videoProcessMs?: number;
+			writeSampleMs?: number;
+			finalizeMs?: number;
+			realtimeMultiplier?: number;
+		};
+	}>;
+}
+
+export interface ExportMetrics {
+	totalElapsedMs: number;
+	metadataLoadMs?: number;
+	rendererInitMs?: number;
+	nativeSessionStartMs?: number;
+	decodeLoopMs?: number;
+	frameCallbackMs?: number;
+	renderFrameMs?: number;
+	encodeWaitMs?: number;
+	encodeWaitEvents?: number;
+	peakEncodeQueueSize?: number;
+	peakNativeWriteInFlight?: number;
+	nativeCaptureMs?: number;
+	nativeWriteMs?: number;
+	finalizationMs?: number;
+	frameCount?: number;
+	renderBackend?: ExportRenderBackend;
+	encodeBackend?: ExportEncodeBackend;
+	encoderName?: string;
+	backpressureProfile?: string;
+	nativeStaticLayoutSkipReason?: string;
+	nativeStaticLayoutSkipReasons?: string[];
+	averageFrameCallbackMs?: number;
+	averageRenderFrameMs?: number;
+	averageEncodeWaitMs?: number;
+	averageNativeCaptureMs?: number;
+	averageNativeWriteMs?: number;
+	effectiveDurationSec?: number;
+	finalizationStageMs?: ExportFinalizationStageMetrics;
 }
 
 export interface ExportResult {
 	success: boolean;
+	/**
+	 * Absolute path to a main-process temp file containing the finished export.
+	 * Preferred for MP4 output because it avoids loading multi-gigabyte files
+	 * into the renderer's ArrayBuffer heap. The renderer should move the temp
+	 * file to its final destination via `finalize-exported-video`.
+	 */
+	tempFilePath?: string;
+	/**
+	 * In-renderer Blob for exports that fit in memory (GIF, smoke tests, legacy
+	 * fallback). Mutually exclusive with `tempFilePath` — consumers should
+	 * prefer the temp path when both are set.
+	 */
 	blob?: Blob;
+	filePath?: string;
 	error?: string;
-	warnings?: string[];
 	metrics?: ExportMetrics;
+	warnings?: string[];
 }
 
 export interface VideoFrameData {
@@ -89,11 +171,11 @@ export interface VideoFrameData {
 	duration: number; // in microseconds
 }
 
-export type ExportQuality = "medium" | "good" | "source";
+export type ExportEncodingMode = "fast" | "balanced" | "quality";
 
-export type ExportPipelineModel = "legacy" | "modern";
+export type ExportQuality = "medium" | "good" | "high" | "source";
 
-export type Mp4FrameRate = 24 | 30 | 60;
+export type ExportMp4FrameRate = 24 | 30 | 60;
 
 // GIF Export Types
 export type ExportFormat = "mp4" | "gif";
@@ -112,13 +194,21 @@ export interface GifExportConfig {
 
 export interface ExportSettings {
 	format: ExportFormat;
+	includeCaptionSidecar?: boolean;
 	// MP4 settings
 	quality?: ExportQuality;
-	frameRate?: Mp4FrameRate;
-	encodingMode?: EncodingMode;
+	encodingMode?: ExportEncodingMode;
+	mp4FrameRate?: ExportMp4FrameRate;
+	backendPreference?: ExportBackendPreference;
 	pipelineModel?: ExportPipelineModel;
 	// GIF settings
 	gifConfig?: GifExportConfig;
+}
+
+export const MP4_FRAME_RATES: readonly ExportMp4FrameRate[] = [24, 30, 60] as const;
+
+export function isValidMp4FrameRate(rate: number): rate is ExportMp4FrameRate {
+	return MP4_FRAME_RATES.includes(rate as ExportMp4FrameRate);
 }
 
 export const GIF_SIZE_PRESETS: Record<GifSizePreset, { maxHeight: number; label: string }> = {
@@ -134,12 +224,6 @@ export const GIF_FRAME_RATES: { value: GifFrameRate; label: string }[] = [
 	{ value: 30, label: "30 FPS - Maximum" },
 ];
 
-export const MP4_FRAME_RATES: { value: Mp4FrameRate; label: string }[] = [
-	{ value: 24, label: "24 FPS - Cinematic" },
-	{ value: 30, label: "30 FPS - Standard (Recommended)" },
-	{ value: 60, label: "60 FPS - Smooth" },
-];
-
 // Valid frame rates for validation
 export const VALID_GIF_FRAME_RATES: readonly GifFrameRate[] = [15, 20, 25, 30] as const;
 
@@ -147,6 +231,64 @@ export function isValidGifFrameRate(rate: number): rate is GifFrameRate {
 	return VALID_GIF_FRAME_RATES.includes(rate as GifFrameRate);
 }
 
-// ── Audio Strategy ────────────────────────────────────────────────────────────
+// ─── Compatibility aliases for pre-Recordly code ───
 
-export type AudioStrategy = "copy-source" | "trim-source" | "speed-render" | "reencode";
+/** @deprecated Use ExportEncodingMode */
+export type EncodingMode = ExportEncodingMode;
+
+/** @deprecated Use ExportMp4FrameRate */
+export type Mp4FrameRate = ExportMp4FrameRate;
+
+export const ENCODING_MODES: { value: ExportEncodingMode; label: string; description: string }[] = [
+	{ value: "fast", label: "Fast", description: "Prioritizes speed over quality" },
+	{ value: "balanced", label: "Balanced", description: "Balance of speed and quality" },
+	{ value: "quality", label: "Quality", description: "Prioritizes quality over speed" },
+];
+
+export function calculateEffectiveSourceDimensions(
+	sourceWidth: number,
+	sourceHeight: number,
+	cropRegion?: { x: number; y: number; width: number; height: number },
+): { width: number; height: number } {
+	if (!cropRegion) return { width: sourceWidth, height: sourceHeight };
+	return {
+		width: Math.round(sourceWidth * cropRegion.width),
+		height: Math.round(sourceHeight * cropRegion.height),
+	};
+}
+
+export function calculateMp4ExportSettings(options: {
+	sourceWidth: number;
+	sourceHeight: number;
+	cropRegion?: { x: number; y: number; width: number; height: number };
+	quality?: ExportQuality;
+	frameRate?: ExportMp4FrameRate;
+	encodingMode?: ExportEncodingMode;
+}): {
+	width: number;
+	height: number;
+	frameRate: number;
+	bitrate: number;
+} {
+	const { sourceWidth, sourceHeight, cropRegion, quality, frameRate } = options;
+	const dims = calculateEffectiveSourceDimensions(sourceWidth, sourceHeight, cropRegion);
+
+	// Round to even numbers for codec compatibility
+	const width = dims.width % 2 === 0 ? dims.width : dims.width + 1;
+	const height = dims.height % 2 === 0 ? dims.height : dims.height + 1;
+
+	const fr = frameRate ?? 30;
+
+	// Bitrate based on quality and resolution
+	const pixels = width * height;
+	const baseBitrate = pixels * fr * 0.07;
+	const qualityMultiplier =
+		quality === "source" ? 1.5 : quality === "high" ? 1.2 : quality === "good" ? 1.0 : 0.7;
+
+	return {
+		width,
+		height,
+		frameRate: fr,
+		bitrate: Math.round(baseBitrate * qualityMultiplier),
+	};
+}

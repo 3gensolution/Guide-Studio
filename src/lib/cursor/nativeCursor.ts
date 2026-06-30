@@ -567,7 +567,7 @@ function resolveThemedCursorAsset(
 	}
 	try {
 		return {
-			imageDataUrl: getAssetPath(themeAsset.assetPath),
+			imageDataUrl: getAssetPath(themeAsset.assetPath) as unknown as string,
 			width: themeAsset.width,
 			height: themeAsset.height,
 			hotspotX: themeAsset.hotspotX,

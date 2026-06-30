@@ -14,6 +14,16 @@ export interface SpringConfig {
 	restSpeed?: number;
 }
 
+export interface CursorSpringTuning {
+	stiffness?: number;
+	stiffnessMultiplier?: number;
+	damping?: number;
+	dampingMultiplier?: number;
+	mass?: number;
+	massMultiplier?: number;
+	restDelta?: number;
+}
+
 const CURSOR_SMOOTHING_MIN = 0;
 const CURSOR_SMOOTHING_MAX = 2;
 const CURSOR_SMOOTHING_LEGACY_MAX = 0.5;
@@ -89,7 +99,10 @@ export function stepSpringValue(
 	return state.value;
 }
 
-export function getCursorSpringConfig(smoothingFactor: number): SpringConfig {
+export function getCursorSpringConfig(
+	smoothingFactor: number,
+	_tuning?: CursorSpringTuning,
+): SpringConfig {
 	const clamped = Math.min(CURSOR_SMOOTHING_MAX, Math.max(CURSOR_SMOOTHING_MIN, smoothingFactor));
 
 	if (clamped <= 0) {

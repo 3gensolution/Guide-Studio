@@ -258,6 +258,9 @@ export default function VideoEditor() {
 	const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
 	const [exportError, setExportError] = useState<string | null>(null);
 	const [showExportDialog, setShowExportDialog] = useState(false);
+	const [settingsPanel, setSettingsPanel] = useState<
+		"background" | "effects" | "layout" | "cursor" | "export" | "timeline" | undefined
+	>(undefined);
 	const [showNewRecordingDialog, setShowNewRecordingDialog] = useState(false);
 	const [exportQuality, setExportQuality] = useState<ExportQuality>(
 		DEFAULT_EXPORT_SETTINGS.quality,
@@ -2163,11 +2166,6 @@ export default function VideoEditor() {
 					sourceHeight,
 					cropRegion,
 				);
-				const aspectRatioValue =
-					aspectRatio === "native"
-						? getNativeAspectRatioValue(sourceWidth, sourceHeight, cropRegion)
-						: getAspectRatioValue(aspectRatio);
-
 				// Preview container dimensions, used for scaling.
 				const playbackRef = videoPlaybackRef.current;
 				const containerElement = playbackRef?.containerRef?.current;
@@ -2178,7 +2176,6 @@ export default function VideoEditor() {
 					// GIF Export
 					const gifExporter = new GifExporter({
 						videoUrl: videoPath,
-						webcamVideoUrl: webcamVideoPath || undefined,
 						width: settings.gifConfig.width,
 						height: settings.gifConfig.height,
 						frameRate: settings.gifConfig.frameRate,
@@ -2190,30 +2187,20 @@ export default function VideoEditor() {
 						speedRegions,
 						showShadow: shadowIntensity > 0,
 						shadowIntensity,
-						showBlur,
-						motionBlurAmount,
+						backgroundBlur: showBlur ? 1 : 0,
 						borderRadius,
 						padding,
 						videoPadding: padding,
 						cropRegion,
-						cursorRecordingData,
-						cursorScale: effectiveShowCursor ? cursorSize : 0,
+						cursorTelemetry: cursorTelemetry ?? cursorRecordingData?.samples,
+						showCursor: effectiveShowCursor,
+						cursorSize: effectiveShowCursor ? cursorSize : 0,
 						cursorSmoothing,
 						cursorMotionBlur,
 						cursorClickBounce,
-						cursorClipToBounds,
-						cursorTheme,
 						annotationRegions,
-						webcamLayoutPreset,
-						webcamMaskShape,
-						webcamMirrored,
-						webcamReactiveZoom,
-						webcamSizePreset,
-						webcamPosition,
 						previewWidth,
 						previewHeight,
-						cursorTelemetry,
-						cursorClickTimestamps,
 						onProgress: (progress: ExportProgress) => {
 							setExportProgress(progress);
 						},
@@ -2268,50 +2255,38 @@ export default function VideoEditor() {
 						quality,
 						sourceWidth: effectiveSourceDimensions.width,
 						sourceHeight: effectiveSourceDimensions.height,
-						aspectRatioValue,
-						frameRate: settings.frameRate || mp4FrameRate,
+						frameRate: settings.mp4FrameRate || mp4FrameRate,
 						encodingMode,
 					});
 
 					const exporter = new VideoExporter({
 						videoUrl: videoPath,
-						webcamVideoUrl: webcamVideoPath || undefined,
 						width: exportWidth,
 						height: exportHeight,
-						frameRate: settings.frameRate || mp4FrameRate,
+						frameRate: settings.mp4FrameRate || mp4FrameRate,
 						bitrate,
 						codec: "avc1.640033",
 						encodingMode,
-						pipelineModel,
 						wallpaper,
 						zoomRegions,
 						trimRegions,
 						speedRegions,
 						showShadow: shadowIntensity > 0,
 						shadowIntensity,
-						showBlur,
-						motionBlurAmount,
+						backgroundBlur: showBlur ? 1 : 0,
 						borderRadius,
 						padding,
 						cropRegion,
-						cursorRecordingData,
-						cursorScale: effectiveShowCursor ? cursorSize : 0,
+						cursorTelemetry: cursorTelemetry ?? cursorRecordingData?.samples,
+						showCursor: effectiveShowCursor,
+						cursorSize: effectiveShowCursor ? cursorSize : 0,
 						cursorSmoothing,
 						cursorMotionBlur,
 						cursorClickBounce,
-						cursorClipToBounds,
-						cursorTheme,
 						annotationRegions,
-						webcamLayoutPreset,
-						webcamMaskShape,
-						webcamMirrored,
-						webcamReactiveZoom,
-						webcamSizePreset,
-						webcamPosition,
 						previewWidth,
 						previewHeight,
-						cursorTelemetry,
-						cursorClickTimestamps,
+						introConfig: editorState.introClip?.introConfig?.config,
 						onProgress: (progress: ExportProgress) => {
 							setExportProgress(progress);
 						},
@@ -2320,96 +2295,7 @@ export default function VideoEditor() {
 					exporterRef.current = exporter;
 					const result = await exporter.export();
 
-					if (result.success && result.blob) {
-						const arrayBuffer = await result.blob.arrayBuffer();
-
-						if (result.warnings) {
-							for (const warning of result.warnings) {
-								toast.warning(warning);
-							}
-						}
-
-						// Check for an isolated intro clip to prepend
-						const exportIntroClip = editorState.introClip;
-
-						if (exportIntroClip) {
-							// Write primary export to a temp path, then concatenate with intro
-							const ext = targetPath.lastIndexOf(".");
-							const tempPrimaryPath =
-								ext >= 0
-									? `${targetPath.slice(0, ext)}-primary${targetPath.slice(ext)}`
-									: `${targetPath}-primary`;
-
-							const tempSaveResult = await window.electronAPI.writeExportToPath(
-								arrayBuffer,
-								tempPrimaryPath,
-							);
-
-							if (tempSaveResult.success && tempSaveResult.path) {
-								const concatResult = await window.electronAPI.concatVideos(
-									[exportIntroClip.sourceVideoPath, tempSaveResult.path],
-									targetPath,
-								);
-
-								// Clean up temp primary file
-								await window.electronAPI.deleteTempFile(tempSaveResult.path).catch(() => {
-									/* intentional noop */
-								});
-
-								if (concatResult.success) {
-									setUnsavedExport(null);
-									handleExportSaved("Video", targetPath);
-								} else {
-									// Concatenation failed — fall back to primary-only export
-									console.warn("Intro concat failed, saving primary only:", concatResult.error);
-									const fallbackSave = await window.electronAPI.writeExportToPath(
-										arrayBuffer,
-										targetPath,
-									);
-									if (fallbackSave.success && fallbackSave.path) {
-										setUnsavedExport(null);
-										handleExportSaved("Video", fallbackSave.path);
-										toast.warning("Intro could not be prepended — exported without intro");
-									} else {
-										setUnsavedExport({ arrayBuffer, fileName: targetFileName, format: "mp4" });
-										const message = buildSaveDiagnosticMessage(
-											"Video",
-											fallbackSave.message || "Failed to save video",
-										);
-										setExportError(message);
-										toast.error(message);
-									}
-								}
-							} else {
-								setUnsavedExport({ arrayBuffer, fileName: targetFileName, format: "mp4" });
-								const message = buildSaveDiagnosticMessage(
-									"Video",
-									tempSaveResult.message || "Failed to save temporary video",
-								);
-								setExportError(message);
-								toast.error(message);
-							}
-						} else {
-							// No intro clip — save directly
-							const saveResult = await window.electronAPI.writeExportToPath(
-								arrayBuffer,
-								targetPath,
-							);
-
-							if (saveResult.success && saveResult.path) {
-								setUnsavedExport(null);
-								handleExportSaved("Video", saveResult.path);
-							} else {
-								setUnsavedExport({ arrayBuffer, fileName: targetFileName, format: "mp4" });
-								const message = buildSaveDiagnosticMessage(
-									"Video",
-									saveResult.message || "Failed to save video",
-								);
-								setExportError(message);
-								toast.error(message);
-							}
-						}
-					} else {
+					if (!result.success) {
 						const message = buildExportDiagnosticMessage({
 							formatLabel: "Video",
 							reason: result.error || "Export failed",
@@ -2422,6 +2308,51 @@ export default function VideoEditor() {
 						});
 						setExportError(message);
 						toast.error(message);
+					} else {
+						if (result.warnings) {
+							for (const warning of result.warnings) {
+								toast.warning(warning);
+							}
+						}
+
+						// Intro frames (if any) are already baked into the export by the
+						// VideoExporter — no post-export FFmpeg concatenation needed.
+						if (result.blob) {
+							const arrayBuffer = await result.blob.arrayBuffer();
+							const saveResult = await window.electronAPI.writeExportToPath(
+								arrayBuffer,
+								targetPath,
+							);
+							if (saveResult.success && saveResult.path) {
+								setUnsavedExport(null);
+								handleExportSaved("Video", saveResult.path);
+							} else {
+								setUnsavedExport({ arrayBuffer, fileName: targetFileName, format: "mp4" });
+								const message = buildSaveDiagnosticMessage(
+									"Video",
+									saveResult.message || "Failed to save video",
+								);
+								setExportError(message);
+								toast.error(message);
+							}
+						} else if (result.tempFilePath) {
+							// Stream mode — file already on disk, copy to target
+							const moveResult = await window.electronAPI.concatVideos(
+								[result.tempFilePath],
+								targetPath,
+							);
+							await window.electronAPI.deleteTempFile(result.tempFilePath).catch(() => {});
+							if (moveResult.success) {
+								setUnsavedExport(null);
+								handleExportSaved("Video", targetPath);
+							} else {
+								setExportError("Failed to save exported video");
+								toast.error("Failed to save exported video");
+							}
+						} else {
+							setExportError("Export produced no output");
+							toast.error("Export produced no output");
+						}
 					}
 				}
 
@@ -2445,9 +2376,11 @@ export default function VideoEditor() {
 					toast.error(t("errors.exportFailedWithError", { error: message }));
 				}
 			} finally {
-				setIsExporting(false);
 				exporterRef.current = null;
-				setExportProgress(null);
+				setIsExporting(false);
+				// Don't clear exportProgress here — the ExportDialog needs to
+				// see progress.percentage >= 100 with isExporting=false to
+				// trigger the success state. The dialog clears it on close.
 			}
 		},
 		[
@@ -2513,16 +2446,11 @@ export default function VideoEditor() {
 			sourceHeight,
 			cropRegion,
 		);
-		const aspectRatioValue =
-			aspectRatio === "native"
-				? getNativeAspectRatioValue(sourceWidth, sourceHeight, cropRegion)
-				: getAspectRatioValue(aspectRatio);
 		const gifDimensions = calculateOutputDimensions(
 			effectiveSourceDimensions.width,
 			effectiveSourceDimensions.height,
 			gifSizePreset,
 			GIF_SIZE_PRESETS,
-			aspectRatioValue,
 		);
 
 		const settings: ExportSettings = {
@@ -3049,7 +2977,7 @@ export default function VideoEditor() {
 						<>
 							<button
 								type="button"
-								onClick={handleOpenExportDialog}
+								onClick={() => setSettingsPanel("export")}
 								className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#F59E0B]/10 hover:bg-[#F59E0B]/20 border border-[#F59E0B]/20 transition-all duration-150"
 								title="Export"
 							>
@@ -3409,17 +3337,10 @@ export default function VideoEditor() {
 												).height,
 												gifSizePreset,
 												GIF_SIZE_PRESETS,
-												aspectRatio === "native"
-													? getNativeAspectRatioValue(
-															videoPlaybackRef.current?.video?.videoWidth ||
-																DEFAULT_SOURCE_DIMENSIONS.width,
-															videoPlaybackRef.current?.video?.videoHeight ||
-																DEFAULT_SOURCE_DIMENSIONS.height,
-															cropRegion,
-														)
-													: getAspectRatioValue(aspectRatio),
 											)}
 											onExport={handleOpenExportDialog}
+											activePanel={settingsPanel}
+											onActivePanelChange={(panel) => setSettingsPanel(panel)}
 											onExportPanelOpen={() => {
 												setSelectedZoomId(null);
 												setSelectedTrimId(null);
@@ -3752,7 +3673,11 @@ export default function VideoEditor() {
 
 			<ExportDialog
 				isOpen={showExportDialog}
-				onClose={() => setShowExportDialog(false)}
+				onClose={() => {
+					setShowExportDialog(false);
+					setExportProgress(null);
+					setExportError(null);
+				}}
 				progress={exportProgress}
 				isExporting={isExporting}
 				error={exportError}

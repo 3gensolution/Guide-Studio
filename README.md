@@ -65,7 +65,7 @@ To uninstall: `brew uninstall --cask guide-studio` (add `--zap` to also remove a
 If you'd rather grab the `.dmg` directly from the [Releases page](https://github.com/guidestudio/guide-studio/releases) and encounter Gatekeeper blocking the app, you can bypass it by running the following command in your terminal after installation:
 
 ```bash
-xattr -rd com.apple.quarantine /Applications/GuideStudio.app
+xattr -rd com.apple.quarantine /Applications/Guide\ Studio.app
 ```
 
 Note: Give your terminal Full Disk Access in **System Settings > Privacy & Security** to grant you access and then run the above command.

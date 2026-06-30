@@ -711,5 +711,10 @@ export async function renderIntroToBlob(
 	encoder.close();
 	await Promise.all(muxingPromises);
 
-	return muxer.finalize();
+	const result = await muxer.finalize();
+	if (result.mode === "buffer") {
+		return result.blob;
+	}
+	// For stream mode, read the temp file as a blob
+	throw new Error("Intro renderer expected buffer mode muxer, got stream mode");
 }

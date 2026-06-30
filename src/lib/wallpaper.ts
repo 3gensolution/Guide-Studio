@@ -1,4 +1,4 @@
-import { getAssetPath } from "@/lib/assetPath";
+import { getAssetPathSync } from "@/lib/assetPath";
 
 export const WALLPAPER_COUNT = 18;
 
@@ -58,7 +58,7 @@ export function resolveImageWallpaperUrl(imagePath: string): string {
 		throw new BackgroundLoadError(imagePath, new UnsafeImagePrefixError(ALLOWED_IMAGE_PREFIX));
 	}
 	try {
-		return getAssetPath(withLeadingSlash.slice(1));
+		return getAssetPathSync(withLeadingSlash.slice(1));
 	} catch (cause) {
 		if (cause instanceof BackgroundLoadError) throw cause;
 		throw new BackgroundLoadError(imagePath, cause);

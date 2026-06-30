@@ -9,10 +9,12 @@ const CHAINED_ZOOM_PAN_GAP_MS = 1500;
 const CONNECTED_ZOOM_PAN_DURATION_MS = 1000;
 const ZOOM_IN_OVERLAP_MS = 500;
 
-type DominantRegionOptions = {
+export type DominantRegionOptions = {
 	connectZooms?: boolean;
 	cursorTelemetry?: CursorTelemetryPoint[];
 	viewportRatio?: ViewportRatio;
+	zoomInDurationMs?: number;
+	zoomOutDurationMs?: number;
 };
 
 type ConnectedRegionPair = {

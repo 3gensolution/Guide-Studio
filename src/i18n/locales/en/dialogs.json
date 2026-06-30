@@ -13,7 +13,7 @@
 		"compilingGif": "Compiling GIF",
 		"exportingFormat": "Exporting {{format}}",
 		"compiling": "Compiling",
-		"renderingFrames": "Rendering Frames",
+		"renderingFrames": "Processing video...",
 		"processing": "Processing...",
 		"finalizing": "Finalizing...",
 		"compilingStatus": "Compiling...",

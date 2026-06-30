@@ -611,9 +611,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				baseScaleRef.current = result.baseScale;
 				baseOffsetRef.current = result.baseOffset;
 				baseMaskRef.current = result.maskRect;
-				borderRadiusRef.current = result.maskBorderRadius;
+				borderRadiusRef.current = result.maskBorderRadius ?? 0;
 				cropBoundsRef.current = result.cropBounds;
-				setWebcamLayout(result.webcamRect);
+				setWebcamLayout(result.webcamRect ? { ...result.webcamRect, borderRadius: 0 } : null);
 
 				// Reset camera container to identity
 				cameraContainer.scale.set(1);
@@ -1115,16 +1115,21 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 					cursorOverlayEnabled = false;
 				}
 
-				app = new Application();
+				try {
+					app = new Application();
 
-				await app.init({
-					width: container.clientWidth,
-					height: container.clientHeight,
-					backgroundAlpha: 0,
-					antialias: true,
-					resolution: window.devicePixelRatio || 1,
-					autoDensity: true,
-				});
+					await app.init({
+						width: container.clientWidth,
+						height: container.clientHeight,
+						backgroundAlpha: 0,
+						antialias: true,
+						resolution: window.devicePixelRatio || 1,
+						autoDensity: true,
+					});
+				} catch (err) {
+					console.error("[VideoPlayback] PIXI Application init failed:", err);
+					return;
+				}
 
 				app.ticker.maxFPS = 60;
 

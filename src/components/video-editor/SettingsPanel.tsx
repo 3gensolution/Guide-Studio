@@ -316,6 +316,9 @@ interface SettingsPanelProps {
 	gifOutputDimensions?: { width: number; height: number };
 	onExport?: () => void;
 	onExportPanelOpen?: () => void;
+	/** Controlled active panel — when set, overrides internal state. */
+	activePanel?: SettingsPanelMode;
+	onActivePanelChange?: (panel: SettingsPanelMode) => void;
 	unsavedExport?: {
 		arrayBuffer: ArrayBuffer;
 		fileName: string;
@@ -526,9 +529,16 @@ export function SettingsPanel({
 	onCursorThemeChange,
 	hasCursorData = false,
 	showCursorSettings = true,
+	activePanel: controlledPanel,
+	onActivePanelChange,
 }: SettingsPanelProps) {
 	const t = useScopedT("settings");
-	const [activePanelMode, setActivePanelMode] = useState<SettingsPanelMode>("background");
+	const [internalPanelMode, setInternalPanelMode] = useState<SettingsPanelMode>("background");
+	const activePanelMode = controlledPanel ?? internalPanelMode;
+	const setActivePanelMode = (mode: SettingsPanelMode) => {
+		setInternalPanelMode(mode);
+		onActivePanelChange?.(mode);
+	};
 	const sourceDimensions = formatSourceDimensions(videoElement, cropRegion);
 	// Resolved URLs are for DOM rendering only. We persist the canonical
 	// `/wallpapers/wallpaperN.jpg` form from WALLPAPER_PATHS, never the file:// URL.
@@ -890,23 +900,6 @@ export function SettingsPanel({
 						className="mt-1 flex h-8 w-8 items-center justify-center rounded-lg border border-transparent text-slate-500 transition-all hover:border-white/10 hover:bg-white/[0.06] hover:text-slate-200"
 					>
 						<Crop className="h-4 w-4" />
-					</button>
-					<button
-						data-testid={getTestId("export-panel-button")}
-						type="button"
-						title={exportPanelMode.label}
-						onClick={() => {
-							setActivePanelMode(exportPanelMode.id);
-							onExportPanelOpen?.();
-						}}
-						className={cn(
-							"mt-auto flex h-8 w-8 items-center justify-center rounded-lg border transition-all",
-							activePanelMode === "export" && !hasTimelineSelection
-								? "border-[#F59E0B]/50 bg-[#F59E0B]/15 text-[#F59E0B] shadow-[0_0_0_1px_rgba(245,158,11,0.12)]"
-								: "border-transparent text-slate-500 hover:border-white/10 hover:bg-white/[0.06] hover:text-slate-200",
-						)}
-					>
-						<Download className="h-4 w-4" />
 					</button>
 				</div>
 				<div className="flex-1 overflow-y-auto custom-scrollbar p-3.5 pb-0">
@@ -2122,7 +2115,7 @@ export function SettingsPanel({
 				</>
 			)}
 
-			<div className="flex-shrink-0 p-3 border-t border-white/[0.07] bg-black/25">
+			<div className="flex-shrink-0 p-3 border-t border-white/[0.07] bg-black/25 ml-12">
 				{activePanelMode === "export" && !hasTimelineSelection && (
 					<>
 						<div className="flex items-center gap-2 mb-3">
@@ -2279,16 +2272,16 @@ export function SettingsPanel({
 									<div className="bg-white/5 border border-white/5 p-0.5 w-full grid grid-cols-3 h-9 rounded-lg">
 										{MP4_FRAME_RATES.map((rate) => (
 											<button
-												key={rate.value}
-												onClick={() => onMp4FrameRateChange?.(rate.value)}
+												key={rate}
+												onClick={() => onMp4FrameRateChange?.(rate)}
 												className={cn(
 													"rounded-md transition-all text-[10px] font-medium flex items-center justify-center leading-none",
-													mp4FrameRate === rate.value
+													mp4FrameRate === rate
 														? "bg-white text-black"
 														: "text-slate-400 hover:text-slate-200",
 												)}
 											>
-												<span>{rate.value} FPS</span>
+												<span>{rate} FPS</span>
 											</button>
 										))}
 									</div>

@@ -1,24 +1,37 @@
 import { Assets, BlurFilter, Container, Graphics, Sprite, Texture } from "pixi.js";
 import { MotionBlurFilter } from "pixi-filters/motion-blur";
-import type { CursorTelemetryPoint } from "../types";
+import minimalCursorUrl from "@/assets/cursors/custom/minimal-cursor.svg";
+import { getRenderableAssetUrl } from "@/lib/assetPath";
+import { extensionHost } from "@/lib/extensions";
 import {
+	type CursorClickEffectStyle,
+	type CursorStyle,
+	type CursorTelemetryPoint,
+	DEFAULT_CURSOR_CLICK_BOUNCE_DURATION,
+	DEFAULT_CURSOR_CLICK_EFFECT,
+	DEFAULT_CURSOR_CLICK_EFFECT_COLOR,
+	DEFAULT_CURSOR_CLICK_EFFECT_DURATION_MS,
+	DEFAULT_CURSOR_CLICK_EFFECT_OPACITY,
+	DEFAULT_CURSOR_CLICK_EFFECT_SCALE,
+	DEFAULT_CURSOR_STYLE,
+	normalizeCursorClickEffectColor,
+} from "../types";
+import { computeCursorSwayRotation } from "./cursorSway";
+import { type CursorViewportRect, projectCursorPositionToViewport } from "./cursorViewport";
+import {
+	type CursorSpringTuning,
 	createSpringState,
 	getCursorSpringConfig,
 	resetSpringState,
 	stepSpringValue,
 } from "./motionSmoothing";
-import { UPLOADED_CURSOR_SAMPLE_SIZE, uploadedCursorAssets } from "./uploadedCursorAssets";
+import { cursorSetAssets, getCursorStyleSizeMultiplier } from "./uploadedCursorAssets";
 
 type CursorAssetKey = NonNullable<CursorTelemetryPoint["cursorType"]>;
-
-/** System cursor asset from native helper (macOS only). */
-type SystemCursorAsset = {
-	dataUrl: string;
-	width: number;
-	height: number;
-	hotspotX: number;
-	hotspotY: number;
-};
+type StatefulCursorStyle = Extract<CursorStyle, "macos" | "tahoe" | "tahoe-inverted">;
+type SingleCursorStyle = Extract<CursorStyle, "dot" | "figma">;
+type CursorPackStyle = Exclude<CursorStyle, StatefulCursorStyle | SingleCursorStyle>;
+type CursorPackVariant = "default" | "pointer";
 
 type LoadedCursorAsset = {
 	texture: Texture;
@@ -28,12 +41,34 @@ type LoadedCursorAsset = {
 	anchorY: number;
 };
 
-export interface CursorViewportRect {
+type LoadedCursorPackAssets = Record<CursorPackVariant, LoadedCursorAsset>;
+
+type CursorPackSource = {
+	defaultUrl: string;
+	pointerUrl: string;
+	defaultAnchor: { x: number; y: number };
+	pointerAnchor: { x: number; y: number };
+};
+
+export type NativeCursorAtlasEntry = {
+	cursorType: CursorAssetKey;
+	index: number;
 	x: number;
 	y: number;
 	width: number;
 	height: number;
-}
+	anchorX: number;
+	anchorY: number;
+	aspectRatio: number;
+};
+
+export type NativeCursorAtlas = {
+	style: CursorStyle;
+	width: number;
+	height: number;
+	dataUrl: string;
+	entries: NativeCursorAtlasEntry[];
+};
 
 /**
  * Configuration for cursor rendering.
@@ -41,36 +76,46 @@ export interface CursorViewportRect {
 export interface CursorRenderConfig {
 	/** Base cursor height in pixels (at reference width of 1920px) */
 	dotRadius: number;
+	/** Minimum viewport scale applied to cursor sizing. */
+	minViewportScale: number;
 	/** Cursor fill color (hex number for PixiJS) */
 	dotColor: number;
-	/** Cursor opacity (0-1) */
+	/** Cursor opacity (0–1) */
 	dotAlpha: number;
 	/** Unused, kept for interface compatibility */
 	trailLength: number;
-	/** Smoothing factor for cursor interpolation (0-1, lower = smoother/slower) */
+	/** Smoothing factor for cursor interpolation (0–1, lower = smoother/slower) */
 	smoothingFactor: number;
+	/** Optional multipliers applied on top of the derived cursor spring config. */
+	springTuning: CursorSpringTuning;
 	/** Directional cursor motion blur amount. */
 	motionBlur: number;
 	/** Click bounce multiplier. */
 	clickBounce: number;
+	/** Click bounce duration in milliseconds. */
+	clickBounceDuration: number;
+	/** Click effect graphics rendered around the pointer. */
+	clickEffect: CursorClickEffectStyle;
+	/** Click effect base color. */
+	clickEffectColor: string;
+	/** Click effect size multiplier. */
+	clickEffectScale: number;
+	/** Click effect opacity multiplier. */
+	clickEffectOpacity: number;
+	/** Click effect duration in milliseconds. */
+	clickEffectDurationMs: number;
+	/** Cursor sway multiplier. */
+	sway: number;
+	/** Cursor visual style. */
+	style: CursorStyle;
 }
-
-export const DEFAULT_CURSOR_CONFIG: CursorRenderConfig = {
-	dotRadius: 28,
-	dotColor: 0xffffff,
-	dotAlpha: 0.95,
-	trailLength: 0,
-	smoothingFactor: 0.18,
-	motionBlur: 0,
-	clickBounce: 1,
-};
 
 const REFERENCE_WIDTH = 1920;
 const MIN_CURSOR_VIEWPORT_SCALE = 0.55;
-const CLICK_ANIMATION_MS = 140;
-const CLICK_RING_FADE_MS = 240;
 const CURSOR_MOTION_BLUR_BASE_MULTIPLIER = 0.08;
 const CURSOR_TIME_DISCONTINUITY_MS = 100;
+const CURSOR_SWAY_SMOOTHING_MULTIPLIER = 0.7;
+const CURSOR_SWAY_SMOOTHING_OFFSET = 0.18;
 const CURSOR_SVG_DROP_SHADOW_FILTER = "drop-shadow(0px 2px 3px rgba(0, 0, 0, 0.35))";
 const CURSOR_SHADOW_COLOR = 0x000000;
 const CURSOR_SHADOW_ALPHA = 0.35;
@@ -78,9 +123,42 @@ const CURSOR_SHADOW_OFFSET_X = 0;
 const CURSOR_SHADOW_OFFSET_Y = 2;
 const CURSOR_SHADOW_BLUR = 3;
 const CURSOR_SHADOW_PADDING = 12;
+const NATIVE_CURSOR_ATLAS_DRAW_HEIGHT = 256;
+const NATIVE_CURSOR_ATLAS_PADDING = 2;
 
+export const DEFAULT_CURSOR_CONFIG: CursorRenderConfig = {
+	dotRadius: 28,
+	minViewportScale: MIN_CURSOR_VIEWPORT_SCALE,
+	dotColor: 0xffffff,
+	dotAlpha: 0.95,
+	trailLength: 0,
+	smoothingFactor: 0.18,
+	springTuning: {
+		stiffnessMultiplier: 1,
+		dampingMultiplier: 1,
+		massMultiplier: 1,
+	},
+	motionBlur: 0,
+	clickBounce: 1,
+	clickBounceDuration: DEFAULT_CURSOR_CLICK_BOUNCE_DURATION,
+	clickEffect: DEFAULT_CURSOR_CLICK_EFFECT,
+	clickEffectColor: DEFAULT_CURSOR_CLICK_EFFECT_COLOR,
+	clickEffectScale: DEFAULT_CURSOR_CLICK_EFFECT_SCALE,
+	clickEffectOpacity: DEFAULT_CURSOR_CLICK_EFFECT_OPACITY,
+	clickEffectDurationMs: DEFAULT_CURSOR_CLICK_EFFECT_DURATION_MS,
+	sway: 0,
+	style: DEFAULT_CURSOR_STYLE,
+};
 let cursorAssetsPromise: Promise<void> | null = null;
+let cursorPackAssetsPromise: Promise<void> | null = null;
+let loadedCursorPackSourcesSignature = "";
 let loadedCursorAssets: Partial<Record<CursorAssetKey, LoadedCursorAsset>> = {};
+let loadedCursorSetAssets: Partial<
+	Record<StatefulCursorStyle, Partial<Record<CursorAssetKey, LoadedCursorAsset>>>
+> = {};
+let loadedCursorStyleAssets: Partial<Record<SingleCursorStyle, LoadedCursorAsset>> = {};
+let loadedCursorPackAssets: Partial<Record<string, LoadedCursorPackAssets>> = {};
+const warnedMissingCursorPackStyles = new Set<string>();
 const SUPPORTED_CURSOR_KEYS: CursorAssetKey[] = [
 	"arrow",
 	"text",
@@ -92,6 +170,164 @@ const SUPPORTED_CURSOR_KEYS: CursorAssetKey[] = [
 	"resize-ns",
 	"not-allowed",
 ];
+
+const DEFAULT_CURSOR_PACK_ANCHOR = { x: 0.08, y: 0.08 } as const;
+const CURSOR_PACK_POINTER_TYPES = new Set<CursorAssetKey>(["pointer", "open-hand", "closed-hand"]);
+const BUILTIN_CURSOR_PACK_SOURCES: Record<string, CursorPackSource> = {};
+
+function getCursorPackSources(): Record<string, CursorPackSource> {
+	const sources: Record<string, CursorPackSource> = { ...BUILTIN_CURSOR_PACK_SOURCES };
+
+	for (const cursorStyle of extensionHost.getContributedCursorStyles()) {
+		const hotspot = cursorStyle.cursorStyle.hotspot ?? DEFAULT_CURSOR_PACK_ANCHOR;
+		sources[cursorStyle.id] = {
+			defaultUrl: cursorStyle.resolvedDefaultUrl,
+			pointerUrl: cursorStyle.resolvedClickUrl ?? cursorStyle.resolvedDefaultUrl,
+			defaultAnchor: hotspot,
+			pointerAnchor: hotspot,
+		};
+	}
+
+	return sources;
+}
+
+function buildCursorPackSourcesSignature(sources: Record<string, CursorPackSource>): string {
+	return Object.entries(sources)
+		.sort(([left], [right]) => left.localeCompare(right))
+		.map(
+			([style, source]) =>
+				`${style}:${source.defaultUrl}:${source.pointerUrl}:${source.defaultAnchor.x}:${source.defaultAnchor.y}:${source.pointerAnchor.x}:${source.pointerAnchor.y}`,
+		)
+		.join("|");
+}
+
+function isStatefulCursorStyle(style: CursorStyle): style is StatefulCursorStyle {
+	return style === "macos" || style === "tahoe" || style === "tahoe-inverted";
+}
+
+function isSingleCursorStyle(style: CursorStyle): style is SingleCursorStyle {
+	return style === "dot" || style === "figma";
+}
+
+function resolveCursorPackVariant(cursorType: CursorAssetKey): CursorPackVariant {
+	return CURSOR_PACK_POINTER_TYPES.has(cursorType) ? "pointer" : "default";
+}
+
+async function createCursorStyleAsset(style: SingleCursorStyle): Promise<LoadedCursorAsset> {
+	if (style === "figma") {
+		const image = await loadImage(minimalCursorUrl);
+		const sourceCanvas = document.createElement("canvas");
+		sourceCanvas.width = image.naturalWidth;
+		sourceCanvas.height = image.naturalHeight;
+		const sourceCtx = sourceCanvas.getContext("2d")!;
+		sourceCtx.drawImage(image, 0, 0);
+		const trimmed = trimCanvasToAlpha(sourceCanvas, { x: 40, y: 22 });
+		await Assets.load(trimmed.dataUrl);
+		const trimmedImage = await loadImage(trimmed.dataUrl);
+		const texture = configureCursorTexture(Texture.from(trimmed.dataUrl));
+
+		return {
+			texture,
+			image: trimmedImage,
+			aspectRatio: trimmed.height > 0 ? trimmed.width / trimmed.height : 1,
+			anchorX: trimmed.hotspot && trimmed.width > 0 ? trimmed.hotspot.x / trimmed.width : 0,
+			anchorY: trimmed.hotspot && trimmed.height > 0 ? trimmed.hotspot.y / trimmed.height : 0,
+		};
+	}
+
+	const canvas = document.createElement("canvas");
+	canvas.width = 112;
+	canvas.height = 112;
+	const ctx = canvas.getContext("2d")!;
+	const cx = canvas.width / 2;
+	const cy = canvas.height / 2;
+	const radius = 26;
+	ctx.fillStyle = "#ffffff";
+	ctx.strokeStyle = "rgba(15, 23, 42, 0.88)";
+	ctx.lineWidth = 10;
+	ctx.beginPath();
+	ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+	ctx.fill();
+	ctx.stroke();
+
+	const dataUrl = canvas.toDataURL("image/png");
+	await Assets.load(dataUrl);
+	const image = await loadImage(dataUrl);
+	const texture = configureCursorTexture(Texture.from(dataUrl));
+
+	return {
+		texture,
+		image,
+		aspectRatio: canvas.height > 0 ? canvas.width / canvas.height : 1,
+		anchorX: 0.5,
+		anchorY: 0.5,
+	};
+}
+
+async function createCursorPackAsset(
+	url: string,
+	anchor: { x: number; y: number },
+): Promise<LoadedCursorAsset> {
+	const renderableUrl = await getRenderableAssetUrl(url);
+	await Assets.load(renderableUrl);
+	const image = await loadImage(renderableUrl);
+	const texture = configureCursorTexture(Texture.from(renderableUrl));
+
+	return {
+		texture,
+		image,
+		aspectRatio: image.naturalHeight > 0 ? image.naturalWidth / image.naturalHeight : 1,
+		anchorX: clamp(anchor.x, 0, 1),
+		anchorY: clamp(anchor.y, 0, 1),
+	};
+}
+
+async function createRasterizedCursorAsset(
+	url: string,
+	anchor: { x: number; y: number },
+): Promise<LoadedCursorAsset> {
+	const image = await loadImage(url);
+	const sourceCanvas = document.createElement("canvas");
+	sourceCanvas.width = image.naturalWidth;
+	sourceCanvas.height = image.naturalHeight;
+	const sourceCtx = sourceCanvas.getContext("2d");
+	if (!sourceCtx) {
+		await Assets.load(url);
+		const texture = configureCursorTexture(Texture.from(url));
+		return {
+			texture,
+			image,
+			aspectRatio: image.naturalHeight > 0 ? image.naturalWidth / image.naturalHeight : 1,
+			anchorX: clamp(anchor.x, 0, 1),
+			anchorY: clamp(anchor.y, 0, 1),
+		};
+	}
+
+	sourceCtx.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+	sourceCtx.drawImage(image, 0, 0);
+
+	const trimmed = trimCanvasToAlpha(sourceCanvas, {
+		x: sourceCanvas.width * clamp(anchor.x, 0, 1),
+		y: sourceCanvas.height * clamp(anchor.y, 0, 1),
+	});
+	await Assets.load(trimmed.dataUrl);
+	const trimmedImage = await loadImage(trimmed.dataUrl);
+	const texture = configureCursorTexture(Texture.from(trimmed.dataUrl));
+
+	return {
+		texture,
+		image: trimmedImage,
+		aspectRatio: trimmed.height > 0 ? trimmed.width / trimmed.height : 1,
+		anchorX:
+			trimmed.hotspot && trimmed.width > 0
+				? clamp(trimmed.hotspot.x / trimmed.width, 0, 1)
+				: clamp(anchor.x, 0, 1),
+		anchorY:
+			trimmed.hotspot && trimmed.height > 0
+				? clamp(trimmed.hotspot.y / trimmed.height, 0, 1)
+				: clamp(anchor.y, 0, 1),
+	};
+}
 
 function loadImage(dataUrl: string) {
 	return new Promise<HTMLImageElement>((resolve, reject) => {
@@ -107,51 +343,115 @@ function clamp(value: number, min: number, max: number) {
 	return Math.min(max, Math.max(min, value));
 }
 
-function getNormalizedAnchor(
-	systemAsset: SystemCursorAsset | undefined,
-	fallbackAnchor: { x: number; y: number },
-) {
-	if (!systemAsset || systemAsset.width <= 0 || systemAsset.height <= 0) {
-		return fallbackAnchor;
+function configureCursorTexture(texture: Texture) {
+	texture.source.scaleMode = "linear";
+	texture.source.autoGenerateMipmaps = true;
+	return texture;
+}
+
+function trimCanvasToAlpha(canvas: HTMLCanvasElement, hotspot?: { x: number; y: number }) {
+	const ctx = canvas.getContext("2d");
+	if (!ctx) {
+		return {
+			dataUrl: canvas.toDataURL("image/png"),
+			width: canvas.width,
+			height: canvas.height,
+			hotspot,
+		};
 	}
 
+	const { width, height } = canvas;
+	const imageData = ctx.getImageData(0, 0, width, height);
+	const { data } = imageData;
+	let minX = width;
+	let minY = height;
+	let maxX = -1;
+	let maxY = -1;
+
+	for (let y = 0; y < height; y += 1) {
+		for (let x = 0; x < width; x += 1) {
+			const alpha = data[(y * width + x) * 4 + 3];
+			if (alpha === 0) {
+				continue;
+			}
+
+			minX = Math.min(minX, x);
+			minY = Math.min(minY, y);
+			maxX = Math.max(maxX, x);
+			maxY = Math.max(maxY, y);
+		}
+	}
+
+	if (maxX < minX || maxY < minY) {
+		return {
+			dataUrl: canvas.toDataURL("image/png"),
+			width,
+			height,
+			hotspot,
+		};
+	}
+
+	const croppedWidth = maxX - minX + 1;
+	const croppedHeight = maxY - minY + 1;
+	const croppedCanvas = document.createElement("canvas");
+	croppedCanvas.width = croppedWidth;
+	croppedCanvas.height = croppedHeight;
+	const croppedCtx = croppedCanvas.getContext("2d")!;
+	croppedCtx.drawImage(
+		canvas,
+		minX,
+		minY,
+		croppedWidth,
+		croppedHeight,
+		0,
+		0,
+		croppedWidth,
+		croppedHeight,
+	);
+
 	return {
-		x: clamp(systemAsset.hotspotX / systemAsset.width, 0, 1),
-		y: clamp(systemAsset.hotspotY / systemAsset.height, 0, 1),
+		dataUrl: croppedCanvas.toDataURL("image/png"),
+		width: croppedWidth,
+		height: croppedHeight,
+		hotspot: hotspot
+			? {
+					x: hotspot.x - minX,
+					y: hotspot.y - minY,
+				}
+			: undefined,
 	};
 }
 
-/**
- * Loads an SVG at `sampleSize × sampleSize`, crops the trim region, and returns
- * a PNG data-URL. Needed because an SVG's natural size (e.g. 32×32) doesn't match
- * the 1024-sample coordinate space the trim measurements use.
- */
-async function rasterizeAndCropSvg(
-	url: string,
-	sampleSize: number,
-	trimX: number,
-	trimY: number,
-	trimWidth: number,
-	trimHeight: number,
-): Promise<{ dataUrl: string; width: number; height: number }> {
-	const img = await loadImage(url);
+async function createInvertedCursorAsset(asset: LoadedCursorAsset): Promise<LoadedCursorAsset> {
+	const canvas = document.createElement("canvas");
+	canvas.width = asset.image.naturalWidth;
+	canvas.height = asset.image.naturalHeight;
+	const ctx = canvas.getContext("2d")!;
+	ctx.drawImage(asset.image, 0, 0);
+	const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+	const { data } = imageData;
+	for (let index = 0; index < data.length; index += 4) {
+		if (data[index + 3] === 0) {
+			continue;
+		}
 
-	const srcCanvas = document.createElement("canvas");
-	srcCanvas.width = sampleSize;
-	srcCanvas.height = sampleSize;
-	const srcCtx = srcCanvas.getContext("2d")!;
-	srcCtx.drawImage(img, 0, 0, sampleSize, sampleSize);
+		data[index] = 255 - data[index];
+		data[index + 1] = 255 - data[index + 1];
+		data[index + 2] = 255 - data[index + 2];
+	}
+	ctx.putImageData(imageData, 0, 0);
 
-	const dstCanvas = document.createElement("canvas");
-	dstCanvas.width = trimWidth;
-	dstCanvas.height = trimHeight;
-	const dstCtx = dstCanvas.getContext("2d")!;
-	dstCtx.drawImage(srcCanvas, trimX, trimY, trimWidth, trimHeight, 0, 0, trimWidth, trimHeight);
+	const dataUrl = canvas.toDataURL("image/png");
+	await Assets.load(dataUrl);
+	const image = await loadImage(dataUrl);
+	const texture = configureCursorTexture(Texture.from(dataUrl));
 
 	return {
-		dataUrl: dstCanvas.toDataURL("image/png"),
-		width: dstCanvas.width,
-		height: dstCanvas.height,
+		texture,
+		image,
+		aspectRatio: asset.aspectRatio,
+		anchorX: asset.anchorX,
+		anchorY: asset.anchorY,
 	};
 }
 
@@ -169,94 +469,138 @@ function getAvailableCursorKeys(): CursorAssetKey[] {
 	return loadedKeys.length > 0 ? loadedKeys : ["arrow"];
 }
 
-export async function preloadCursorAssets() {
-	if (!cursorAssetsPromise) {
-		cursorAssetsPromise = (async () => {
-			let systemCursors: Record<string, SystemCursorAsset> = {};
+function getCursorStyleAsset(style: SingleCursorStyle) {
+	const asset = loadedCursorStyleAssets[style];
+	if (!asset) {
+		throw new Error(`Missing cursor style asset for ${style}`);
+	}
 
-			try {
-				const api = window.electronAPI as Record<string, unknown>;
-				if (typeof api.getSystemCursorAssets === "function") {
-					const result = await (
-						api.getSystemCursorAssets as () => Promise<{
-							success: boolean;
-							cursors?: Record<string, SystemCursorAsset>;
-						}>
-					)();
-					if (result.success && result.cursors) {
-						systemCursors = result.cursors;
-					}
-				}
-			} catch (error) {
-				console.warn("[CursorRenderer] Failed to fetch system cursor assets:", error);
-			}
+	return asset;
+}
 
-			const entries = await Promise.all(
-				SUPPORTED_CURSOR_KEYS.map(async (key) => {
-					const systemAsset = systemCursors[key];
-					const uploadedAsset = uploadedCursorAssets[key];
-					const assetUrl = uploadedAsset?.url ?? systemAsset?.dataUrl;
+function getCursorPackStyleAsset(style: CursorPackStyle, key: CursorAssetKey) {
+	const styleAssets = loadedCursorPackAssets[style];
+	if (!styleAssets) {
+		if (!warnedMissingCursorPackStyles.has(style)) {
+			warnedMissingCursorPackStyles.add(style);
+			console.warn(
+				`[CursorRenderer] Missing cursor pack assets for ${style}; falling back to Tahoe cursors.`,
+			);
+		}
+		return getStatefulCursorAsset("tahoe", key);
+	}
 
-					if (!assetUrl) {
-						console.warn(`[CursorRenderer] No cursor image for: ${key}`);
-						return null;
-					}
+	const variant = resolveCursorPackVariant(key);
+	return styleAssets[variant] ?? styleAssets.default;
+}
 
+function getStatefulCursorAsset(style: StatefulCursorStyle, key: CursorAssetKey) {
+	const assetMap = loadedCursorSetAssets[style] ?? loadedCursorAssets;
+	const asset = assetMap[key] ?? assetMap.arrow;
+	if (!asset) {
+		throw new Error(`Missing ${style} cursor asset for ${key}`);
+	}
+
+	return asset;
+}
+
+async function ensureCursorPackAssetsLoaded() {
+	const sources = getCursorPackSources();
+	const signature = buildCursorPackSourcesSignature(sources);
+
+	if (!cursorPackAssetsPromise || loadedCursorPackSourcesSignature !== signature) {
+		loadedCursorPackSourcesSignature = signature;
+		warnedMissingCursorPackStyles.clear();
+		cursorPackAssetsPromise = (async () => {
+			const cursorPackEntries = await Promise.all(
+				Object.entries(sources).map(async ([style, source]) => {
 					try {
-						let finalUrl: string;
-						let width: number;
-						let height: number;
-						let normalizedAnchor: { x: number; y: number };
-
-						if (uploadedAsset) {
-							const { trim, fallbackAnchor } = uploadedAsset;
-							const rasterized = await rasterizeAndCropSvg(
-								assetUrl,
-								UPLOADED_CURSOR_SAMPLE_SIZE,
-								trim.x,
-								trim.y,
-								trim.width,
-								trim.height,
-							);
-							finalUrl = rasterized.dataUrl;
-							width = rasterized.width;
-							height = rasterized.height;
-							normalizedAnchor = {
-								x: clamp((fallbackAnchor.x * trim.width) / width, 0, 1),
-								y: clamp((fallbackAnchor.y * trim.height) / height, 0, 1),
-							};
-						} else {
-							finalUrl = assetUrl;
-							const img = await loadImage(finalUrl);
-							width = img.naturalWidth;
-							height = img.naturalHeight;
-							normalizedAnchor = getNormalizedAnchor(systemAsset, { x: 0, y: 0 });
-						}
-
-						await Assets.load(finalUrl);
-						const image = await loadImage(finalUrl);
-						const texture = Texture.from(finalUrl);
-
-						return [
-							key,
-							{
-								texture,
-								image,
-								aspectRatio: height > 0 ? width / height : 1,
-								anchorX: normalizedAnchor.x,
-								anchorY: normalizedAnchor.y,
-							} satisfies LoadedCursorAsset,
-						] as const;
+						const [defaultAsset, pointerAsset] = await Promise.all([
+							createCursorPackAsset(source.defaultUrl, source.defaultAnchor),
+							createCursorPackAsset(source.pointerUrl, source.pointerAnchor),
+						]);
+						return [style, { default: defaultAsset, pointer: pointerAsset }] as const;
 					} catch (error) {
-						console.warn(`[CursorRenderer] Failed to load cursor image for: ${key}`, error);
+						console.warn(`[CursorRenderer] Failed to load cursor pack style for: ${style}`, error);
 						return null;
 					}
 				}),
 			);
 
-			loadedCursorAssets = Object.fromEntries(
-				entries.filter(Boolean).map((entry) => entry!),
-			) as Partial<Record<CursorAssetKey, LoadedCursorAsset>>;
+			loadedCursorPackAssets = Object.fromEntries(
+				cursorPackEntries.filter(Boolean).map((entry) => entry!),
+			) as Partial<Record<string, LoadedCursorPackAssets>>;
+		})();
+	}
+
+	await cursorPackAssetsPromise;
+}
+
+export async function preloadCursorAssets() {
+	if (!cursorAssetsPromise) {
+		cursorAssetsPromise = (async () => {
+			async function loadCursorSet(
+				style: keyof typeof cursorSetAssets,
+			): Promise<Partial<Record<CursorAssetKey, LoadedCursorAsset>>> {
+				const entries = await Promise.all(
+					SUPPORTED_CURSOR_KEYS.map(async (key) => {
+						const sourceAsset = cursorSetAssets[style][key];
+						if (!sourceAsset?.url) {
+							console.warn(`[CursorRenderer] No cursor image for: ${style}/${key}`);
+							return null;
+						}
+
+						try {
+							const asset = await createRasterizedCursorAsset(
+								sourceAsset.url,
+								sourceAsset.fallbackAnchor,
+							);
+
+							return [key, asset] as const;
+						} catch (error) {
+							console.warn(
+								`[CursorRenderer] Failed to load cursor image for: ${style}/${key}`,
+								error,
+							);
+							return null;
+						}
+					}),
+				);
+
+				return Object.fromEntries(entries.filter(Boolean).map((entry) => entry!)) as Partial<
+					Record<CursorAssetKey, LoadedCursorAsset>
+				>;
+			}
+
+			const [macosAssets, tahoeAssets] = await Promise.all([
+				loadCursorSet("macos"),
+				loadCursorSet("tahoe"),
+			]);
+
+			const invertedEntries = await Promise.all(
+				(Object.entries(tahoeAssets) as Array<[CursorAssetKey, LoadedCursorAsset]>).map(
+					async ([key, asset]) => [key, await createInvertedCursorAsset(asset)] as const,
+				),
+			);
+
+			loadedCursorSetAssets = {
+				macos: macosAssets,
+				tahoe: tahoeAssets,
+				"tahoe-inverted": Object.fromEntries(invertedEntries) as Partial<
+					Record<CursorAssetKey, LoadedCursorAsset>
+				>,
+			};
+			loadedCursorAssets = tahoeAssets;
+
+			const customStyleEntries = await Promise.all(
+				(["dot", "figma"] as const).map(
+					async (style) => [style, await createCursorStyleAsset(style)] as const,
+				),
+			);
+
+			loadedCursorStyleAssets = Object.fromEntries(customStyleEntries) as Partial<
+				Record<SingleCursorStyle, LoadedCursorAsset>
+			>;
 
 			if (!loadedCursorAssets.arrow) {
 				throw new Error("Failed to initialize the fallback arrow cursor asset");
@@ -264,7 +608,79 @@ export async function preloadCursorAssets() {
 		})();
 	}
 
-	return cursorAssetsPromise;
+	await cursorAssetsPromise;
+	await ensureCursorPackAssetsLoaded();
+}
+
+function getNativeCursorAtlasAsset(style: CursorStyle, key: CursorAssetKey) {
+	if (isStatefulCursorStyle(style)) {
+		return getStatefulCursorAsset(style, key);
+	}
+
+	if (isSingleCursorStyle(style)) {
+		return getCursorStyleAsset(style);
+	}
+
+	return getCursorPackStyleAsset(style, key);
+}
+
+export async function buildNativeCursorAtlas(
+	style: CursorStyle = DEFAULT_CURSOR_STYLE,
+): Promise<NativeCursorAtlas | null> {
+	if (typeof document === "undefined") {
+		return null;
+	}
+
+	await preloadCursorAssets();
+
+	const entries: NativeCursorAtlasEntry[] = [];
+	const packedAssets = SUPPORTED_CURSOR_KEYS.map((key, index) => {
+		const asset = getNativeCursorAtlasAsset(style, key);
+		const height = NATIVE_CURSOR_ATLAS_DRAW_HEIGHT;
+		const width = Math.max(1, Math.round(height * asset.aspectRatio));
+		return { key, index, asset, width, height };
+	});
+
+	const atlasWidth = packedAssets.reduce(
+		(total, item) => total + item.width + NATIVE_CURSOR_ATLAS_PADDING,
+		NATIVE_CURSOR_ATLAS_PADDING,
+	);
+	const atlasHeight = NATIVE_CURSOR_ATLAS_DRAW_HEIGHT + NATIVE_CURSOR_ATLAS_PADDING * 2;
+	const canvas = document.createElement("canvas");
+	canvas.width = atlasWidth;
+	canvas.height = atlasHeight;
+
+	const ctx = canvas.getContext("2d");
+	if (!ctx) {
+		return null;
+	}
+
+	ctx.clearRect(0, 0, atlasWidth, atlasHeight);
+	let x = NATIVE_CURSOR_ATLAS_PADDING;
+	for (const { key, index, asset, width, height } of packedAssets) {
+		const y = NATIVE_CURSOR_ATLAS_PADDING;
+		ctx.drawImage(asset.image, x, y, width, height);
+		entries.push({
+			cursorType: key,
+			index,
+			x,
+			y,
+			width,
+			height,
+			anchorX: asset.anchorX,
+			anchorY: asset.anchorY,
+			aspectRatio: asset.aspectRatio,
+		});
+		x += width + NATIVE_CURSOR_ATLAS_PADDING;
+	}
+
+	return {
+		style,
+		width: atlasWidth,
+		height: atlasHeight,
+		dataUrl: canvas.toDataURL("image/png"),
+		entries,
+	};
 }
 
 /**
@@ -282,7 +698,10 @@ export function interpolateCursorPosition(
 	}
 
 	if (timeMs >= samples[samples.length - 1].timeMs) {
-		return { cx: samples[samples.length - 1].cx, cy: samples[samples.length - 1].cy };
+		return {
+			cx: samples[samples.length - 1].cx,
+			cy: samples[samples.length - 1].cy,
+		};
 	}
 
 	let lo = 0;
@@ -346,7 +765,7 @@ function findLatestInteractionSample(samples: CursorTelemetryPoint[], timeMs: nu
 }
 
 function findLatestStableCursorType(samples: CursorTelemetryPoint[], timeMs: number) {
-	// Binary search to position at timeMs, then scan backwards
+	// Binary search to find position at timeMs, then scan backwards
 	let lo = 0;
 	let hi = samples.length - 1;
 	while (lo < hi) {
@@ -358,8 +777,8 @@ function findLatestStableCursorType(samples: CursorTelemetryPoint[], timeMs: num
 		}
 	}
 
-	// Scan back for a sample with cursorType. Skip click events (not mouseup) to
-	// avoid a transient re-type during clicks.
+	// Scan backwards from the position to find a sample with cursorType
+	// Skip click events only (not mouseup) to avoid transient re-type during clicks
 	for (let index = lo; index >= 0; index -= 1) {
 		const sample = samples[index];
 		if (sample.timeMs > timeMs) {
@@ -385,28 +804,217 @@ function findLatestStableCursorType(samples: CursorTelemetryPoint[], timeMs: num
 	return findLatestSample(samples, timeMs)?.cursorType ?? "arrow";
 }
 
-function getCursorViewportScale(viewport: CursorViewportRect) {
-	return Math.max(MIN_CURSOR_VIEWPORT_SCALE, viewport.width / REFERENCE_WIDTH);
+function getCursorViewportScale(
+	viewport: CursorViewportRect,
+	minViewportScale = MIN_CURSOR_VIEWPORT_SCALE,
+) {
+	return Math.max(minViewportScale, viewport.width / REFERENCE_WIDTH);
 }
 
-function getCursorVisualState(samples: CursorTelemetryPoint[], timeMs: number) {
+function getCursorSwaySpringConfig(smoothingFactor: number, springTuning: CursorSpringTuning) {
+	const baseConfig = getCursorSpringConfig(
+		Math.min(
+			2,
+			Math.max(
+				0.15,
+				smoothingFactor * CURSOR_SWAY_SMOOTHING_MULTIPLIER + CURSOR_SWAY_SMOOTHING_OFFSET,
+			),
+		),
+		springTuning,
+	);
+
+	return {
+		...baseConfig,
+		damping: baseConfig.damping * 0.9,
+		mass: Math.max(0.55, baseConfig.mass * 0.8),
+		restDelta: 0.0005,
+		restSpeed: 0.02,
+	};
+}
+
+function getClickEffectColor(clickEffectColor: string) {
+	const normalized = normalizeCursorClickEffectColor(clickEffectColor);
+	return Number.parseInt(normalized.slice(1), 16);
+}
+
+function getExtensionStyleRippleMetrics(
+	cursorSize: number,
+	clickProgress: number,
+	effectScale: number,
+	effectOpacity: number,
+) {
+	const eased = 1 - Math.pow(clickProgress, 3);
+	const fade = Math.pow(clickProgress, 3);
+
+	return {
+		radius: Math.max(0.5, eased * cursorSize * 1.95 * effectScale),
+		alpha: Math.max(0, Math.min(1, fade * 0.6 * effectOpacity)),
+		strokeWidth: Math.max(1, 2 * fade),
+	};
+}
+
+function drawClickEffectGraphics(
+	graphics: Graphics,
+	effect: CursorClickEffectStyle,
+	px: number,
+	py: number,
+	cursorSize: number,
+	clickProgress: number,
+	effectScale: number,
+	effectOpacity: number,
+	effectColor: string = DEFAULT_CURSOR_CLICK_EFFECT_COLOR,
+) {
+	graphics.clear();
+	if (effect === "none" || clickProgress <= 0) {
+		return;
+	}
+
+	const reveal = 1 - clickProgress;
+	const alpha = clickProgress * effectOpacity;
+	const color = getClickEffectColor(effectColor);
+	const baseRadius = Math.max(12, cursorSize * 0.55 * effectScale);
+	const strokeWidth = Math.max(2, cursorSize * 0.08);
+
+	if (effect === "ripple") {
+		const ripple = getExtensionStyleRippleMetrics(
+			cursorSize,
+			clickProgress,
+			effectScale,
+			effectOpacity,
+		);
+		graphics.circle(px, py, ripple.radius);
+		graphics.stroke({ width: ripple.strokeWidth, color, alpha: ripple.alpha });
+		return;
+	}
+
+	if (effect === "spotlight") {
+		const glowRadius = baseRadius + reveal * cursorSize * effectScale;
+		const innerRadius = Math.max(baseRadius * 0.72, glowRadius * 0.76);
+		graphics.circle(px, py, glowRadius);
+		graphics.stroke({ width: Math.max(1.25, strokeWidth * 0.68), color, alpha: alpha * 0.28 });
+		graphics.circle(px, py, innerRadius);
+		graphics.stroke({ width: Math.max(1.5, strokeWidth * 0.75), color, alpha: alpha * 0.5 });
+		return;
+	}
+
+	const echoOuterRadius = baseRadius + reveal * cursorSize * 1.22 * effectScale;
+	const echoInnerRadius = Math.max(baseRadius * 0.58, echoOuterRadius * 0.62);
+	graphics.circle(px, py, echoOuterRadius);
+	graphics.stroke({ width: strokeWidth, color, alpha: alpha * 0.72 });
+	graphics.circle(px, py, echoInnerRadius);
+	graphics.stroke({ width: Math.max(1.4, strokeWidth * 0.72), color, alpha: alpha * 0.42 });
+	graphics.circle(px, py, Math.max(3, baseRadius * 0.18));
+	graphics.fill({ color, alpha: alpha * 0.14 });
+}
+
+function drawClickEffectOnCanvas(
+	ctx: CanvasRenderingContext2D,
+	effect: CursorClickEffectStyle,
+	px: number,
+	py: number,
+	cursorSize: number,
+	clickProgress: number,
+	effectScale: number,
+	effectOpacity: number,
+	effectColor: string = DEFAULT_CURSOR_CLICK_EFFECT_COLOR,
+) {
+	if (effect === "none" || clickProgress <= 0) {
+		return;
+	}
+
+	const reveal = 1 - clickProgress;
+	const alpha = clickProgress * effectOpacity;
+	const color = getClickEffectColor(effectColor);
+	const strokeColor = `rgba(${(color >> 16) & 255}, ${(color >> 8) & 255}, ${color & 255}, `;
+	const baseRadius = Math.max(12, cursorSize * 0.55 * effectScale);
+	const strokeWidth = Math.max(2, cursorSize * 0.08);
+
+	ctx.save();
+
+	if (effect === "ripple") {
+		const ripple = getExtensionStyleRippleMetrics(
+			cursorSize,
+			clickProgress,
+			effectScale,
+			effectOpacity,
+		);
+		ctx.lineWidth = ripple.strokeWidth;
+		ctx.strokeStyle = `${strokeColor}${ripple.alpha.toFixed(3)})`;
+		ctx.beginPath();
+		ctx.arc(px, py, ripple.radius, 0, Math.PI * 2);
+		ctx.stroke();
+		ctx.restore();
+		return;
+	}
+
+	if (effect === "spotlight") {
+		const glowRadius = baseRadius + reveal * cursorSize * effectScale;
+		const innerRadius = Math.max(baseRadius * 0.72, glowRadius * 0.76);
+		ctx.lineWidth = Math.max(1.25, strokeWidth * 0.68);
+		ctx.strokeStyle = `${strokeColor}${(alpha * 0.28).toFixed(3)})`;
+		ctx.beginPath();
+		ctx.arc(px, py, glowRadius, 0, Math.PI * 2);
+		ctx.stroke();
+		ctx.lineWidth = Math.max(1.5, strokeWidth * 0.75);
+		ctx.strokeStyle = `${strokeColor}${(alpha * 0.5).toFixed(3)})`;
+		ctx.beginPath();
+		ctx.arc(px, py, innerRadius, 0, Math.PI * 2);
+		ctx.stroke();
+		ctx.restore();
+		return;
+	}
+
+	const echoOuterRadius = baseRadius + reveal * cursorSize * 1.22 * effectScale;
+	const echoInnerRadius = Math.max(baseRadius * 0.58, echoOuterRadius * 0.62);
+	ctx.lineWidth = strokeWidth;
+	ctx.strokeStyle = `${strokeColor}${(alpha * 0.72).toFixed(3)})`;
+	ctx.beginPath();
+	ctx.arc(px, py, echoOuterRadius, 0, Math.PI * 2);
+	ctx.stroke();
+	ctx.lineWidth = Math.max(1.4, strokeWidth * 0.72);
+	ctx.strokeStyle = `${strokeColor}${(alpha * 0.42).toFixed(3)})`;
+	ctx.beginPath();
+	ctx.arc(px, py, echoInnerRadius, 0, Math.PI * 2);
+	ctx.stroke();
+	ctx.fillStyle = `${strokeColor}${(alpha * 0.14).toFixed(3)})`;
+	ctx.beginPath();
+	ctx.arc(px, py, Math.max(3, baseRadius * 0.18), 0, Math.PI * 2);
+	ctx.fill();
+	ctx.restore();
+}
+
+function getCursorVisualState(
+	samples: CursorTelemetryPoint[],
+	timeMs: number,
+	clickBounceDuration: number,
+	clickEffectDurationMs: number,
+) {
 	const latestClick = findLatestInteractionSample(samples, timeMs);
 	const interactionType = latestClick?.interactionType;
 	const ageMs = latestClick ? Math.max(0, timeMs - latestClick.timeMs) : Number.POSITIVE_INFINITY;
+	const clickEffectDelayMs = clickBounceDuration * 0.5;
+	const clickEffectAgeMs = ageMs - clickEffectDelayMs;
 	const isClickEvent =
 		interactionType === "click" ||
 		interactionType === "double-click" ||
 		interactionType === "right-click" ||
 		interactionType === "middle-click";
 	const clickBounceProgress =
-		latestClick && isClickEvent && ageMs <= CLICK_ANIMATION_MS ? 1 - ageMs / CLICK_ANIMATION_MS : 0;
+		latestClick && isClickEvent && ageMs <= clickBounceDuration
+			? 1 - ageMs / clickBounceDuration
+			: 0;
 
 	return {
 		cursorType: findLatestStableCursorType(samples, timeMs),
+		interactionType,
+		clickSample: latestClick && isClickEvent ? latestClick : null,
 		clickBounceProgress,
 		clickProgress:
-			latestClick && isClickEvent && ageMs <= CLICK_RING_FADE_MS
-				? 1 - ageMs / CLICK_RING_FADE_MS
+			latestClick &&
+			isClickEvent &&
+			clickEffectAgeMs >= 0 &&
+			clickEffectAgeMs <= clickEffectDurationMs
+				? 1 - clickEffectAgeMs / clickEffectDurationMs
 				: 0,
 	};
 }
@@ -419,14 +1027,18 @@ export class SmoothedCursorState {
 	public y = 0.5;
 	public trail: Array<{ x: number; y: number }> = [];
 	private smoothingFactor: number;
+	private springTuning: CursorSpringTuning;
 	private trailLength: number;
 	private initialized = false;
 	private lastTimeMs: number | null = null;
 	private xSpring = createSpringState(0.5);
 	private ySpring = createSpringState(0.5);
 
-	constructor(config: Pick<CursorRenderConfig, "smoothingFactor" | "trailLength">) {
+	constructor(
+		config: Pick<CursorRenderConfig, "smoothingFactor" | "trailLength" | "springTuning">,
+	) {
 		this.smoothingFactor = config.smoothingFactor;
+		this.springTuning = config.springTuning;
 		this.trailLength = config.trailLength;
 	}
 
@@ -459,13 +1071,17 @@ export class SmoothedCursorState {
 		const deltaMs = this.lastTimeMs === null ? 1000 / 60 : Math.max(1, timeMs - this.lastTimeMs);
 		this.lastTimeMs = timeMs;
 
-		const springConfig = getCursorSpringConfig(this.smoothingFactor);
+		const springConfig = getCursorSpringConfig(this.smoothingFactor, this.springTuning);
 		this.x = stepSpringValue(this.xSpring, targetX, deltaMs, springConfig);
 		this.y = stepSpringValue(this.ySpring, targetY, deltaMs, springConfig);
 	}
 
 	setSmoothingFactor(smoothingFactor: number): void {
 		this.smoothingFactor = smoothingFactor;
+	}
+
+	setSpringTuning(springTuning: CursorSpringTuning): void {
+		this.springTuning = springTuning;
 	}
 
 	snapTo(targetX: number, targetY: number, timeMs: number): void {
@@ -491,17 +1107,12 @@ export class SmoothedCursorState {
 	}
 }
 
-function drawClickRing(graphics: Graphics, px: number, py: number, h: number, progress: number) {
-	void graphics;
-	void px;
-	void py;
-	void h;
-	void progress;
-}
-
 export class PixiCursorOverlay {
 	public readonly container: Container;
 	private clickRingGraphics: Graphics;
+	private customCursorShadowSprite: Sprite;
+	private customCursorShadowFilter: BlurFilter;
+	private customCursorSprite: Sprite;
 	private cursorShadowSprites: Partial<Record<CursorAssetKey, Sprite>>;
 	private cursorShadowFilters: Partial<Record<CursorAssetKey, BlurFilter>>;
 	private cursorSprites: Partial<Record<CursorAssetKey, Sprite>>;
@@ -510,15 +1121,45 @@ export class PixiCursorOverlay {
 	private config: CursorRenderConfig;
 	private lastRenderedPoint: { px: number; py: number } | null = null;
 	private lastRenderedTimeMs: number | null = null;
+	private cursorVisible = false;
+	private swayRotation = 0;
+	private swaySpring = createSpringState(0);
 
 	constructor(config: Partial<CursorRenderConfig> = {}) {
-		this.config = { ...DEFAULT_CURSOR_CONFIG, ...config };
+		this.config = {
+			...DEFAULT_CURSOR_CONFIG,
+			...config,
+			springTuning: {
+				...DEFAULT_CURSOR_CONFIG.springTuning,
+				...config.springTuning,
+			},
+		};
 		this.state = new SmoothedCursorState(this.config);
 
 		this.container = new Container();
 		this.container.label = "cursor-overlay";
 
 		this.clickRingGraphics = new Graphics();
+		const initialCustomAsset = getCursorStyleAsset("figma");
+		this.customCursorShadowSprite = new Sprite(initialCustomAsset.texture);
+		this.customCursorShadowSprite.anchor.set(
+			initialCustomAsset.anchorX,
+			initialCustomAsset.anchorY,
+		);
+		this.customCursorShadowSprite.visible = false;
+		this.customCursorShadowSprite.roundPixels = true;
+		this.customCursorShadowSprite.tint = CURSOR_SHADOW_COLOR;
+		this.customCursorShadowSprite.alpha = CURSOR_SHADOW_ALPHA;
+		this.customCursorShadowFilter = new BlurFilter();
+		this.customCursorShadowFilter.blur = CURSOR_SHADOW_BLUR;
+		this.customCursorShadowFilter.quality = 4;
+		this.customCursorShadowFilter.padding = CURSOR_SHADOW_PADDING;
+		this.customCursorShadowSprite.filters = [this.customCursorShadowFilter];
+
+		this.customCursorSprite = new Sprite(initialCustomAsset.texture);
+		this.customCursorSprite.anchor.set(initialCustomAsset.anchorX, initialCustomAsset.anchorY);
+		this.customCursorSprite.visible = false;
+		this.customCursorSprite.roundPixels = true;
 		this.cursorShadowSprites = {};
 		this.cursorShadowFilters = {};
 		this.cursorSprites = {};
@@ -527,6 +1168,7 @@ export class PixiCursorOverlay {
 			const shadowSprite = new Sprite(asset.texture);
 			shadowSprite.anchor.set(asset.anchorX, asset.anchorY);
 			shadowSprite.visible = false;
+			shadowSprite.roundPixels = true;
 			shadowSprite.tint = CURSOR_SHADOW_COLOR;
 			shadowSprite.alpha = CURSOR_SHADOW_ALPHA;
 			const shadowFilter = new BlurFilter();
@@ -540,6 +1182,7 @@ export class PixiCursorOverlay {
 			const sprite = new Sprite(asset.texture);
 			sprite.anchor.set(asset.anchorX, asset.anchorY);
 			sprite.visible = false;
+			sprite.roundPixels = true;
 			this.cursorSprites[key] = sprite;
 		}
 
@@ -548,10 +1191,13 @@ export class PixiCursorOverlay {
 
 		this.container.addChild(
 			this.clickRingGraphics,
+			this.customCursorShadowSprite,
 			...Object.values(this.cursorShadowSprites),
+			this.customCursorSprite,
 			...Object.values(this.cursorSprites),
 		);
 		this.setMotionBlur(this.config.motionBlur);
+		this.setStyle(this.config.style);
 	}
 
 	setDotRadius(dotRadius: number) {
@@ -561,6 +1207,14 @@ export class PixiCursorOverlay {
 	setSmoothingFactor(smoothingFactor: number) {
 		this.config.smoothingFactor = smoothingFactor;
 		this.state.setSmoothingFactor(smoothingFactor);
+	}
+
+	setSpringTuning(springTuning: CursorSpringTuning) {
+		this.config.springTuning = {
+			...DEFAULT_CURSOR_CONFIG.springTuning,
+			...springTuning,
+		};
+		this.state.setSpringTuning(this.config.springTuning);
 	}
 
 	setMotionBlur(motionBlur: number) {
@@ -577,6 +1231,78 @@ export class PixiCursorOverlay {
 		this.config.clickBounce = Math.max(0, clickBounce);
 	}
 
+	setClickEffect(clickEffect: CursorClickEffectStyle) {
+		this.config.clickEffect = clickEffect;
+	}
+
+	setClickEffectColor(clickEffectColor: string) {
+		this.config.clickEffectColor = normalizeCursorClickEffectColor(clickEffectColor);
+	}
+
+	setClickEffectScale(clickEffectScale: number) {
+		this.config.clickEffectScale = clamp(clickEffectScale, 0.5, 2);
+	}
+
+	setClickEffectOpacity(clickEffectOpacity: number) {
+		this.config.clickEffectOpacity = clamp(clickEffectOpacity, 0, 1);
+	}
+
+	setClickEffectDurationMs(clickEffectDurationMs: number) {
+		this.config.clickEffectDurationMs = clamp(clickEffectDurationMs, 120, 1200);
+	}
+
+	setClickBounceDuration(clickBounceDuration: number) {
+		this.config.clickBounceDuration = clamp(clickBounceDuration, 60, 500);
+	}
+
+	setSway(sway: number) {
+		this.config.sway = clamp(sway, 0, 2);
+	}
+
+	setStyle(style: CursorStyle) {
+		this.config.style = style;
+		if (isStatefulCursorStyle(style)) {
+			for (const key of getAvailableCursorKeys()) {
+				const asset = getStatefulCursorAsset(style, key);
+				const shadowSprite = this.cursorShadowSprites[key];
+				const sprite = this.cursorSprites[key];
+				shadowSprite?.anchor.set(asset.anchorX, asset.anchorY);
+				if (shadowSprite) {
+					shadowSprite.texture = asset.texture;
+				}
+				sprite?.anchor.set(asset.anchorX, asset.anchorY);
+				if (sprite) {
+					sprite.texture = asset.texture;
+				}
+			}
+			return;
+		}
+
+		const asset = isSingleCursorStyle(style)
+			? getCursorStyleAsset(style)
+			: getCursorPackStyleAsset(style, "arrow");
+		this.customCursorShadowSprite.texture = asset.texture;
+		this.customCursorShadowSprite.anchor.set(asset.anchorX, asset.anchorY);
+		this.customCursorSprite.texture = asset.texture;
+		this.customCursorSprite.anchor.set(asset.anchorX, asset.anchorY);
+	}
+
+	getSmoothedCursorSnapshot(): {
+		cx: number;
+		cy: number;
+		trail: Array<{ cx: number; cy: number }>;
+	} | null {
+		if (!this.container.visible || !this.cursorVisible) {
+			return null;
+		}
+
+		return {
+			cx: this.state.x,
+			cy: this.state.y,
+			trail: this.state.trail.map((point) => ({ cx: point.x, cy: point.y })),
+		};
+	}
+
 	update(
 		samples: CursorTelemetryPoint[],
 		timeMs: number,
@@ -584,83 +1310,240 @@ export class PixiCursorOverlay {
 		visible: boolean,
 		freeze = false,
 	): void {
-		if (!visible || samples.length === 0 || viewport.width <= 0 || viewport.height <= 0) {
+		if (samples.length === 0 || viewport.width <= 0 || viewport.height <= 0) {
 			this.container.visible = false;
+			this.cursorVisible = false;
+			this.clickRingGraphics.clear();
 			this.lastRenderedPoint = null;
 			this.lastRenderedTimeMs = null;
+			this.swayRotation = 0;
+			resetSpringState(this.swaySpring, 0);
 			this.cursorMotionBlurFilter.velocity = { x: 0, y: 0 };
+			this.customCursorShadowSprite.visible = false;
+			this.customCursorSprite.visible = false;
+			for (const shadowSprite of Object.values(this.cursorShadowSprites)) {
+				shadowSprite.visible = false;
+			}
+			for (const sprite of Object.values(this.cursorSprites)) {
+				sprite.visible = false;
+			}
 			return;
 		}
 
 		const target = interpolateCursorPosition(samples, timeMs);
 		if (!target) {
 			this.container.visible = false;
+			this.cursorVisible = false;
+			this.clickRingGraphics.clear();
 			return;
 		}
 
-		const sameFrameTime =
-			this.lastRenderedTimeMs !== null && Math.abs(this.lastRenderedTimeMs - timeMs) < 0.0001;
-		const hasTimeDiscontinuity =
-			this.lastRenderedTimeMs !== null &&
-			Math.abs(timeMs - this.lastRenderedTimeMs) > CURSOR_TIME_DISCONTINUITY_MS;
+		const projectedTarget = projectCursorPositionToViewport(target, viewport.sourceCrop);
 
-		if (freeze || hasTimeDiscontinuity) {
-			if (!sameFrameTime || !this.lastRenderedPoint) {
-				this.state.snapTo(target.cx, target.cy, timeMs);
-			}
-		} else {
-			this.state.update(target.cx, target.cy, timeMs);
-		}
-		this.container.visible = true;
-
-		const px = viewport.x + this.state.x * viewport.width;
-		const py = viewport.y + this.state.y * viewport.height;
-		const h = this.config.dotRadius * getCursorViewportScale(viewport);
-		const { cursorType, clickBounceProgress, clickProgress } = getCursorVisualState(
+		const h =
+			this.config.dotRadius * getCursorViewportScale(viewport, this.config.minViewportScale);
+		const { cursorType, clickSample, clickBounceProgress, clickProgress } = getCursorVisualState(
 			samples,
 			timeMs,
+			this.config.clickBounceDuration,
+			this.config.clickEffectDurationMs,
 		);
-		const spriteKey = (cursorType in this.cursorSprites ? cursorType : "arrow") as CursorAssetKey;
-		const asset = getCursorAsset(spriteKey);
-		const shadowSprite = this.cursorShadowSprites[spriteKey] ?? this.cursorShadowSprites.arrow!;
-		const sprite = this.cursorSprites[spriteKey] ?? this.cursorSprites.arrow!;
+		const projectedClickSample = clickSample
+			? projectCursorPositionToViewport(clickSample, viewport.sourceCrop)
+			: null;
+		const clickEffectPx =
+			projectedClickSample && projectedClickSample.visible
+				? viewport.x + projectedClickSample.cx * viewport.width
+				: viewport.x + projectedTarget.cx * viewport.width;
+		const clickEffectPy =
+			projectedClickSample && projectedClickSample.visible
+				? viewport.y + projectedClickSample.cy * viewport.height
+				: viewport.y + projectedTarget.cy * viewport.height;
+		const shouldShowCursorSprite = visible && projectedTarget.visible;
+		const shouldDrawClickEffect =
+			this.config.clickEffect !== "none" &&
+			clickProgress > 0 &&
+			Boolean(projectedClickSample?.visible);
+
+		if (!shouldShowCursorSprite && !shouldDrawClickEffect) {
+			this.container.visible = false;
+			this.cursorVisible = false;
+			this.clickRingGraphics.clear();
+			this.customCursorShadowSprite.visible = false;
+			this.customCursorSprite.visible = false;
+			for (const shadowSprite of Object.values(this.cursorShadowSprites)) {
+				shadowSprite.visible = false;
+			}
+			for (const sprite of Object.values(this.cursorSprites)) {
+				sprite.visible = false;
+			}
+			this.lastRenderedPoint = null;
+			this.lastRenderedTimeMs = null;
+			this.swayRotation = 0;
+			resetSpringState(this.swaySpring, 0);
+			this.cursorMotionBlurFilter.velocity = { x: 0, y: 0 };
+			return;
+		}
+
+		this.container.visible = true;
+		this.cursorVisible = shouldShowCursorSprite;
+
+		let px = viewport.x + projectedTarget.cx * viewport.width;
+		let py = viewport.y + projectedTarget.cy * viewport.height;
+		let shouldFreezeCursorMotion = true;
+
+		if (shouldShowCursorSprite) {
+			const sameFrameTime =
+				this.lastRenderedTimeMs !== null && Math.abs(this.lastRenderedTimeMs - timeMs) < 0.0001;
+			const hasTimeDiscontinuity =
+				this.lastRenderedTimeMs !== null &&
+				Math.abs(timeMs - this.lastRenderedTimeMs) > CURSOR_TIME_DISCONTINUITY_MS;
+			shouldFreezeCursorMotion = freeze || hasTimeDiscontinuity;
+
+			if (shouldFreezeCursorMotion) {
+				if (!sameFrameTime || !this.lastRenderedPoint) {
+					this.state.snapTo(projectedTarget.cx, projectedTarget.cy, timeMs);
+				}
+			} else {
+				this.state.update(projectedTarget.cx, projectedTarget.cy, timeMs);
+			}
+
+			px = viewport.x + this.state.x * viewport.width;
+			py = viewport.y + this.state.y * viewport.height;
+		} else {
+			this.customCursorShadowSprite.visible = false;
+			this.customCursorSprite.visible = false;
+			for (const shadowSprite of Object.values(this.cursorShadowSprites)) {
+				shadowSprite.visible = false;
+			}
+			for (const sprite of Object.values(this.cursorSprites)) {
+				sprite.visible = false;
+			}
+		}
+
 		const bounceScale = Math.max(
 			0.72,
 			1 - Math.sin(clickBounceProgress * Math.PI) * (0.08 * this.config.clickBounce),
 		);
-		const scaledH = h;
+		const scaledH = h * getCursorStyleSizeMultiplier(this.config.style);
+		const swayRotation = this.updateCursorSway(px, py, timeMs, shouldFreezeCursorMotion);
 
-		this.clickRingGraphics.clear();
-		drawClickRing(this.clickRingGraphics, px, py, h, clickProgress);
+		drawClickEffectGraphics(
+			this.clickRingGraphics,
+			this.config.clickEffect,
+			clickEffectPx,
+			clickEffectPy,
+			scaledH,
+			clickProgress,
+			this.config.clickEffectScale,
+			this.config.clickEffectOpacity,
+			this.config.clickEffectColor,
+		);
 
-		for (const [key, currentShadowSprite] of Object.entries(this.cursorShadowSprites) as Array<
-			[CursorAssetKey, Sprite]
-		>) {
-			currentShadowSprite.visible = key === spriteKey;
+		const spriteKey = (cursorType in this.cursorSprites ? cursorType : "arrow") as CursorAssetKey;
+
+		if (shouldShowCursorSprite && isStatefulCursorStyle(this.config.style)) {
+			this.customCursorShadowSprite.visible = false;
+			this.customCursorSprite.visible = false;
+
+			const asset = getStatefulCursorAsset(this.config.style, spriteKey);
+			const shadowSprite = this.cursorShadowSprites[spriteKey] ?? this.cursorShadowSprites.arrow!;
+			const sprite = this.cursorSprites[spriteKey] ?? this.cursorSprites.arrow!;
+
+			for (const [key, currentShadowSprite] of Object.entries(this.cursorShadowSprites) as Array<
+				[CursorAssetKey, Sprite]
+			>) {
+				currentShadowSprite.visible = key === spriteKey;
+			}
+
+			for (const [key, currentSprite] of Object.entries(this.cursorSprites) as Array<
+				[CursorAssetKey, Sprite]
+			>) {
+				currentSprite.visible = key === spriteKey;
+			}
+
+			if (shadowSprite) {
+				shadowSprite.height = scaledH * bounceScale;
+				shadowSprite.width = scaledH * bounceScale * asset.aspectRatio;
+				shadowSprite.position.set(px + CURSOR_SHADOW_OFFSET_X, py + CURSOR_SHADOW_OFFSET_Y);
+				shadowSprite.rotation = swayRotation;
+			}
+
+			if (sprite) {
+				sprite.alpha = this.config.dotAlpha;
+				sprite.height = scaledH * bounceScale;
+				sprite.width = scaledH * bounceScale * asset.aspectRatio;
+				sprite.position.set(px, py);
+				sprite.rotation = swayRotation;
+			}
+		} else if (shouldShowCursorSprite) {
+			for (const currentShadowSprite of Object.values(this.cursorShadowSprites)) {
+				currentShadowSprite.visible = false;
+			}
+
+			for (const currentSprite of Object.values(this.cursorSprites)) {
+				currentSprite.visible = false;
+			}
+
+			const asset = isSingleCursorStyle(this.config.style)
+				? getCursorStyleAsset(this.config.style)
+				: getCursorPackStyleAsset(this.config.style, spriteKey);
+			const showSeparateShadow = this.config.style !== "figma";
+			this.customCursorShadowSprite.texture = asset.texture;
+			this.customCursorShadowSprite.anchor.set(asset.anchorX, asset.anchorY);
+			this.customCursorShadowSprite.visible = showSeparateShadow;
+			if (showSeparateShadow) {
+				this.customCursorShadowSprite.height = scaledH * bounceScale;
+				this.customCursorShadowSprite.width = scaledH * bounceScale * asset.aspectRatio;
+				this.customCursorShadowSprite.position.set(
+					px + CURSOR_SHADOW_OFFSET_X,
+					py + CURSOR_SHADOW_OFFSET_Y,
+				);
+				this.customCursorShadowSprite.rotation = swayRotation;
+			}
+
+			this.customCursorSprite.texture = asset.texture;
+			this.customCursorSprite.anchor.set(asset.anchorX, asset.anchorY);
+			this.customCursorSprite.visible = true;
+			this.customCursorSprite.alpha = this.config.dotAlpha;
+			this.customCursorSprite.height = scaledH * bounceScale;
+			this.customCursorSprite.width = scaledH * bounceScale * asset.aspectRatio;
+			this.customCursorSprite.position.set(px, py);
+			this.customCursorSprite.rotation = swayRotation;
 		}
 
-		for (const [key, currentSprite] of Object.entries(this.cursorSprites) as Array<
-			[CursorAssetKey, Sprite]
-		>) {
-			currentSprite.visible = key === spriteKey;
-		}
-
-		if (shadowSprite) {
-			shadowSprite.height = scaledH * bounceScale;
-			shadowSprite.width = scaledH * bounceScale * asset.aspectRatio;
-			shadowSprite.position.set(px + CURSOR_SHADOW_OFFSET_X, py + CURSOR_SHADOW_OFFSET_Y);
-		}
-
-		if (sprite) {
-			sprite.alpha = this.config.dotAlpha;
-			sprite.height = scaledH * bounceScale;
-			sprite.width = scaledH * bounceScale * asset.aspectRatio;
-			sprite.position.set(px, py);
-		}
-
-		this.applyCursorMotionBlur(px, py, timeMs, freeze);
-		this.lastRenderedPoint = { px, py };
+		this.applyCursorMotionBlur(px, py, timeMs, shouldFreezeCursorMotion);
+		this.lastRenderedPoint = shouldShowCursorSprite ? { px, py } : null;
 		this.lastRenderedTimeMs = timeMs;
+	}
+
+	private updateCursorSway(px: number, py: number, timeMs: number, freeze: boolean) {
+		const deltaMs =
+			this.lastRenderedTimeMs === null || freeze
+				? 1000 / 60
+				: Math.max(1, timeMs - this.lastRenderedTimeMs);
+		const targetRotation =
+			!freeze && this.lastRenderedPoint && this.lastRenderedTimeMs !== null
+				? computeCursorSwayRotation(
+						px - this.lastRenderedPoint.px,
+						py - this.lastRenderedPoint.py,
+						timeMs - this.lastRenderedTimeMs,
+						this.config.sway,
+					)
+				: 0;
+
+		this.swayRotation = stepSpringValue(
+			this.swaySpring,
+			targetRotation,
+			deltaMs,
+			getCursorSwaySpringConfig(this.config.smoothingFactor, this.config.springTuning),
+		);
+
+		if (Math.abs(this.swayRotation) < 0.0001 && targetRotation === 0) {
+			this.swayRotation = 0;
+		}
+
+		return this.swayRotation;
 	}
 
 	private applyCursorMotionBlur(px: number, py: number, timeMs: number, freeze: boolean) {
@@ -695,17 +1578,24 @@ export class PixiCursorOverlay {
 	reset(): void {
 		this.state.reset();
 		this.clickRingGraphics.clear();
+		this.cursorVisible = false;
 		for (const shadowSprite of Object.values(this.cursorShadowSprites)) {
 			shadowSprite.visible = false;
 			shadowSprite.scale.set(1);
 		}
+		this.customCursorShadowSprite.visible = false;
+		this.customCursorShadowSprite.scale.set(1);
 		for (const sprite of Object.values(this.cursorSprites)) {
 			sprite.visible = false;
 			sprite.scale.set(1);
 		}
+		this.customCursorSprite.visible = false;
+		this.customCursorSprite.scale.set(1);
 		this.container.visible = false;
 		this.lastRenderedPoint = null;
 		this.lastRenderedTimeMs = null;
+		this.swayRotation = 0;
+		resetSpringState(this.swaySpring, 0);
 		this.cursorMotionBlurFilter.velocity = { x: 0, y: 0 };
 		this.cursorMotionBlurFilter.kernelSize = 5;
 		this.cursorMotionBlurFilter.offset = 0;
@@ -713,13 +1603,12 @@ export class PixiCursorOverlay {
 
 	destroy(): void {
 		this.clickRingGraphics.destroy();
+		this.customCursorShadowFilter.destroy();
 		for (const shadowFilter of Object.values(this.cursorShadowFilters)) {
 			shadowFilter.destroy();
 		}
 		this.cursorMotionBlurFilter.destroy();
 		this.container.destroy({ children: true });
-		cursorAssetsPromise = null;
-		loadedCursorAssets = {};
 	}
 }
 
@@ -736,25 +1625,62 @@ export function drawCursorOnCanvas(
 	const target = interpolateCursorPosition(samples, timeMs);
 	if (!target) return;
 
-	smoothedState.update(target.cx, target.cy, timeMs);
+	const projectedTarget = projectCursorPositionToViewport(target, viewport.sourceCrop);
+	if (!projectedTarget.visible) return;
+
+	smoothedState.update(projectedTarget.cx, projectedTarget.cy, timeMs);
 
 	const px = viewport.x + smoothedState.x * viewport.width;
 	const py = viewport.y + smoothedState.y * viewport.height;
-	const h = config.dotRadius * getCursorViewportScale(viewport);
-	const { cursorType, clickBounceProgress } = getCursorVisualState(samples, timeMs);
+	const h = config.dotRadius * getCursorViewportScale(viewport, config.minViewportScale);
+	const { cursorType, clickSample, clickBounceProgress, clickProgress } = getCursorVisualState(
+		samples,
+		timeMs,
+		config.clickBounceDuration,
+		config.clickEffectDurationMs,
+	);
+	const projectedClickSample = clickSample
+		? projectCursorPositionToViewport(clickSample, viewport.sourceCrop)
+		: null;
+	const clickEffectPx =
+		projectedClickSample && projectedClickSample.visible
+			? viewport.x + projectedClickSample.cx * viewport.width
+			: px;
+	const clickEffectPy =
+		projectedClickSample && projectedClickSample.visible
+			? viewport.y + projectedClickSample.cy * viewport.height
+			: py;
 	const spriteKey = (
 		cursorType && loadedCursorAssets[cursorType] ? cursorType : "arrow"
 	) as CursorAssetKey;
-	const asset = getCursorAsset(spriteKey);
+	const asset = isStatefulCursorStyle(config.style)
+		? getStatefulCursorAsset(config.style, spriteKey)
+		: isSingleCursorStyle(config.style)
+			? getCursorStyleAsset(config.style)
+			: getCursorPackStyleAsset(config.style, spriteKey);
 	const bounceScale = Math.max(
 		0.72,
 		1 - Math.sin(clickBounceProgress * Math.PI) * (0.08 * config.clickBounce),
 	);
+	const effectHeight = h * getCursorStyleSizeMultiplier(config.style);
+	const drawHeight = effectHeight * bounceScale;
+	drawClickEffectOnCanvas(
+		ctx,
+		config.clickEffect,
+		clickEffectPx,
+		clickEffectPy,
+		effectHeight,
+		clickProgress,
+		config.clickEffectScale,
+		config.clickEffectOpacity,
+		config.clickEffectColor,
+	);
 
 	ctx.save();
-	ctx.filter = CURSOR_SVG_DROP_SHADOW_FILTER;
+	if (config.style !== "figma") {
+		ctx.filter = CURSOR_SVG_DROP_SHADOW_FILTER;
+	}
 
-	const drawHeight = h * bounceScale;
 	const drawWidth = drawHeight * asset.aspectRatio;
 	const hotspotX = asset.anchorX * drawWidth;
 	const hotspotY = asset.anchorY * drawHeight;

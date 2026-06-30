@@ -1,173 +1,102 @@
-import type { CaptionLine, CaptionStyle, CaptionTrack } from "@/lib/ai/types";
+import { buildActiveCaptionLayout } from "@/components/video-editor/captionLayout";
+import {
+	CAPTION_FONT_WEIGHT,
+	CAPTION_LINE_HEIGHT,
+	getCaptionPadding,
+	getCaptionScaledFontSize,
+	getCaptionScaledRadius,
+	getCaptionTextMaxWidth,
+	getCaptionWordVisualState,
+} from "@/components/video-editor/captionStyle";
+import {
+	type AutoCaptionSettings,
+	type CaptionCue,
+	getDefaultCaptionFontFamily,
+} from "@/components/video-editor/types";
+import { drawSquircleOnCanvas } from "@/lib/geometry/squircle";
 
-/**
- * Find the active caption line at a given timestamp.
- */
-function findActiveLine(track: CaptionTrack, timeMs: number): CaptionLine | null {
-	for (const line of track.lines) {
-		if (timeMs >= line.startMs && timeMs <= line.endMs) {
-			return line;
-		}
-	}
-	return null;
-}
-
-/**
- * Draw a rounded rectangle (squircle-style background) on a 2D canvas context.
- */
-function drawRoundedRect(
-	ctx: CanvasRenderingContext2D,
-	x: number,
-	y: number,
-	width: number,
-	height: number,
-	radius: number,
-): void {
-	ctx.beginPath();
-	ctx.moveTo(x + radius, y);
-	ctx.lineTo(x + width - radius, y);
-	ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-	ctx.lineTo(x + width, y + height - radius);
-	ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-	ctx.lineTo(x + radius, y + height);
-	ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-	ctx.lineTo(x, y + radius);
-	ctx.quadraticCurveTo(x, y, x + radius, y);
-	ctx.closePath();
-}
-
-/**
- * Parse a hex color string to RGB components.
- */
-function hexToRgb(hex: string): { r: number; g: number; b: number } {
-	const clean = hex.replace("#", "");
-	return {
-		r: Number.parseInt(clean.slice(0, 2), 16) || 0,
-		g: Number.parseInt(clean.slice(2, 4), 16) || 0,
-		b: Number.parseInt(clean.slice(4, 6), 16) || 0,
-	};
-}
-
-/**
- * Measure the width of a word using the current font settings.
- */
-function measureWord(ctx: CanvasRenderingContext2D, word: string): number {
-	return ctx.measureText(word).width;
-}
-
-/**
- * Render captions onto a canvas 2D context at a specific timestamp.
- *
- * This is used during video export to burn captions into the output.
- *
- * @param ctx            Canvas 2D rendering context
- * @param captionTrack   The caption track data
- * @param captionStyle   Style configuration
- * @param currentTimeMs  Current playback time in milliseconds
- * @param canvasWidth    Canvas width in pixels
- * @param canvasHeight   Canvas height in pixels
- */
 export function renderCaptions(
 	ctx: CanvasRenderingContext2D,
-	captionTrack: CaptionTrack,
-	captionStyle: CaptionStyle,
-	currentTimeMs: number,
-	canvasWidth: number,
-	canvasHeight: number,
-): void {
-	const activeLine = findActiveLine(captionTrack, currentTimeMs);
-	if (!activeLine) return;
+	cues: CaptionCue[],
+	settings: AutoCaptionSettings,
+	width: number,
+	height: number,
+	timeMs: number,
+) {
+	if (!settings.enabled || cues.length === 0) {
+		return;
+	}
 
-	// Scale font size relative to canvas height (designed for 1080p)
-	const scaleFactor = canvasHeight / 1080;
-	const fontSize = Math.round(captionStyle.fontSize * scaleFactor);
-	const paddingX = Math.round(16 * scaleFactor);
-	const paddingY = Math.round(8 * scaleFactor);
-	const borderRadius = Math.round(8 * scaleFactor);
+	ctx.save();
 
-	// Set font
-	ctx.font = `600 ${fontSize}px "${captionStyle.fontFamily}", sans-serif`;
+	const fontSize = getCaptionScaledFontSize(settings.fontSize, width, settings.maxWidth);
+	ctx.font = `${CAPTION_FONT_WEIGHT} ${fontSize}px ${getDefaultCaptionFontFamily()}`;
+	const padding = getCaptionPadding(fontSize);
+
+	const activeCaptionLayout = buildActiveCaptionLayout({
+		cues,
+		timeMs,
+		settings,
+		maxWidthPx: getCaptionTextMaxWidth(width, settings.maxWidth, fontSize),
+		measureText: (text) => ctx.measureText(text).width,
+	});
+	if (!activeCaptionLayout) {
+		ctx.restore();
+		return;
+	}
+
+	const lineHeight = fontSize * CAPTION_LINE_HEIGHT;
+	const paddingX = padding.x;
+	const paddingY = padding.y;
+	const textBlockHeight = activeCaptionLayout.visibleLines.length * lineHeight;
+	const boxHeight = textBlockHeight + paddingY * 2;
+	const centerX = width / 2;
+	const centerY = height - (height * settings.bottomOffset) / 100 - boxHeight / 2;
+	const maxMeasuredWidth = activeCaptionLayout.visibleLines.reduce(
+		(largest, line) => Math.max(largest, line.width),
+		0,
+	);
+	const boxWidth = Math.min(
+		width * (settings.maxWidth / 100) + paddingX * 2,
+		maxMeasuredWidth + paddingX * 2,
+	);
+
+	ctx.translate(centerX, centerY + activeCaptionLayout.translateY);
+	ctx.scale(activeCaptionLayout.scale, activeCaptionLayout.scale);
+	ctx.globalAlpha = activeCaptionLayout.opacity;
+
+	ctx.fillStyle = `rgba(0, 0, 0, ${settings.backgroundOpacity})`;
+	drawSquircleOnCanvas(ctx, {
+		x: -boxWidth / 2,
+		y: -boxHeight / 2,
+		width: boxWidth,
+		height: boxHeight,
+		radius: getCaptionScaledRadius(settings.boxRadius, fontSize),
+	});
+	ctx.fill();
+
+	ctx.textAlign = "left";
 	ctx.textBaseline = "middle";
 
-	// Measure the full line width (with spacing)
-	const words = activeLine.words;
-	const spaceWidth = measureWord(ctx, " ");
-	let totalTextWidth = 0;
-	const wordWidths: number[] = [];
+	activeCaptionLayout.visibleLines.forEach((line, lineIndex) => {
+		let cursorX = -line.width / 2;
+		const lineY = -boxHeight / 2 + paddingY + lineHeight * lineIndex + lineHeight / 2;
 
-	for (let i = 0; i < words.length; i++) {
-		const w = measureWord(ctx, words[i].text);
-		wordWidths.push(w);
-		totalTextWidth += w;
-		if (i < words.length - 1) {
-			totalTextWidth += spaceWidth;
-		}
-	}
+		line.words.forEach((word) => {
+			const segmentText = `${word.leadingSpace ? " " : ""}${word.text}`;
+			const segmentWidth = ctx.measureText(segmentText).width;
+			const visualState = getCaptionWordVisualState(activeCaptionLayout.hasWordTimings, word.state);
 
-	// Cap text width to 85% of canvas
-	const maxWidth = canvasWidth * 0.85;
-	const boxWidth = Math.min(totalTextWidth + paddingX * 2, maxWidth + paddingX * 2);
-	const boxHeight = fontSize * 1.4 + paddingY * 2;
+			ctx.save();
+			ctx.translate(cursorX, lineY);
+			ctx.fillStyle = visualState.isInactive ? settings.inactiveTextColor : settings.textColor;
+			ctx.globalAlpha = activeCaptionLayout.opacity * visualState.opacity;
+			ctx.fillText(segmentText, 0, 0);
+			ctx.restore();
 
-	// Calculate vertical position
-	let boxY: number;
-	switch (captionStyle.position) {
-		case "top":
-			boxY = canvasHeight * 0.08;
-			break;
-		case "center":
-			boxY = (canvasHeight - boxHeight) / 2;
-			break;
-		case "bottom":
-		default:
-			boxY = canvasHeight * 0.92 - boxHeight;
-			break;
-	}
-
-	// Center horizontally
-	const boxX = (canvasWidth - boxWidth) / 2;
-
-	// Draw background
-	if (captionStyle.backgroundOpacity > 0) {
-		const bg = hexToRgb(captionStyle.backgroundColor);
-		ctx.save();
-		ctx.fillStyle = `rgba(${bg.r}, ${bg.g}, ${bg.b}, ${captionStyle.backgroundOpacity})`;
-		drawRoundedRect(ctx, boxX, boxY, boxWidth, boxHeight, borderRadius);
-		ctx.fill();
-		ctx.restore();
-	}
-
-	// Draw text shadow
-	ctx.save();
-	ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
-	ctx.shadowBlur = 4 * scaleFactor;
-	ctx.shadowOffsetX = 0;
-	ctx.shadowOffsetY = 1 * scaleFactor;
-
-	// Draw each word
-	let cursorX = boxX + paddingX;
-	const textY = boxY + boxHeight / 2;
-
-	for (let i = 0; i < words.length; i++) {
-		const word = words[i];
-		const isActive = currentTimeMs >= word.startMs && currentTimeMs <= word.endMs;
-		const isPast = currentTimeMs > word.endMs;
-
-		// Determine word color based on animation style
-		if (captionStyle.animation === "word-highlight") {
-			ctx.fillStyle = isActive ? captionStyle.activeWordColor : captionStyle.fontColor;
-		} else if (captionStyle.animation === "fade-in") {
-			const isFuture = currentTimeMs < word.startMs;
-			const alpha = isFuture ? 0.3 : isPast || isActive ? 1 : 0.3;
-			const color = hexToRgb(captionStyle.fontColor);
-			ctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`;
-		} else {
-			ctx.fillStyle = captionStyle.fontColor;
-		}
-
-		ctx.fillText(word.text, cursorX, textY);
-		cursorX += wordWidths[i] + spaceWidth;
-	}
+			cursorX += segmentWidth;
+		});
+	});
 
 	ctx.restore();
 }

@@ -1,67 +1,112 @@
-import { type AnnotationRegion, type ArrowDirection } from "@/components/video-editor/types";
-import { getTextAnimationState } from "@/lib/annotationTextAnimation";
 import {
-	applyMosaicToImageData,
-	getBlurOverlayColor,
-	getNormalizedBlurIntensity,
-	getNormalizedMosaicBlockSize,
-	normalizeBlurType,
-} from "@/lib/blurEffects";
+	type AnnotationRegion,
+	type ArrowDirection,
+	BLUR_ANNOTATION_STRENGTH,
+} from "@/components/video-editor/types";
 
-let blurScratchCanvas: HTMLCanvasElement | null = null;
-let blurScratchCtx: CanvasRenderingContext2D | null = null;
-
-// Han/Hiragana/Katakana/Hangul code points, to split CJK text at character
-// boundaries during wrap (CJK has no word-separating whitespace). Script
-// escapes need ES2018+; tsconfig targets ES2020.
-const CJK_CHAR = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
-
-type GraphemeSegmenter = {
-	segment(value: string): Iterable<{ segment: string }>;
-};
-
-type IntlWithSegmenter = typeof Intl & {
-	Segmenter?: new (
-		locales?: string | string[],
-		options?: { granularity?: "grapheme" },
-	) => GraphemeSegmenter;
-};
-
-const Segmenter = (Intl as IntlWithSegmenter).Segmenter;
-const graphemeSegmenter =
-	typeof Segmenter === "function" ? new Segmenter(undefined, { granularity: "grapheme" }) : null;
-
-function splitGraphemes(value: string): string[] {
-	if (!graphemeSegmenter) return Array.from(value);
-	return Array.from(graphemeSegmenter.segment(value), ({ segment }) => segment);
+export interface AnnotationRenderAssets {
+	imageCache: Map<string, HTMLImageElement>;
 }
 
-function tokenizeForWrap(line: string): string[] {
-	// Split Latin on whitespace (kept as its own token) and split CJK runs into
-	// individual chars so each is breakable, mirroring the editor's CSS
-	// word-break: break-word for CJK.
-	const tokens: string[] = [];
-	let buffer = "";
-	const chars = Array.from(line);
-	const flushBuffer = () => {
-		if (buffer) {
-			tokens.push(...buffer.split(/(\s+)/).filter((s) => s.length > 0));
-			buffer = "";
-		}
-	};
-	for (const ch of chars) {
-		if (CJK_CHAR.test(ch)) {
-			flushBuffer();
-			tokens.push(ch);
-		} else {
-			buffer += ch;
-		}
+interface AnnotationSceneTransform {
+	scale: number;
+	x: number;
+	y: number;
+}
+
+interface AnnotationCoordinateRect {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
+function transformAnnotationRect(
+	rect: { x: number; y: number; width: number; height: number },
+	sceneTransform?: AnnotationSceneTransform,
+) {
+	if (!sceneTransform) {
+		return rect;
 	}
-	flushBuffer();
-	return tokens;
+
+	return {
+		x: rect.x * sceneTransform.scale + sceneTransform.x,
+		y: rect.y * sceneTransform.scale + sceneTransform.y,
+		width: rect.width * sceneTransform.scale,
+		height: rect.height * sceneTransform.scale,
+	};
 }
 
-// SVG path data for each arrow direction
+const annotationImagePromiseCache = new Map<string, Promise<HTMLImageElement | null>>();
+
+let blurBufferCanvas: HTMLCanvasElement | null = null;
+function getBlurBufferCanvas(): HTMLCanvasElement | null {
+	if (typeof document === "undefined") return null;
+	if (!blurBufferCanvas) {
+		blurBufferCanvas = document.createElement("canvas");
+	}
+	return blurBufferCanvas;
+}
+
+function getAnnotationImageContent(annotation: AnnotationRegion): string | null {
+	const source = annotation.imageContent || annotation.content;
+	if (!source || !source.startsWith("data:image")) {
+		return null;
+	}
+
+	return source;
+}
+
+function loadAnnotationImage(source: string): Promise<HTMLImageElement | null> {
+	const cachedPromise = annotationImagePromiseCache.get(source);
+	if (cachedPromise) {
+		return cachedPromise;
+	}
+
+	const loadPromise = new Promise<HTMLImageElement | null>((resolve) => {
+		const img = new Image();
+		img.onload = () => resolve(img);
+		img.onerror = () => {
+			console.error("[AnnotationRenderer] Failed to load image annotation");
+			resolve(null);
+		};
+		img.src = source;
+	});
+
+	annotationImagePromiseCache.set(source, loadPromise);
+	return loadPromise;
+}
+
+export async function preloadAnnotationAssets(
+	annotations: AnnotationRegion[] = [],
+): Promise<AnnotationRenderAssets> {
+	const uniqueSources = [
+		...new Set(
+			annotations
+				.filter((annotation) => annotation.type === "image")
+				.map((annotation) => getAnnotationImageContent(annotation))
+				.filter((source): source is string => !!source),
+		),
+	];
+
+	if (uniqueSources.length === 0) {
+		return { imageCache: new Map() };
+	}
+
+	const loadedSources = await Promise.all(
+		uniqueSources.map(async (source) => {
+			const image = await loadAnnotationImage(source);
+			return image ? ([source, image] as const) : null;
+		}),
+	);
+
+	return {
+		imageCache: new Map(
+			loadedSources.filter((entry): entry is readonly [string, HTMLImageElement] => !!entry),
+		),
+	};
+}
+
 const ARROW_PATHS: Record<ArrowDirection, string[]> = {
 	up: ["M 50 20 L 50 80", "M 50 20 L 35 35", "M 50 20 L 65 35"],
 	down: ["M 50 20 L 50 80", "M 50 80 L 35 65", "M 50 80 L 65 65"],
@@ -135,7 +180,6 @@ function renderArrow(
 	ctx.lineCap = "round";
 	ctx.lineJoin = "round";
 
-	// One shape so shadows/strokes don't overlap
 	ctx.beginPath();
 
 	for (const pathString of paths) {
@@ -155,101 +199,6 @@ function renderArrow(
 	ctx.restore();
 }
 
-function drawBlurPath(
-	ctx: CanvasRenderingContext2D,
-	annotation: AnnotationRegion,
-	x: number,
-	y: number,
-	width: number,
-	height: number,
-) {
-	const shape = annotation.blurData?.shape || "rectangle";
-	if (shape === "rectangle") {
-		ctx.beginPath();
-		ctx.rect(x, y, width, height);
-		return;
-	}
-
-	if (shape === "oval") {
-		ctx.beginPath();
-		ctx.ellipse(x + width / 2, y + height / 2, width / 2, height / 2, 0, 0, Math.PI * 2);
-		return;
-	}
-
-	const points = annotation.blurData?.freehandPoints;
-	if (shape === "freehand" && points && points.length >= 3) {
-		ctx.beginPath();
-		ctx.moveTo(x + (points[0].x / 100) * width, y + (points[0].y / 100) * height);
-		for (let i = 1; i < points.length; i++) {
-			ctx.lineTo(x + (points[i].x / 100) * width, y + (points[i].y / 100) * height);
-		}
-		ctx.closePath();
-		return;
-	}
-
-	ctx.beginPath();
-	ctx.rect(x, y, width, height);
-}
-
-function renderBlur(
-	ctx: CanvasRenderingContext2D,
-	annotation: AnnotationRegion,
-	x: number,
-	y: number,
-	width: number,
-	height: number,
-	scaleFactor: number,
-) {
-	const canvas = ctx.canvas;
-	const blurType = normalizeBlurType(annotation.blurData?.type);
-
-	const blurRadius = Math.max(
-		1,
-		Math.round(getNormalizedBlurIntensity(annotation.blurData) * scaleFactor),
-	);
-	const samplePadding =
-		blurType === "mosaic"
-			? Math.max(0, Math.ceil(getNormalizedMosaicBlockSize(annotation.blurData, scaleFactor)))
-			: Math.max(2, Math.ceil(blurRadius * 2));
-	const sx = Math.max(0, Math.floor(x) - samplePadding);
-	const sy = Math.max(0, Math.floor(y) - samplePadding);
-	const ex = Math.min(canvas.width, Math.ceil(x + width) + samplePadding);
-	const ey = Math.min(canvas.height, Math.ceil(y + height) + samplePadding);
-	const sw = Math.max(0, ex - sx);
-	const sh = Math.max(0, ey - sy);
-	if (sw <= 0 || sh <= 0) return;
-
-	if (!blurScratchCanvas || !blurScratchCtx) {
-		blurScratchCanvas = document.createElement("canvas");
-		blurScratchCtx = blurScratchCanvas.getContext("2d");
-	}
-	if (!blurScratchCanvas || !blurScratchCtx) return;
-
-	blurScratchCanvas.width = sw;
-	blurScratchCanvas.height = sh;
-	blurScratchCtx.clearRect(0, 0, sw, sh);
-	blurScratchCtx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
-
-	if (blurType === "mosaic") {
-		const imageData = blurScratchCtx.getImageData(0, 0, sw, sh);
-		applyMosaicToImageData(
-			imageData,
-			getNormalizedMosaicBlockSize(annotation.blurData, scaleFactor),
-		);
-		blurScratchCtx.putImageData(imageData, 0, 0);
-	}
-
-	ctx.save();
-	drawBlurPath(ctx, annotation, x, y, width, height);
-	ctx.clip();
-	ctx.filter = blurType === "mosaic" ? "none" : `blur(${blurRadius}px)`;
-	ctx.drawImage(blurScratchCanvas, sx, sy);
-	ctx.filter = "none";
-	ctx.fillStyle = getBlurOverlayColor(annotation.blurData);
-	ctx.fillRect(sx, sy, sw, sh);
-	ctx.restore();
-}
-
 function renderText(
 	ctx: CanvasRenderingContext2D,
 	annotation: AnnotationRegion,
@@ -258,22 +207,11 @@ function renderText(
 	width: number,
 	height: number,
 	scaleFactor: number,
-	currentTimeMs: number,
 ) {
 	const style = annotation.style;
-	const animationState = getTextAnimationState(annotation, currentTimeMs);
 
 	ctx.save();
 
-	const transformOriginX = x + width / 2;
-	const transformOriginY = y + height / 2;
-	ctx.translate(transformOriginX, transformOriginY);
-	ctx.translate(animationState.translateX * scaleFactor, animationState.translateY * scaleFactor);
-	ctx.scale(animationState.scale, animationState.scale);
-	ctx.translate(-transformOriginX, -transformOriginY);
-	ctx.globalAlpha *= animationState.opacity;
-
-	// Clip to box bounds, matching editor's overflow: hidden
 	ctx.beginPath();
 	ctx.rect(x, y, width, height);
 	ctx.clip();
@@ -287,7 +225,7 @@ function renderText(
 	const containerPadding = 8 * scaleFactor;
 
 	let textX = x;
-	let textY = y + height / 2;
+	const textY = y + height / 2;
 
 	if (style.textAlign === "center") {
 		textX = x + width / 2;
@@ -308,13 +246,13 @@ function renderText(
 			lines.push("");
 			continue;
 		}
-		const tokens = tokenizeForWrap(rawLine);
+		const words = rawLine.split(/(\s+)/);
 		let current = "";
-		for (const token of tokens) {
-			const test = current + token;
+		for (const word of words) {
+			const test = current + word;
 			if (current && ctx.measureText(test).width > availableWidth) {
 				lines.push(current);
-				current = token.trimStart();
+				current = word.trimStart();
 			} else {
 				current = test;
 			}
@@ -327,39 +265,24 @@ function renderText(
 
 	lines.forEach((line, index) => {
 		const currentY = startY + index * lineHeight;
-		const revealProgress = animationState.revealProgress;
-		const graphemes = splitGraphemes(line);
-		const visibleCount = Math.ceil(graphemes.length * revealProgress);
-		const visibleLine = revealProgress >= 1 ? line : graphemes.slice(0, visibleCount).join("");
-		if (!visibleLine && revealProgress < 1) return;
-
-		const previousAlign = ctx.textAlign;
-		const fullMetrics = ctx.measureText(line);
-		let startX = textX;
-
-		if (ctx.textAlign === "center") {
-			startX = textX - fullMetrics.width / 2;
-			ctx.textAlign = "left";
-		} else if (ctx.textAlign === "right" || ctx.textAlign === "end") {
-			startX = textX - fullMetrics.width;
-			ctx.textAlign = "left";
-		}
 
 		if (style.backgroundColor && style.backgroundColor !== "transparent") {
-			const metrics = ctx.measureText(visibleLine);
+			const metrics = ctx.measureText(line);
 			const verticalPadding = scaledFontSize * 0.1;
 			const horizontalPadding = scaledFontSize * 0.2;
 			const borderRadius = 4 * scaleFactor;
 
-			let bgX = startX - horizontalPadding;
+			let bgX = textX - horizontalPadding;
 			const bgWidth = metrics.width + horizontalPadding * 2;
 
 			const contentHeight = scaledFontSize * 1.4;
 			const bgHeight = contentHeight + verticalPadding * 2;
 			const bgY = currentY - bgHeight / 2;
 
-			if (previousAlign === "left" || previousAlign === "start") {
-				bgX = textX - horizontalPadding;
+			if (style.textAlign === "center") {
+				bgX = textX - bgWidth / 2;
+			} else if (style.textAlign === "right") {
+				bgX = textX - bgWidth;
 			}
 
 			ctx.fillStyle = style.backgroundColor;
@@ -369,15 +292,17 @@ function renderText(
 		}
 
 		ctx.fillStyle = style.color;
-		ctx.fillText(visibleLine, startX, currentY);
+		ctx.fillText(line, textX, currentY);
 
 		if (style.textDecoration === "underline") {
-			const metrics = ctx.measureText(visibleLine);
-			let underlineX = startX;
+			const metrics = ctx.measureText(line);
+			let underlineX = textX;
 			const underlineY = currentY + scaledFontSize * 0.15;
 
-			if (previousAlign === "left" || previousAlign === "start") {
-				underlineX = textX;
+			if (style.textAlign === "center") {
+				underlineX = textX - metrics.width / 2;
+			} else if (style.textAlign === "right") {
+				underlineX = textX - metrics.width;
 			}
 
 			ctx.strokeStyle = style.color;
@@ -387,8 +312,6 @@ function renderText(
 			ctx.lineTo(underlineX + metrics.width, underlineY);
 			ctx.stroke();
 		}
-
-		ctx.textAlign = previousAlign;
 	});
 
 	ctx.restore();
@@ -401,40 +324,35 @@ async function renderImage(
 	y: number,
 	width: number,
 	height: number,
+	assets?: AnnotationRenderAssets,
 ): Promise<void> {
-	if (!annotation.content || !annotation.content.startsWith("data:image")) {
+	const source = getAnnotationImageContent(annotation);
+	if (!source) {
 		return;
 	}
 
-	return new Promise((resolve) => {
-		const img = new Image();
-		img.onload = () => {
-			// Contain within bounds, preserving aspect ratio
-			const imgAspect = img.width / img.height;
-			const boxAspect = width / height;
+	const img = assets?.imageCache.get(source) ?? (await loadAnnotationImage(source));
+	if (!img) {
+		return;
+	}
 
-			let drawWidth = width;
-			let drawHeight = height;
-			let drawX = x;
-			let drawY = y;
+	const imgAspect = img.width / img.height;
+	const boxAspect = width / height;
 
-			if (imgAspect > boxAspect) {
-				drawHeight = width / imgAspect;
-				drawY = y + (height - drawHeight) / 2;
-			} else {
-				drawWidth = height * imgAspect;
-				drawX = x + (width - drawWidth) / 2;
-			}
+	let drawWidth = width;
+	let drawHeight = height;
+	let drawX = x;
+	let drawY = y;
 
-			ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
-			resolve();
-		};
-		img.onerror = () => {
-			console.error("[AnnotationRenderer] Failed to load image annotation");
-			resolve();
-		};
-		img.src = annotation.content;
-	});
+	if (imgAspect > boxAspect) {
+		drawHeight = width / imgAspect;
+		drawY = y + (height - drawHeight) / 2;
+	} else {
+		drawWidth = height * imgAspect;
+		drawX = x + (width - drawWidth) / 2;
+	}
+
+	ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
 }
 
 export async function renderAnnotations(
@@ -444,27 +362,37 @@ export async function renderAnnotations(
 	canvasHeight: number,
 	currentTimeMs: number,
 	scaleFactor: number = 1.0,
+	assets?: AnnotationRenderAssets,
+	sceneTransform?: AnnotationSceneTransform,
+	coordinateRect?: AnnotationCoordinateRect,
 ): Promise<void> {
 	const activeAnnotations = annotations.filter(
-		(ann) => currentTimeMs >= ann.startMs && currentTimeMs < ann.endMs,
+		(ann) => currentTimeMs >= ann.startMs && currentTimeMs <= ann.endMs,
 	);
 
-	// Lower z-index first so higher draws on top
 	const sortedAnnotations = [...activeAnnotations].sort((a, b) => a.zIndex - b.zIndex);
+	const annotationRect = coordinateRect ?? { x: 0, y: 0, width: canvasWidth, height: canvasHeight };
 
 	for (const annotation of sortedAnnotations) {
-		const x = (annotation.position.x / 100) * canvasWidth;
-		const y = (annotation.position.y / 100) * canvasHeight;
-		const width = (annotation.size.width / 100) * canvasWidth;
-		const height = (annotation.size.height / 100) * canvasHeight;
+		const rect = transformAnnotationRect(
+			{
+				x: annotationRect.x + (annotation.position.x / 100) * annotationRect.width,
+				y: annotationRect.y + (annotation.position.y / 100) * annotationRect.height,
+				width: (annotation.size.width / 100) * annotationRect.width,
+				height: (annotation.size.height / 100) * annotationRect.height,
+			},
+			sceneTransform,
+		);
+		const { x, y, width, height } = rect;
+		const effectiveScaleFactor = scaleFactor * (sceneTransform?.scale ?? 1);
 
 		switch (annotation.type) {
 			case "text":
-				renderText(ctx, annotation, x, y, width, height, scaleFactor, currentTimeMs);
+				renderText(ctx, annotation, x, y, width, height, effectiveScaleFactor);
 				break;
 
 			case "image":
-				await renderImage(ctx, annotation, x, y, width, height);
+				await renderImage(ctx, annotation, x, y, width, height, assets);
 				break;
 
 			case "figure":
@@ -478,14 +406,108 @@ export async function renderAnnotations(
 						y,
 						width,
 						height,
-						scaleFactor,
+						effectiveScaleFactor,
 					);
 				}
 				break;
 
-			case "blur":
-				renderBlur(ctx, annotation, x, y, width, height, scaleFactor);
+			case "blur": {
+				const blurStrength =
+					(annotation.blurIntensity ?? BLUR_ANNOTATION_STRENGTH) * effectiveScaleFactor;
+				const padding = Math.ceil(blurStrength * 2);
+
+				ctx.save();
+
+				ctx.beginPath();
+				const borderRadius = (annotation.style.borderRadius ?? 0) * effectiveScaleFactor;
+				ctx.roundRect(x, y, width, height, borderRadius);
+				ctx.clip();
+
+				const sx = Math.max(0, x - padding);
+				const sy = Math.max(0, y - padding);
+				const sw = Math.min(canvasWidth - sx, width + padding * 2);
+				const sh = Math.min(canvasHeight - sy, height + padding * 2);
+
+				if (sw > 0 && sh > 0) {
+					const buffer = getBlurBufferCanvas();
+					if (buffer) {
+						buffer.width = sw;
+						buffer.height = sh;
+						const bCtx = buffer.getContext("2d");
+						if (bCtx) {
+							bCtx.drawImage(ctx.canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+
+							ctx.filter = `blur(${blurStrength}px)`;
+							ctx.drawImage(buffer, sx, sy);
+
+							if (annotation.blurColor && annotation.blurColor !== "transparent") {
+								ctx.filter = "none";
+								ctx.fillStyle = annotation.blurColor;
+								ctx.fillRect(x, y, width, height);
+							}
+						}
+					}
+				}
+
+				ctx.restore();
 				break;
+			}
 		}
 	}
+}
+
+export async function renderAnnotationToCanvas(
+	annotation: AnnotationRegion,
+	width: number,
+	height: number,
+	scaleFactor: number = 1.0,
+	assets?: AnnotationRenderAssets,
+): Promise<HTMLCanvasElement | null> {
+	const canvasWidth = Math.max(1, Math.ceil(width));
+	const canvasHeight = Math.max(1, Math.ceil(height));
+	const canvas = document.createElement("canvas");
+	canvas.width = canvasWidth;
+	canvas.height = canvasHeight;
+
+	const ctx = canvas.getContext("2d");
+	if (!ctx) {
+		return null;
+	}
+
+	ctx.imageSmoothingEnabled = true;
+	ctx.imageSmoothingQuality = "high";
+
+	switch (annotation.type) {
+		case "text":
+			renderText(ctx, annotation, 0, 0, canvasWidth, canvasHeight, scaleFactor);
+			break;
+
+		case "image":
+			await renderImage(ctx, annotation, 0, 0, canvasWidth, canvasHeight, assets);
+			break;
+
+		case "figure":
+			if (!annotation.figureData) {
+				return null;
+			}
+
+			renderArrow(
+				ctx,
+				annotation.figureData.arrowDirection,
+				annotation.figureData.color,
+				annotation.figureData.strokeWidth,
+				0,
+				0,
+				canvasWidth,
+				canvasHeight,
+				scaleFactor,
+			);
+			break;
+		case "blur":
+			// Blur annotations must sample already-rendered scene pixels,
+			// so they cannot be rasterized as standalone sprites.
+			return null;
+	}
+
+	return canvas;
 }

@@ -1,20 +1,22 @@
 import GIF from "gif.js";
 import type {
 	AnnotationRegion,
+	AutoCaptionSettings,
+	CaptionCue,
 	CropRegion,
+	CursorClickEffectStyle,
+	CursorStyle,
+	CursorTelemetryPoint,
+	Padding,
 	SpeedRegion,
 	TrimRegion,
-	WebcamLayoutPreset,
-	WebcamSizePreset,
+	WebcamOverlaySettings,
+	ZoomMotionBlurTuning,
 	ZoomRegion,
+	ZoomTransitionEasing,
 } from "@/components/video-editor/types";
-import type { CaptionStyle, CaptionTrack } from "@/lib/ai/types";
-import { BackgroundLoadError } from "@/lib/wallpaper";
-import type { CursorRecordingData } from "@/native/contracts";
-import { getPlatform } from "@/utils/platformUtils";
 import { FrameRenderer } from "./frameRenderer";
 import { StreamingVideoDecoder } from "./streamingDecoder";
-import { TimestampedVideoFrameQueue } from "./timestampedVideoFrameQueue";
 import type {
 	ExportProgress,
 	ExportResult,
@@ -25,9 +27,10 @@ import type {
 
 const GIF_WORKER_URL = new URL("gif.js/dist/gif.worker.js", import.meta.url).toString();
 
+const PROGRESS_SAMPLE_WINDOW_MS = 1_000;
+
 interface GifExporterConfig {
 	videoUrl: string;
-	webcamVideoUrl?: string;
 	width: number;
 	height: number;
 	frameRate: GifFrameRate;
@@ -39,32 +42,57 @@ interface GifExporterConfig {
 	speedRegions?: SpeedRegion[];
 	showShadow: boolean;
 	shadowIntensity: number;
-	showBlur: boolean;
-	motionBlurAmount?: number;
+	backgroundBlur: number;
+	zoomMotionBlur?: number;
+	zoomMotionBlurTuning?: ZoomMotionBlurTuning;
+	zoomTemporalMotionBlur?: number;
+	zoomMotionBlurSampleCount?: number | null;
+	zoomMotionBlurShutterFraction?: number | null;
+	connectZooms?: boolean;
+	zoomInDurationMs?: number;
+	zoomInOverlapMs?: number;
+	zoomOutDurationMs?: number;
+	connectedZoomGapMs?: number;
+	connectedZoomDurationMs?: number;
+	zoomInEasing?: ZoomTransitionEasing;
+	zoomOutEasing?: ZoomTransitionEasing;
+	connectedZoomEasing?: ZoomTransitionEasing;
 	borderRadius?: number;
-	padding?: number;
-	videoPadding?: number;
+	padding?: Padding | number;
+	videoPadding?: Padding | number;
 	cropRegion: CropRegion;
-	webcamLayoutPreset?: WebcamLayoutPreset;
-	webcamMaskShape?: import("@/components/video-editor/types").WebcamMaskShape;
-	webcamMirrored?: boolean;
-	webcamReactiveZoom?: boolean;
-	webcamSizePreset?: WebcamSizePreset;
-	webcamPosition?: { cx: number; cy: number } | null;
-	cursorRecordingData?: CursorRecordingData | null;
-	cursorScale?: number;
-	cursorSmoothing?: number;
-	cursorMotionBlur?: number;
-	cursorClickBounce?: number;
-	cursorClipToBounds?: boolean;
-	cursorTheme?: string;
+	webcam?: WebcamOverlaySettings;
+	webcamUrl?: string | null;
 	annotationRegions?: AnnotationRegion[];
+	autoCaptions?: CaptionCue[];
+	autoCaptionSettings?: AutoCaptionSettings;
+	cursorTelemetry?: CursorTelemetryPoint[];
+	showCursor?: boolean;
+	cursorStyle?: CursorStyle;
+	cursorSize?: number;
+	cursorSmoothing?: number;
+	cursorSpringStiffnessMultiplier?: number;
+	cursorSpringDampingMultiplier?: number;
+	cursorSpringMassMultiplier?: number;
+	cameraSpringStiffnessMultiplier?: number;
+	cameraSpringDampingMultiplier?: number;
+	cameraSpringMassMultiplier?: number;
+	zoomSmoothness?: number;
+	zoomClassicMode?: boolean;
+	cursorMotionBlur?: number;
+	cursorClickEffect?: CursorClickEffectStyle;
+	cursorClickEffectColor?: string;
+	cursorClickEffectScale?: number;
+	cursorClickEffectOpacity?: number;
+	cursorClickEffectDurationMs?: number;
+	cursorClickBounce?: number;
+	cursorClickBounceDuration?: number;
+	cursorSway?: number;
+	frame?: string | null;
 	previewWidth?: number;
 	previewHeight?: number;
-	cursorTelemetry?: import("@/components/video-editor/types").CursorTelemetryPoint[];
-	cursorClickTimestamps?: number[];
-	captionTrack?: CaptionTrack | null;
-	captionStyle?: CaptionStyle;
+	maxDecodeQueue?: number;
+	maxPendingFrames?: number;
 	onProgress?: (progress: ExportProgress) => void;
 }
 
@@ -81,118 +109,137 @@ export function calculateOutputDimensions(
 	sourceHeight: number,
 	sizePreset: GifSizePreset,
 	sizePresets: typeof GIF_SIZE_PRESETS,
-	targetAspectRatio = sourceWidth / sourceHeight,
 ): { width: number; height: number } {
 	const preset = sizePresets[sizePreset];
 	const maxHeight = preset.maxHeight;
-	const aspectRatio =
-		Number.isFinite(targetAspectRatio) && targetAspectRatio > 0
-			? targetAspectRatio
-			: sourceWidth / sourceHeight;
 
-	const toEven = (value: number) => {
-		const evenValue = Math.max(2, Math.floor(value / 2) * 2);
-		return evenValue;
-	};
-
-	if (sizePreset === "original") {
-		const sourceAspect = sourceWidth / sourceHeight;
-		if (aspectRatio >= sourceAspect) {
-			const width = toEven(sourceWidth);
-			const height = toEven(width / aspectRatio);
-			return { width, height };
-		}
-
-		const height = toEven(sourceHeight);
-		const width = toEven(height * aspectRatio);
-		return { width, height };
+	// If original is smaller than max height or preset is 'original', use source dimensions
+	if (sourceHeight <= maxHeight || sizePreset === "original") {
+		return { width: sourceWidth, height: sourceHeight };
 	}
 
-	const targetHeight = maxHeight;
-	const targetWidth = Math.round(targetHeight * aspectRatio);
+	// Calculate scaled dimensions preserving aspect ratio
+	const aspectRatio = sourceWidth / sourceHeight;
+	const newHeight = maxHeight;
+	const newWidth = Math.round(newHeight * aspectRatio);
 
+	// Ensure dimensions are even (required for some encoders)
 	return {
-		width: toEven(targetWidth),
-		height: toEven(targetHeight),
+		width: newWidth % 2 === 0 ? newWidth : newWidth + 1,
+		height: newHeight % 2 === 0 ? newHeight : newHeight + 1,
+	};
+}
+
+export function getGifRepeat(loop: boolean): 0 | 1 {
+	return loop ? 0 : 1;
+}
+
+export function buildGifFrameRendererConfig(
+	config: GifExporterConfig,
+	videoInfo: { width: number; height: number },
+) {
+	return {
+		width: config.width,
+		height: config.height,
+		wallpaper: config.wallpaper,
+		zoomRegions: config.zoomRegions,
+		showShadow: config.showShadow,
+		shadowIntensity: config.shadowIntensity,
+		backgroundBlur: config.backgroundBlur,
+		zoomMotionBlur: config.zoomMotionBlur,
+		zoomMotionBlurTuning: config.zoomMotionBlurTuning,
+		zoomTemporalMotionBlur: config.zoomTemporalMotionBlur,
+		zoomMotionBlurSampleCount: config.zoomMotionBlurSampleCount,
+		zoomMotionBlurShutterFraction: config.zoomMotionBlurShutterFraction,
+		connectZooms: config.connectZooms,
+		zoomInDurationMs: config.zoomInDurationMs,
+		zoomInOverlapMs: config.zoomInOverlapMs,
+		zoomOutDurationMs: config.zoomOutDurationMs,
+		connectedZoomGapMs: config.connectedZoomGapMs,
+		connectedZoomDurationMs: config.connectedZoomDurationMs,
+		zoomInEasing: config.zoomInEasing,
+		zoomOutEasing: config.zoomOutEasing,
+		connectedZoomEasing: config.connectedZoomEasing,
+		borderRadius: config.borderRadius,
+		padding: config.padding,
+		cropRegion: config.cropRegion,
+		webcam: config.webcam,
+		webcamUrl: config.webcamUrl,
+		videoWidth: videoInfo.width,
+		videoHeight: videoInfo.height,
+		annotationRegions: config.annotationRegions,
+		autoCaptions: config.autoCaptions,
+		autoCaptionSettings: config.autoCaptionSettings,
+		speedRegions: config.speedRegions,
+		previewWidth: config.previewWidth,
+		previewHeight: config.previewHeight,
+		cursorTelemetry: config.cursorTelemetry,
+		showCursor: config.showCursor,
+		cursorStyle: config.cursorStyle,
+		cursorSize: config.cursorSize,
+		cursorSmoothing: config.cursorSmoothing,
+		cursorSpringStiffnessMultiplier: config.cursorSpringStiffnessMultiplier,
+		cursorSpringDampingMultiplier: config.cursorSpringDampingMultiplier,
+		cursorSpringMassMultiplier: config.cursorSpringMassMultiplier,
+		cameraSpringStiffnessMultiplier: config.cameraSpringStiffnessMultiplier,
+		cameraSpringDampingMultiplier: config.cameraSpringDampingMultiplier,
+		cameraSpringMassMultiplier: config.cameraSpringMassMultiplier,
+		zoomSmoothness: config.zoomSmoothness,
+		zoomClassicMode: config.zoomClassicMode,
+		cursorMotionBlur: config.cursorMotionBlur,
+		cursorClickEffect: config.cursorClickEffect,
+		cursorClickEffectColor: config.cursorClickEffectColor,
+		cursorClickEffectScale: config.cursorClickEffectScale,
+		cursorClickEffectOpacity: config.cursorClickEffectOpacity,
+		cursorClickEffectDurationMs: config.cursorClickEffectDurationMs,
+		cursorClickBounce: config.cursorClickBounce,
+		cursorClickBounceDuration: config.cursorClickBounceDuration,
+		cursorSway: config.cursorSway,
+		frame: config.frame,
 	};
 }
 
 export class GifExporter {
 	private config: GifExporterConfig;
 	private streamingDecoder: StreamingVideoDecoder | null = null;
-	private webcamDecoder: StreamingVideoDecoder | null = null;
 	private renderer: FrameRenderer | null = null;
 	private gif: GIF | null = null;
 	private cancelled = false;
+	private exportStartTimeMs = 0;
+	private progressSampleStartTimeMs = 0;
+	private progressSampleStartFrame = 0;
+	private lastRenderFps: number | undefined;
 
 	constructor(config: GifExporterConfig) {
 		this.config = config;
 	}
 
 	async export(): Promise<ExportResult> {
-		let webcamFrameQueue: TimestampedVideoFrameQueue | null = null;
-
-		const warnings: string[] = [];
-		const onWarning = (message: string) => warnings.push(message);
-
 		try {
-			const platform = await getPlatform();
-
 			this.cleanup();
 			this.cancelled = false;
+			this.exportStartTimeMs = this.getNowMs();
+			this.progressSampleStartTimeMs = this.exportStartTimeMs;
+			this.progressSampleStartFrame = 0;
+			this.lastRenderFps = undefined;
 
-			this.streamingDecoder = new StreamingVideoDecoder();
-			const videoInfo = await this.streamingDecoder.loadMetadata(this.config.videoUrl);
-			let webcamInfo: Awaited<ReturnType<StreamingVideoDecoder["loadMetadata"]>> | null = null;
-			if (this.config.webcamVideoUrl) {
-				this.webcamDecoder = new StreamingVideoDecoder();
-				webcamInfo = await this.webcamDecoder.loadMetadata(this.config.webcamVideoUrl);
-			}
-
-			this.renderer = new FrameRenderer({
-				width: this.config.width,
-				height: this.config.height,
-				wallpaper: this.config.wallpaper,
-				zoomRegions: this.config.zoomRegions,
-				showShadow: this.config.showShadow,
-				shadowIntensity: this.config.shadowIntensity,
-				showBlur: this.config.showBlur,
-				motionBlurAmount: this.config.motionBlurAmount,
-				borderRadius: this.config.borderRadius,
-				padding: this.config.padding,
-				cropRegion: this.config.cropRegion,
-				cursorRecordingData: this.config.cursorRecordingData,
-				cursorScale: this.config.cursorScale,
-				cursorSmoothing: this.config.cursorSmoothing,
-				cursorMotionBlur: this.config.cursorMotionBlur,
-				cursorClickBounce: this.config.cursorClickBounce,
-				cursorClipToBounds: this.config.cursorClipToBounds,
-				cursorTheme: this.config.cursorTheme,
-				videoWidth: videoInfo.width,
-				videoHeight: videoInfo.height,
-				webcamSize: webcamInfo ? { width: webcamInfo.width, height: webcamInfo.height } : null,
-				webcamLayoutPreset: this.config.webcamLayoutPreset,
-				webcamMaskShape: this.config.webcamMaskShape,
-				webcamMirrored: this.config.webcamMirrored,
-				webcamReactiveZoom: this.config.webcamReactiveZoom,
-				webcamSizePreset: this.config.webcamSizePreset,
-				webcamPosition: this.config.webcamPosition,
-				annotationRegions: this.config.annotationRegions,
-				speedRegions: this.config.speedRegions,
-				previewWidth: this.config.previewWidth,
-				previewHeight: this.config.previewHeight,
-				cursorTelemetry: this.config.cursorTelemetry,
-				cursorClickTimestamps: this.config.cursorClickTimestamps,
-				captionTrack: this.config.captionTrack,
-				captionStyle: this.config.captionStyle,
-				platform,
+			// Initialize streaming decoder and load video metadata
+			this.streamingDecoder = new StreamingVideoDecoder({
+				maxDecodeQueue: this.config.maxDecodeQueue,
+				maxPendingFrames: this.config.maxPendingFrames,
 			});
+			const videoInfo = await this.streamingDecoder.loadMetadata(this.config.videoUrl);
+
+			// Initialize frame renderer
+			this.renderer = new FrameRenderer(buildGifFrameRendererConfig(this.config, videoInfo));
 			await this.renderer.initialize();
 
-			// gif.js repeat: 0 = infinite loop, 1 = play once
-			const repeat = this.config.loop ? 0 : 1;
+			// Initialize GIF encoder
+			// Loop: 0 = infinite loop, 1 = play once (no loop)
+			const repeat = getGifRepeat(this.config.loop);
 			const cores = navigator.hardwareConcurrency || 4;
 			const WORKER_COUNT = Math.max(1, Math.min(8, cores - 1));
+
 			this.gif = new GIF({
 				workers: WORKER_COUNT,
 				quality: 10,
@@ -205,14 +252,14 @@ export class GifExporter {
 				dither: "FloydSteinberg",
 			});
 
-			// Effective duration and frame count, excluding trim regions
-			const { effectiveDuration, totalFrames } = this.streamingDecoder.getExportMetrics(
-				this.config.frameRate,
+			// Calculate effective duration and frame count (excluding trim regions)
+			const effectiveDuration = this.streamingDecoder.getEffectiveDuration(
 				this.config.trimRegions,
 				this.config.speedRegions,
 			);
+			const totalFrames = Math.ceil(effectiveDuration * this.config.frameRate);
 
-			// gif.js wants frame delay in ms
+			// Calculate frame delay in milliseconds (gif.js uses ms)
 			const frameDelay = Math.round(1000 / this.config.frameRate);
 
 			console.log("[GifExporter] Original duration:", videoInfo.duration, "s");
@@ -224,99 +271,39 @@ export class GifExporter {
 			console.log("[GifExporter] Using streaming decode (web-demuxer + VideoDecoder)");
 
 			let frameIndex = 0;
-			webcamFrameQueue = this.config.webcamVideoUrl ? new TimestampedVideoFrameQueue() : null;
-			let stopWebcamDecode = false;
-			let webcamDecodeError: Error | null = null;
-			const webcamDecodePromise =
-				this.webcamDecoder && webcamFrameQueue
-					? (() => {
-							const queue = webcamFrameQueue;
-							return this.webcamDecoder
-								.decodeAll(
-									this.config.frameRate,
-									this.config.trimRegions,
-									this.config.speedRegions,
-									async (webcamFrame, _exportTimestampUs, webcamSourceTimestampMs) => {
-										while (queue.length >= 12 && !this.cancelled && !stopWebcamDecode) {
-											await new Promise((resolve) => setTimeout(resolve, 2));
-										}
-										if (this.cancelled || stopWebcamDecode) {
-											webcamFrame.close();
-											return;
-										}
-										queue.enqueue(webcamFrame, webcamSourceTimestampMs);
-									},
-									onWarning,
-								)
-								.catch((error) => {
-									webcamDecodeError = error instanceof Error ? error : new Error(String(error));
-									throw error;
-								})
-								.finally(() => {
-									if (webcamDecodeError) {
-										queue.fail(webcamDecodeError);
-									} else {
-										queue.close();
-									}
-								});
-						})()
-					: null;
+			const frameDurationUs = 1_000_000 / this.config.frameRate;
 
-			// Stream decode and process frames, no seeking
+			// Stream decode and process frames — no seeking!
 			await this.streamingDecoder.decodeAll(
 				this.config.frameRate,
 				this.config.trimRegions,
 				this.config.speedRegions,
-				async (videoFrame, _exportTimestampUs, sourceTimestampMs) => {
-					let webcamFrame: VideoFrame | null = null;
-					try {
-						if (this.cancelled) {
-							return;
-						}
-
-						webcamFrame = webcamFrameQueue
-							? await webcamFrameQueue.frameAt(sourceTimestampMs)
-							: null;
-						const renderer = this.renderer;
-						if (this.cancelled || !renderer) {
-							return;
-						}
-
-						const sourceTimestampUs = sourceTimestampMs * 1000; // us
-						await renderer.renderFrame(videoFrame, sourceTimestampUs, webcamFrame);
-
-						const canvas = renderer.getCanvas();
-
-						this.gif!.addFrame(canvas, { delay: frameDelay, copy: true });
-
-						frameIndex++;
-
-						if (this.config.onProgress) {
-							this.config.onProgress({
-								currentFrame: frameIndex,
-								totalFrames,
-								percentage: (frameIndex / totalFrames) * 100,
-								estimatedTimeRemaining: 0,
-							});
-						}
-					} finally {
-						videoFrame.close();
-						webcamFrame?.close();
+				async (videoFrame, _exportTimestampUs, sourceTimestampMs, cursorTimestampMs) => {
+					if (this.cancelled) {
+						return;
 					}
+
+					const sourceTimestampUs = sourceTimestampMs * 1000;
+					const cursorTimestampUs = cursorTimestampMs * 1000;
+					await this.renderer!.renderFrame(
+						videoFrame,
+						sourceTimestampUs,
+						cursorTimestampUs,
+						frameDurationUs,
+						frameIndex * frameDurationUs,
+					);
+
+					this.addRenderedGifFrame(frameDelay);
+					frameIndex++;
+					this.reportProgress(frameIndex, totalFrames);
 				},
-				onWarning,
 			);
 
 			if (this.cancelled) {
 				return { success: false, error: "Export cancelled" };
 			}
 
-			stopWebcamDecode = true;
-			webcamFrameQueue?.destroy();
-			this.webcamDecoder?.cancel();
-			await webcamDecodePromise;
-
-			// Now in the finalizing phase
+			// Update progress to show we're now in the finalizing phase
 			if (this.config.onProgress) {
 				this.config.onProgress({
 					currentFrame: totalFrames,
@@ -324,14 +311,17 @@ export class GifExporter {
 					percentage: 100,
 					estimatedTimeRemaining: 0,
 					phase: "finalizing",
+					renderFps: this.lastRenderFps,
 				});
 			}
 
+			// Render the GIF
 			const blob = await new Promise<Blob>((resolve, _reject) => {
 				this.gif!.on("finished", (blob: Blob) => {
 					resolve(blob);
 				});
 
+				// Track rendering progress
 				this.gif!.on("progress", (progress: number) => {
 					if (this.config.onProgress) {
 						this.config.onProgress({
@@ -340,38 +330,68 @@ export class GifExporter {
 							percentage: 100,
 							estimatedTimeRemaining: 0,
 							phase: "finalizing",
+							renderFps: this.lastRenderFps,
 							renderProgress: Math.round(progress * 100),
 						});
 					}
 				});
 
-				// gif.js has no typed 'error' event; the outer try/catch handles failures
+				// gif.js doesn't have a typed 'error' event, but we can catch errors in the try/catch
 				this.gif!.render();
 			});
 
-			return { success: true, blob, warnings: warnings.length > 0 ? warnings : undefined };
+			return { success: true, blob };
 		} catch (error) {
-			if (error instanceof BackgroundLoadError) {
-				throw error;
-			}
 			console.error("GIF Export error:", error);
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : String(error),
 			};
 		} finally {
-			webcamFrameQueue?.destroy();
 			this.cleanup();
 		}
+	}
+
+	private addRenderedGifFrame(frameDelay: number) {
+		const canvas = this.renderer!.getCanvas();
+		this.gif!.addFrame(canvas, { delay: frameDelay, copy: true });
+	}
+
+	private reportProgress(currentFrame: number, totalFrames: number) {
+		const nowMs = this.getNowMs();
+		const elapsedSeconds = Math.max((nowMs - this.exportStartTimeMs) / 1000, 0.001);
+		const averageRenderFps = currentFrame / elapsedSeconds;
+		const sampleElapsedMs = Math.max(nowMs - this.progressSampleStartTimeMs, 1);
+		const sampleFrameDelta = Math.max(currentFrame - this.progressSampleStartFrame, 0);
+		const renderFps = (sampleFrameDelta * 1000) / sampleElapsedMs;
+		const remainingFrames = Math.max(totalFrames - currentFrame, 0);
+		const estimatedTimeRemaining = averageRenderFps > 0 ? remainingFrames / averageRenderFps : 0;
+		this.lastRenderFps = renderFps;
+
+		if (sampleElapsedMs >= PROGRESS_SAMPLE_WINDOW_MS) {
+			this.progressSampleStartTimeMs = nowMs;
+			this.progressSampleStartFrame = currentFrame;
+		}
+
+		if (this.config.onProgress) {
+			this.config.onProgress({
+				currentFrame,
+				totalFrames,
+				percentage: totalFrames > 0 ? (currentFrame / totalFrames) * 100 : 100,
+				estimatedTimeRemaining,
+				renderFps,
+			});
+		}
+	}
+
+	private getNowMs(): number {
+		return typeof performance !== "undefined" ? performance.now() : Date.now();
 	}
 
 	cancel(): void {
 		this.cancelled = true;
 		if (this.streamingDecoder) {
 			this.streamingDecoder.cancel();
-		}
-		if (this.webcamDecoder) {
-			this.webcamDecoder.cancel();
 		}
 		if (this.gif) {
 			this.gif.abort();
@@ -387,15 +407,6 @@ export class GifExporter {
 				console.warn("Error destroying streaming decoder:", e);
 			}
 			this.streamingDecoder = null;
-		}
-
-		if (this.webcamDecoder) {
-			try {
-				this.webcamDecoder.destroy();
-			} catch (e) {
-				console.warn("Error destroying webcam decoder:", e);
-			}
-			this.webcamDecoder = null;
 		}
 
 		if (this.renderer) {

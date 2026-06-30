@@ -36,7 +36,9 @@ export class VideoFileDecoder {
 		});
 	}
 
-	/** The underlying video element, used for seeking. */
+	/**
+	 * Get video element for seeking
+	 */
 	getVideoElement(): HTMLVideoElement | null {
 		return this.videoElement;
 	}
