@@ -110,7 +110,7 @@ export default function App() {
 									<img src={guideLogo} alt="Guide Studio" className="w-12 h-12 animate-pulse" />
 									<div className="flex items-center gap-2">
 										<div
-											className="w-1.5 h-1.5 rounded-full bg-[#F59E0B] animate-bounce"
+											className="w-1.5 h-1.5 rounded-full bg-[#A855F7] animate-bounce"
 											style={{ animationDelay: "0ms" }}
 										/>
 										<div
@@ -118,7 +118,7 @@ export default function App() {
 											style={{ animationDelay: "150ms" }}
 										/>
 										<div
-											className="w-1.5 h-1.5 rounded-full bg-[#F97316] animate-bounce"
+											className="w-1.5 h-1.5 rounded-full bg-[#22D3EE] animate-bounce"
 											style={{ animationDelay: "300ms" }}
 										/>
 									</div>

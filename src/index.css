@@ -82,7 +82,7 @@
 		padding: 12px;
 		gap: 10px;
 		background:
-			radial-gradient(circle at 18% 0%, rgba(245, 158, 11, 0.06), transparent 30%),
+			radial-gradient(circle at 18% 0%, rgba(168, 85, 247, 0.06), transparent 30%),
 			linear-gradient(180deg, #1C1917 0%, #171412 100%);
 	}
 
@@ -161,7 +161,7 @@
 
 	.editor-inspector-shell button:focus-visible,
 	.editor-inspector-shell [role="button"]:focus-visible {
-		outline: 1px solid rgba(245, 158, 11, 0.68);
+		outline: 1px solid rgba(168, 85, 247, 0.68);
 		outline-offset: 2px;
 	}
 
@@ -172,7 +172,7 @@
 	}
 
 	.editor-inspector-shell [role="slider"] {
-		box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12);
+		box-shadow: 0 0 0 4px rgba(168, 85, 247, 0.12);
 	}
 
 	.editor-inspector-shell .editor-panel-section > h3 {
@@ -247,7 +247,7 @@
 	}
 
 	.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-		background: rgba(245, 158, 11, 0.55);
+		background: rgba(168, 85, 247, 0.55);
 		border: 3px solid transparent;
 		background-clip: content-box;
 	}
@@ -279,7 +279,7 @@
 		background: #fff;
 		transform: scale(1.15);
 		box-shadow: 0 3px 10px rgba(255, 255, 255, 0.5);
-		border-color: #F59E0B;
+		border-color: #A855F7;
 	}
 
 	input[type="range"]::-webkit-slider-thumb:active {
@@ -301,7 +301,7 @@
 		background: #fff;
 		transform: scale(1.15);
 		box-shadow: 0 3px 10px rgba(255, 255, 255, 0.5);
-		border-color: #F59E0B;
+		border-color: #A855F7;
 	}
 
 	input[type="range"]::-moz-range-thumb:active {

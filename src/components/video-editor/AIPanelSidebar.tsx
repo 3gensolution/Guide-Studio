@@ -222,7 +222,7 @@ export function AIPanelSidebar({
 							onClick={() => onToggleAutoZoom?.(!autoZoomEnabled)}
 							className={`flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-medium transition-all ${
 								autoZoomEnabled
-									? "bg-[#F59E0B]/20 text-[#F59E0B] hover:bg-[#F59E0B]/30"
+									? "bg-[#A855F7]/20 text-[#A855F7] hover:bg-[#A855F7]/30"
 									: "bg-white/10 text-white/80 hover:bg-white/15"
 							}`}
 						>
@@ -240,7 +240,7 @@ export function AIPanelSidebar({
 							onClick={() => onToggleAutoFocusAll?.(!autoFocusAll)}
 							className={`flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-medium transition-all ${
 								autoFocusAll
-									? "bg-[#F59E0B]/20 text-[#F59E0B] hover:bg-[#F59E0B]/30"
+									? "bg-[#A855F7]/20 text-[#A855F7] hover:bg-[#A855F7]/30"
 									: "bg-white/10 text-white/80 hover:bg-white/15"
 							}`}
 						>

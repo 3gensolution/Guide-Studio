@@ -73,7 +73,7 @@ export function BlurSettingsPanel({
 								className={cn(
 									"h-12 rounded-lg border flex items-center justify-center transition-all p-2 gap-2",
 									isActive
-										? "bg-[#F59E0B] border-[#F59E0B]"
+										? "bg-[#A855F7] border-[#A855F7]"
 										: "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20",
 								)}
 							>
@@ -127,7 +127,7 @@ export function BlurSettingsPanel({
 									className={cn(
 										"h-10 rounded-lg border flex items-center gap-2 px-3 transition-all",
 										isActive
-											? "bg-[#F59E0B] border-[#F59E0B]"
+											? "bg-[#A855F7] border-[#A855F7]"
 											: "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20",
 									)}
 								>
@@ -174,7 +174,7 @@ export function BlurSettingsPanel({
 						min={MIN_BLUR_BLOCK_SIZE}
 						max={MAX_BLUR_BLOCK_SIZE}
 						step={1}
-						className="w-full [&_[role=slider]]:bg-[#F59E0B] [&_[role=slider]]:border-[#F59E0B] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+						className="w-full [&_[role=slider]]:bg-[#A855F7] [&_[role=slider]]:border-[#A855F7] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
 					/>
 				</div>
 

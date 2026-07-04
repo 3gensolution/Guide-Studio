@@ -15,8 +15,8 @@ function getBarColor(level: number, threshold: number) {
 	if (!level || level < threshold) return "bg-slate-700";
 	if (threshold > 80) return "bg-red-500";
 	if (threshold > 60) return "bg-yellow-500";
-	if (threshold > 40) return "bg-[#F59E0B]";
-	return "bg-[#F97316]";
+	if (threshold > 40) return "bg-[#A855F7]";
+	return "bg-[#22D3EE]";
 }
 
 export function AudioLevelMeter({ level, className = "" }: AudioLevelMeterProps) {

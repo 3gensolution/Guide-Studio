@@ -75,7 +75,7 @@ export function SourceSelector() {
 				style={{ minHeight: "100vh" }}
 			>
 				<div className="text-center">
-					<div className="animate-spin duration-500 rounded-[50%] h-6 w-6 border-2 border-b-transparent border-[#F59E0B] mx-auto mb-2" />
+					<div className="animate-spin duration-500 rounded-[50%] h-6 w-6 border-2 border-b-transparent border-[#A855F7] mx-auto mb-2" />
 					<p className="text-xs text-zinc-400">{t("sourceSelector.loading")}</p>
 				</div>
 			</div>
@@ -97,7 +97,7 @@ export function SourceSelector() {
 					</p>
 					<Button
 						onClick={() => void fetchSources()}
-						className="mt-4 h-8 rounded-lg bg-[#F59E0B] px-5 text-[11px] font-semibold text-white transition-transform duration-150 hover:bg-[#F59E0B]/85 active:scale-95"
+						className="mt-4 h-8 rounded-lg bg-[#A855F7] px-5 text-[11px] font-semibold text-white transition-transform duration-150 hover:bg-[#A855F7]/85 active:scale-95"
 					>
 						{tc("actions.reload")}
 					</Button>
@@ -193,7 +193,7 @@ export function SourceSelector() {
 					data-testid="source-selector-share-button"
 					onClick={handleShare}
 					disabled={!selectedSource}
-					className="h-8 rounded-lg bg-[#F59E0B] px-5 text-[11px] font-semibold text-white transition-transform duration-150 hover:bg-[#F59E0B]/85 active:scale-95 disabled:bg-zinc-700 disabled:opacity-30"
+					className="h-8 rounded-lg bg-[#A855F7] px-5 text-[11px] font-semibold text-white transition-transform duration-150 hover:bg-[#A855F7]/85 active:scale-95 disabled:bg-zinc-700 disabled:opacity-30"
 				>
 					{tc("actions.share")}
 				</Button>

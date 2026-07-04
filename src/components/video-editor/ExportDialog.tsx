@@ -1,6 +1,7 @@
-import { CheckCircle2, Download, FolderOpen, Loader2, X } from "lucide-react";
+import { CheckCircle2, FolderOpen, Loader2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import guideLogo from "@/assets/guide-logo.png";
 import { Button } from "@/components/ui/button";
 import { useScopedT } from "@/contexts/I18nContext";
 import type { ExportProgress } from "@/lib/exporter";
@@ -142,25 +143,37 @@ export function ExportDialog({
 					{/* ── Exporting ── */}
 					{!showSuccess && !error && (
 						<div className="px-8 pt-10 pb-8 flex flex-col items-center text-center">
-							{/* Animated icon */}
+							{/* Logo with spinning ring */}
 							<div className="relative mb-6">
 								{isExporting ? (
 									<>
-										<div className="w-[72px] h-[72px] rounded-full bg-[#F59E0B]/[0.06] flex items-center justify-center">
-											<Download className="w-8 h-8 text-[#F59E0B]/80" strokeWidth={1.5} />
+										<div className="w-[72px] h-[72px] rounded-full bg-[#A855F7]/[0.06] flex items-center justify-center">
+											<img src={guideLogo} alt="" className="w-9 h-9 object-contain" />
 										</div>
-										{/* Spinning ring */}
+										{/* Spinning gradient ring */}
 										<svg
 											className="absolute inset-0 w-[72px] h-[72px] animate-spin"
 											style={{ animationDuration: "3s" }}
 											viewBox="0 0 72 72"
 										>
+											<defs>
+												<linearGradient
+													id="export-ring-gradient"
+													x1="0%"
+													y1="100%"
+													x2="100%"
+													y2="0%"
+												>
+													<stop offset="0%" stopColor="#22D3EE" />
+													<stop offset="100%" stopColor="#A855F7" />
+												</linearGradient>
+											</defs>
 											<circle
 												cx="36"
 												cy="36"
 												r="35"
 												fill="none"
-												stroke="rgba(245, 158, 11, 0.15)"
+												stroke="rgba(168, 85, 247, 0.12)"
 												strokeWidth="1"
 											/>
 											<circle
@@ -168,7 +181,7 @@ export function ExportDialog({
 												cy="36"
 												r="35"
 												fill="none"
-												stroke="#F59E0B"
+												stroke="url(#export-ring-gradient)"
 												strokeWidth="1.5"
 												strokeLinecap="round"
 												strokeDasharray="55 165"
@@ -177,7 +190,7 @@ export function ExportDialog({
 									</>
 								) : (
 									<div className="w-[72px] h-[72px] rounded-full bg-white/[0.04] flex items-center justify-center ring-1 ring-white/[0.06]">
-										<Download className="w-8 h-8 text-white/30" strokeWidth={1.5} />
+										<img src={guideLogo} alt="" className="w-9 h-9 object-contain opacity-30" />
 									</div>
 								)}
 							</div>
@@ -205,22 +218,27 @@ export function ExportDialog({
 												<span className="text-[16px] text-white/25 ml-0.5">%</span>
 											</>
 										) : (
-											<Loader2 className="w-6 h-6 text-[#F59E0B]/60 animate-spin mx-auto" />
+											<Loader2 className="w-6 h-6 text-[#A855F7]/60 animate-spin mx-auto" />
 										)}
 									</div>
 
-									{/* Progress bar */}
+									{/* Gradient progress bar */}
 									<div className="w-full h-[3px] bg-white/[0.04] rounded-full overflow-hidden">
 										{percentage >= 0 ? (
 											<div
-												className="h-full rounded-full bg-[#F59E0B] transition-all duration-700 ease-out"
-												style={{ width: `${Math.min(percentage, 100)}%` }}
+												className="h-full rounded-full transition-all duration-700 ease-out"
+												style={{
+													width: `${Math.min(percentage, 100)}%`,
+													background: "linear-gradient(90deg, #22D3EE, #A855F7)",
+												}}
 											/>
 										) : (
 											<div className="h-full w-full relative overflow-hidden">
 												<div
-													className="absolute h-full w-1/4 rounded-full bg-[#F59E0B]/60"
+													className="absolute h-full w-1/4 rounded-full"
 													style={{
+														background: "linear-gradient(90deg, #22D3EE, #A855F7)",
+														opacity: 0.6,
 														animation: "exportIndeterminate 1.8s ease-in-out infinite",
 													}}
 												/>

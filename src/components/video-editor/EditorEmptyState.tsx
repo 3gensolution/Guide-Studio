@@ -114,9 +114,9 @@ export function EditorEmptyState({ onVideoImported, onProjectOpened }: EditorEmp
 		>
 			{/* Drop overlay */}
 			{isDraggingOver && (
-				<div className="pointer-events-none absolute inset-0 z-50 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-[#F59E0B] bg-[#F59E0B]/10">
-					<Upload className="mb-3 h-10 w-10 text-[#F59E0B]" />
-					<p className="text-base font-semibold text-[#F59E0B]">{te("emptyState.dropOverlay")}</p>
+				<div className="pointer-events-none absolute inset-0 z-50 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-[#A855F7] bg-[#A855F7]/10">
+					<Upload className="mb-3 h-10 w-10 text-[#A855F7]" />
+					<p className="text-base font-semibold text-[#A855F7]">{te("emptyState.dropOverlay")}</p>
 				</div>
 			)}
 
@@ -175,7 +175,7 @@ export function EditorEmptyState({ onVideoImported, onProjectOpened }: EditorEmp
 					<button
 						type="button"
 						onClick={handleImportVideo}
-						className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[#F59E0B] hover:bg-[#D97706] active:bg-[#B45309] text-white font-medium text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[#F59E0B] focus-visible:ring-offset-2 focus-visible:ring-offset-[#1C1917]"
+						className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[#A855F7] hover:bg-[#9333EA] active:bg-[#7E22CE] text-white font-medium text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[#A855F7] focus-visible:ring-offset-2 focus-visible:ring-offset-[#1C1917]"
 					>
 						<Film className="h-4 w-4" />
 						{te("emptyState.importVideoButton")}

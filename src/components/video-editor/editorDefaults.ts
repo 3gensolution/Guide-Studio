@@ -96,7 +96,7 @@ export const DEFAULT_EXPORT_SETTINGS: {
 	quality: "good",
 	format: "mp4",
 	frameRate: 30,
-	encodingMode: "quality",
+	encodingMode: "fast",
 	pipelineModel: "modern",
 };
 
