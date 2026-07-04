@@ -222,6 +222,11 @@ interface Window {
 			inputPaths: string[],
 			outputPath: string,
 		) => Promise<{ success: boolean; error?: string }>;
+		quickTrimExport: (
+			inputPath: string,
+			outputPath: string,
+			segments: Array<{ startMs: number; endMs: number }>,
+		) => Promise<{ success: boolean; error?: string }>;
 		saveExportedVideo: (
 			videoData: ArrayBuffer,
 			fileName: string,

@@ -22,6 +22,7 @@ import type { IntroConfig } from "@/lib/intro/introTypes";
 import { getEffectiveVideoStreamDurationSeconds } from "@/lib/mediaTiming";
 import { AudioProcessor, isAacAudioEncodingSupported } from "./audioEncoder";
 import { buildEditedTrackSourceSegments, classifyEditedTrackStrategy } from "./editedTrackStrategy";
+import { getPreferredWebCodecsLatencyModes } from "./exportTuning";
 import {
 	advanceFinalizationProgress,
 	type FinalizationProgressWatchdog,
@@ -33,7 +34,11 @@ import { FrameRenderer } from "./frameRenderer";
 import { getLocalFilePath } from "./localMediaSource";
 import type { SupportedMp4EncoderPath } from "./mp4Support";
 import { VideoMuxer } from "./muxer";
-import { type DecodedVideoInfo, StreamingVideoDecoder } from "./streamingDecoder";
+import {
+	type DecodedVideoInfo,
+	StreamingVideoDecoder,
+	shouldRetryWithReadableFileSource,
+} from "./streamingDecoder";
 import type {
 	ExportConfig,
 	ExportFinalizationStageMetrics,
@@ -175,6 +180,26 @@ export class VideoExporter {
 	}
 
 	async export(): Promise<ExportResult> {
+		const firstAttempt = await this.runExportAttempt(false);
+		if (
+			firstAttempt.success ||
+			firstAttempt.error === "Export cancelled" ||
+			!shouldRetryWithReadableFileSource(firstAttempt.error)
+		) {
+			return firstAttempt;
+		}
+
+		// The streaming demuxer reads the source over XHR, which can fail even
+		// when the file is fine (file:// blocked in workers, local media server
+		// unavailable). Retry once with the file read into memory over IPC.
+		console.warn(
+			"[VideoExporter] Primary decode path failed; retrying export once with a readable file-backed media source:",
+			firstAttempt.error,
+		);
+		return this.runExportAttempt(true);
+	}
+
+	private async runExportAttempt(forceReadableFileSource: boolean): Promise<ExportResult> {
 		try {
 			this.cleanup();
 			this.cancelled = false;
@@ -196,7 +221,9 @@ export class VideoExporter {
 				maxDecodeQueue: this.config.maxDecodeQueue,
 				maxPendingFrames: this.config.maxPendingFrames,
 			});
-			const videoInfo = await this.streamingDecoder.loadMetadata(this.config.videoUrl);
+			const videoInfo = await this.streamingDecoder.loadMetadata(this.config.videoUrl, {
+				forceReadableFileSource,
+			});
 			const shouldUseExperimentalNativeExport = this.shouldUseExperimentalNativeExport();
 			const audioPlan = this.buildNativeAudioPlan(videoInfo);
 			const nativeAudioPlan = shouldUseExperimentalNativeExport ? audioPlan : null;
@@ -751,6 +778,7 @@ export class VideoExporter {
 			bitrate: this.config.bitrate,
 			framerate: this.config.frameRate,
 			hardwareAcceleration: "prefer-hardware",
+			latencyMode: getPreferredWebCodecsLatencyModes(this.config.encodingMode)[0],
 			avc: { format: "annexb" },
 		};
 
@@ -1346,12 +1374,16 @@ export class VideoExporter {
 			},
 		});
 
+		// "fast"/"balanced" encoding modes prefer realtime latency, which is
+		// dramatically faster (especially on software encoders); "quality"
+		// keeps the slower quality-optimized mode.
+		const latencyMode = getPreferredWebCodecsLatencyModes(this.config.encodingMode)[0];
 		const baseConfig: Omit<VideoEncoderConfig, "codec" | "hardwareAcceleration"> = {
 			width: this.config.width,
 			height: this.config.height,
 			bitrate: this.config.bitrate,
 			framerate: this.config.frameRate,
-			latencyMode: "quality",
+			latencyMode,
 			bitrateMode: "variable",
 		};
 

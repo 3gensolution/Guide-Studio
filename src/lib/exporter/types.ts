@@ -279,16 +279,28 @@ export function calculateMp4ExportSettings(options: {
 
 	const fr = frameRate ?? 30;
 
-	// Bitrate based on quality and resolution
+	// Bitrate based on quality and resolution.
+	// Base rate targets ~2 Mbps at 1080p30 for good screen recording quality
+	// while keeping file sizes reasonable. The formula scales with resolution
+	// and frame rate, clamped so degenerate crops can't starve the encoder and
+	// large/high-fps exports can't balloon the file.
 	const pixels = width * height;
-	const baseBitrate = pixels * fr * 0.07;
+	const baseBitrate = pixels * fr * 0.035;
 	const qualityMultiplier =
-		quality === "source" ? 1.5 : quality === "high" ? 1.2 : quality === "good" ? 1.0 : 0.7;
+		quality === "source" ? 2.0 : quality === "high" ? 1.4 : quality === "good" ? 1.0 : 0.5;
+
+	const bitrate = Math.min(
+		MAX_MP4_EXPORT_BITRATE,
+		Math.max(MIN_MP4_EXPORT_BITRATE, Math.round(baseBitrate * qualityMultiplier)),
+	);
 
 	return {
 		width,
 		height,
 		frameRate: fr,
-		bitrate: Math.round(baseBitrate * qualityMultiplier),
+		bitrate,
 	};
 }
+
+const MIN_MP4_EXPORT_BITRATE = 1_000_000;
+const MAX_MP4_EXPORT_BITRATE = 16_000_000;

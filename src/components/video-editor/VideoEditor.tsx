@@ -85,6 +85,7 @@ import {
 	getNativeAspectRatioValue,
 	isPortraitAspectRatio,
 } from "@/utils/aspectRatioUtils";
+import { getTestId } from "@/utils/getTestId";
 import { AIChatSidebar } from "./AIChatSidebar";
 import { AIPanelSidebar } from "./AIPanelSidebar";
 import { EditorEmptyState } from "./EditorEmptyState";
@@ -2246,6 +2247,81 @@ export default function VideoEditor() {
 					}
 				} else {
 					// MP4 Export
+
+					// Quick-trim fast path: when the user has only trimmed the video
+					// without applying visual effects, use FFmpeg stream-copy to cut
+					// the raw video — nearly instant vs full re-encode.
+					const isDefaultCrop =
+						cropRegion.x === 0 &&
+						cropRegion.y === 0 &&
+						cropRegion.width === 1 &&
+						cropRegion.height === 1;
+					const hasNoVisualEffects =
+						zoomRegions.length === 0 &&
+						annotationRegions.length === 0 &&
+						speedRegions.length === 0 &&
+						!effectiveShowCursor &&
+						!webcamVideoPath &&
+						!editorState.introClip?.introConfig?.config &&
+						isDefaultCrop &&
+						shadowIntensity === 0 &&
+						borderRadius === 0 &&
+						(padding === 0 || padding === undefined);
+					const localSourcePath = videoSourcePath ?? (videoPath ? fromFileUrl(videoPath) : null);
+					const canQuickTrim =
+						hasNoVisualEffects &&
+						trimRegions.length > 0 &&
+						localSourcePath &&
+						window.electronAPI?.quickTrimExport;
+
+					if (canQuickTrim) {
+						console.log("[VideoEditor] Using quick-trim fast path (FFmpeg stream copy)");
+						setExportProgress({
+							currentFrame: 0,
+							totalFrames: 1,
+							percentage: 10,
+							estimatedTimeRemaining: 0,
+						});
+
+						// Compute kept segments from trim regions
+						const totalDurationMs = duration * 1000;
+						const sorted = [...trimRegions].sort((a, b) => a.startMs - b.startMs);
+						const keptSegments: Array<{ startMs: number; endMs: number }> = [];
+						let segCursor = 0;
+						for (const trim of sorted) {
+							if (segCursor < trim.startMs) {
+								keptSegments.push({ startMs: segCursor, endMs: trim.startMs });
+							}
+							segCursor = Math.max(segCursor, trim.endMs);
+						}
+						if (segCursor < totalDurationMs) {
+							keptSegments.push({ startMs: segCursor, endMs: totalDurationMs });
+						}
+
+						const quickResult = await window.electronAPI.quickTrimExport(
+							localSourcePath,
+							targetPath,
+							keptSegments,
+						);
+
+						if (quickResult.success) {
+							// Set progress to 100% so ExportDialog shows success state
+							setExportProgress({
+								currentFrame: 1,
+								totalFrames: 1,
+								percentage: 100,
+								estimatedTimeRemaining: 0,
+							});
+							handleExportSaved("Video", targetPath);
+							return;
+						}
+						console.warn(
+							"[VideoEditor] Quick-trim failed, falling back to full export:",
+							quickResult.error,
+						);
+						// Fall through to full export below
+					}
+
 					const quality = settings.quality || exportQuality;
 					const {
 						width: exportWidth,
@@ -2423,6 +2499,7 @@ export default function VideoEditor() {
 			cursorTheme,
 			t,
 			editorState.introClip,
+			duration,
 		],
 	);
 
@@ -2843,7 +2920,7 @@ export default function VideoEditor() {
 					<button
 						type="button"
 						onClick={handleLoadProject}
-						className="px-3 py-1.5 rounded-md bg-[#F59E0B] text-white text-sm hover:bg-[#F59E0B]/90"
+						className="px-3 py-1.5 rounded-md bg-[#A855F7] text-white text-sm hover:bg-[#A855F7]/90"
 					>
 						{ts("project.load")}
 					</button>
@@ -2853,7 +2930,7 @@ export default function VideoEditor() {
 	}
 
 	return (
-		<div className="flex flex-col h-screen bg-[#1C1917] text-slate-200 overflow-hidden selection:bg-[#F59E0B]/30">
+		<div className="flex flex-col h-screen bg-[#1C1917] text-slate-200 overflow-hidden selection:bg-[#A855F7]/30">
 			<Dialog open={showNewRecordingDialog} onOpenChange={setShowNewRecordingDialog}>
 				<DialogContent
 					className="sm:max-w-[425px]"
@@ -2874,7 +2951,7 @@ export default function VideoEditor() {
 						<button
 							type="button"
 							onClick={handleNewRecordingConfirm}
-							className="px-4 py-2 rounded-md bg-[#F59E0B] text-white hover:bg-[#F59E0B]/90 text-sm font-medium transition-colors"
+							className="px-4 py-2 rounded-md bg-[#A855F7] text-white hover:bg-[#A855F7]/90 text-sm font-medium transition-colors"
 						>
 							{t("newRecording.confirm")}
 						</button>
@@ -2953,7 +3030,7 @@ export default function VideoEditor() {
 								setShowAutoCaptionsDialog(false);
 								void generateAutoCaptions(captionWordsMin, captionWordsMax);
 							}}
-							className="bg-[#F59E0B] text-white hover:bg-[#F59E0B]/90"
+							className="bg-[#A855F7] text-white hover:bg-[#A855F7]/90"
 						>
 							{t("autoCaptions.generate")}
 						</Button>
@@ -2966,7 +3043,7 @@ export default function VideoEditor() {
 				style={{ WebkitAppRegion: "drag" } as CSSProperties}
 			>
 				{/* Gradient accent line */}
-				<div className="absolute bottom-0 left-0 right-0 h-[1px] bg-gradient-to-r from-[#F59E0B]/0 via-[#F59E0B]/25 to-[#F97316]/0" />
+				<div className="absolute bottom-0 left-0 right-0 h-[1px] bg-gradient-to-r from-[#A855F7]/0 via-[#A855F7]/25 to-[#22D3EE]/0" />
 
 				{/* Left: Export + Screenshot */}
 				<div
@@ -2977,12 +3054,13 @@ export default function VideoEditor() {
 						<>
 							<button
 								type="button"
+								data-testid={getTestId("export-panel-button")}
 								onClick={() => setSettingsPanel("export")}
-								className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#F59E0B]/10 hover:bg-[#F59E0B]/20 border border-[#F59E0B]/20 transition-all duration-150"
+								className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#A855F7]/10 hover:bg-[#A855F7]/20 border border-[#A855F7]/20 transition-all duration-150"
 								title="Export"
 							>
-								<Download size={14} className="text-[#F59E0B] transition-colors" />
-								<span className="text-[11px] font-semibold text-[#F59E0B]">Export</span>
+								<Download size={14} className="text-[#A855F7] transition-colors" />
+								<span className="text-[11px] font-semibold text-[#A855F7]">Export</span>
 							</button>
 							<div className="w-px h-4 bg-white/[0.08] mx-0.5" />
 							<button
@@ -3007,7 +3085,7 @@ export default function VideoEditor() {
 				>
 					<div className="flex items-center gap-2">
 						<img src={guideLogo} alt="Guide" className="w-6 h-6" />
-						<span className="text-[11px] font-bold tracking-wider uppercase bg-gradient-to-r from-[#F59E0B] to-[#F97316] bg-clip-text text-transparent">
+						<span className="text-[11px] font-bold tracking-wider uppercase bg-gradient-to-r from-[#A855F7] to-[#22D3EE] bg-clip-text text-transparent">
 							Guide
 						</span>
 					</div>
@@ -3041,7 +3119,7 @@ export default function VideoEditor() {
 					>
 						<Video
 							size={14}
-							className="text-white/50 group-hover:text-[#F59E0B] transition-colors"
+							className="text-white/50 group-hover:text-[#A855F7] transition-colors"
 						/>
 						<span className="text-[11px] font-medium text-white/50 group-hover:text-white/80">
 							{t("newRecording.title")}
@@ -3133,11 +3211,11 @@ export default function VideoEditor() {
 											type="button"
 											onClick={handleMagicPolish}
 											disabled={cursorTelemetry.length === 0}
-											className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all duration-150 bg-gradient-to-r from-[#F59E0B]/10 to-[#F97316]/10 hover:from-[#F59E0B]/20 hover:to-[#F97316]/20 disabled:opacity-30 disabled:cursor-not-allowed"
+											className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all duration-150 bg-gradient-to-r from-[#A855F7]/10 to-[#22D3EE]/10 hover:from-[#A855F7]/20 hover:to-[#22D3EE]/20 disabled:opacity-30 disabled:cursor-not-allowed"
 											title="Magic Polish"
 										>
-											<Wand2 size={12} className="text-[#F59E0B]" />
-											<span className="bg-gradient-to-r from-[#F59E0B] to-[#F97316] bg-clip-text text-transparent">
+											<Wand2 size={12} className="text-[#A855F7]" />
+											<span className="bg-gradient-to-r from-[#A855F7] to-[#22D3EE] bg-clip-text text-transparent">
 												Polish
 											</span>
 										</button>
@@ -3149,7 +3227,7 @@ export default function VideoEditor() {
 											}}
 											className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all duration-150 ${
 												showAIPanel && aiPanelMode === "tools"
-													? "bg-[#F59E0B]/15 text-[#F59E0B] shadow-sm"
+													? "bg-[#A855F7]/15 text-[#A855F7] shadow-sm"
 													: "text-white/40 hover:text-white/60 hover:bg-white/[0.04]"
 											}`}
 										>
@@ -3164,7 +3242,7 @@ export default function VideoEditor() {
 											}}
 											className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all duration-150 ${
 												showAIPanel && aiPanelMode === "chat"
-													? "bg-[#F97316]/15 text-[#F97316] shadow-sm"
+													? "bg-[#22D3EE]/15 text-[#22D3EE] shadow-sm"
 													: "text-white/40 hover:text-white/60 hover:bg-white/[0.04]"
 											}`}
 										>
@@ -3304,6 +3382,15 @@ export default function VideoEditor() {
 											onWebcamSizePresetChange={(v) => updateState({ webcamSizePreset: v })}
 											onWebcamSizePresetCommit={commitState}
 											videoElement={videoPlaybackRef.current?.video || null}
+											effectiveDurationSec={Math.max(
+												0,
+												duration -
+													trimRegions.reduce(
+														(totalSec, region) =>
+															totalSec + Math.max(0, region.endMs - region.startMs) / 1000,
+														0,
+													),
+											)}
 											exportQuality={exportQuality}
 											onExportQualityChange={setExportQuality}
 											exportFormat={exportFormat}
@@ -3340,12 +3427,14 @@ export default function VideoEditor() {
 											)}
 											onExport={handleOpenExportDialog}
 											activePanel={settingsPanel}
-											onActivePanelChange={(panel) => setSettingsPanel(panel)}
-											onExportPanelOpen={() => {
-												setSelectedZoomId(null);
-												setSelectedTrimId(null);
-												setSelectedSpeedId(null);
-												setSelectedClipId(null);
+											onActivePanelChange={(panel) => {
+												setSettingsPanel(panel);
+												if (panel === "export") {
+													setSelectedZoomId(null);
+													setSelectedTrimId(null);
+													setSelectedSpeedId(null);
+													setSelectedClipId(null);
+												}
 											}}
 											selectedAnnotationId={selectedAnnotationId}
 											annotationRegions={annotationOnlyRegions}
@@ -3528,7 +3617,7 @@ export default function VideoEditor() {
 						</Panel>
 
 						<PanelResizeHandle className="editor-resize-handle group">
-							<div className="w-12 h-1 bg-white/15 rounded-full transition-colors group-hover:bg-[#F59E0B]/60"></div>
+							<div className="w-12 h-1 bg-white/15 rounded-full transition-colors group-hover:bg-[#A855F7]/60"></div>
 						</PanelResizeHandle>
 
 						{/* Full-width timeline */}
@@ -3621,7 +3710,7 @@ export default function VideoEditor() {
 				>
 					<DialogHeader>
 						<DialogTitle className="flex items-center gap-2">
-							<Wand2 className="w-5 h-5 text-[#F59E0B]" />
+							<Wand2 className="w-5 h-5 text-[#A855F7]" />
 							Magic Polish Preview
 						</DialogTitle>
 						<DialogDescription>
@@ -3633,7 +3722,7 @@ export default function VideoEditor() {
 						<div className="space-y-2 py-2 text-sm">
 							{polishPreview.zoomCount > 0 && (
 								<div className="flex items-center gap-2 text-slate-300">
-									<span className="w-5 h-5 rounded bg-[#F59E0B]/20 flex items-center justify-center text-[#F59E0B] text-xs font-bold">
+									<span className="w-5 h-5 rounded bg-[#A855F7]/20 flex items-center justify-center text-[#A855F7] text-xs font-bold">
 										{polishPreview.zoomCount}
 									</span>
 									zoom region{polishPreview.zoomCount !== 1 ? "s" : ""} to add
@@ -3663,7 +3752,7 @@ export default function VideoEditor() {
 						<button
 							type="button"
 							onClick={handleApplyPolish}
-							className="px-4 py-2 rounded-md bg-[#F59E0B] text-white hover:bg-[#F59E0B]/90 text-sm font-medium transition-colors"
+							className="px-4 py-2 rounded-md bg-[#A855F7] text-white hover:bg-[#A855F7]/90 text-sm font-medium transition-colors"
 						>
 							Apply Polish
 						</button>

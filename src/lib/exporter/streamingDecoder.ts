@@ -27,6 +27,26 @@ interface StreamingVideoDecoderLoadOptions {
 	forceReadableFileSource?: boolean;
 }
 
+// Decode/demux failures that are usually transport problems (XHR to file://
+// blocked in workers, flaky local media server) rather than bad media. These
+// are worth one retry with the source read into memory over IPC
+// (loadMetadata's forceReadableFileSource option).
+const READABLE_SOURCE_RETRY_ERROR_TOKENS = [
+	"readavpacket",
+	"get_media_info",
+	"avfoundation",
+	"failed after 3 attempts",
+	"pipeline failed",
+];
+
+export function shouldRetryWithReadableFileSource(errorMessage: unknown): boolean {
+	if (typeof errorMessage !== "string" || errorMessage.length === 0) {
+		return false;
+	}
+	const normalizedMessage = errorMessage.toLowerCase();
+	return READABLE_SOURCE_RETRY_ERROR_TOKENS.some((token) => normalizedMessage.includes(token));
+}
+
 /** Decoder retains ownership of the VideoFrame and closes it after use. */
 type OnFrameCallback = (
 	frame: VideoFrame,
@@ -309,15 +329,28 @@ export class StreamingVideoDecoder {
 			});
 		};
 
-		// One forward stream through the whole file.
-		// Pass explicit range because some containers are truncated when no end is provided.
-		const readEndSec =
+		// Compute the read range. When trim regions cut content from the start,
+		// we can skip directly to near the first kept segment instead of decoding
+		// from time 0 — the demuxer will seek to the nearest keyframe before
+		// readStartSec, so P/B-frame dependencies are still satisfied.
+		const readStartSec = segments.length > 0 ? Math.max(0, segments[0].startSec - 0.5) : 0;
+		const fullDurationEndSec =
 			Math.max(
 				this.metadata.duration + (this.metadata.mediaStartTime ?? 0),
 				(this.metadata.streamDuration ?? this.metadata.duration) +
 					(this.metadata.streamStartTime ?? this.metadata.mediaStartTime ?? 0),
 			) + 0.5;
-		const reader = this.demuxer.read("video", 0, readEndSec).getReader();
+		// Cap read end to just past the last kept segment to avoid decoding
+		// trailing trimmed content that will never produce output frames.
+		const lastSegmentEndSec =
+			segments.length > 0 ? segments[segments.length - 1].endSec + 0.5 : fullDurationEndSec;
+		const readEndSec = Math.min(fullDurationEndSec, lastSegmentEndSec);
+		if (readStartSec > 0) {
+			console.log(
+				`[StreamingVideoDecoder] Seeking to ${readStartSec.toFixed(2)}s (first segment at ${segments[0].startSec.toFixed(2)}s), skipping ${readStartSec.toFixed(1)}s of trimmed pre-roll`,
+			);
+		}
+		const reader = this.demuxer.read("video", readStartSec, readEndSec).getReader();
 
 		// Feed chunks to decoder in background with backpressure
 		const feedPromise = (async () => {

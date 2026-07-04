@@ -484,6 +484,129 @@ export function getFfmpegEnv(ffmpegPath: string): NodeJS.ProcessEnv {
 	return env;
 }
 
+/**
+ * Quick-trim export: cuts the kept segments from the source video with a
+ * single FFmpeg pass. Much faster than the full WebCodecs decode+render+encode
+ * pipeline because there is no canvas rendering — FFmpeg decodes and encodes
+ * directly.
+ *
+ * The video is re-encoded (libx264 veryfast + AAC) rather than stream-copied:
+ * stream copy can only cut at keyframes (screen recordings often have 5-10s
+ * GOPs, making trims off by seconds) and would put VP8/VP9 webm streams into
+ * an .mp4 container that many players reject. Re-encoding is frame-accurate,
+ * always produces a compliant H.264 MP4, and typically shrinks the file.
+ */
+export async function quickTrimExport(
+	inputPath: string,
+	outputPath: string,
+	segments: Array<{ startMs: number; endMs: number }>,
+): Promise<{ success: boolean; error?: string }> {
+	const validSegments = segments.filter((seg) => seg.endMs - seg.startMs > 1);
+	if (validSegments.length === 0) {
+		return { success: false, error: "No segments to export" };
+	}
+
+	const ffmpegPath = await getFfmpegPath();
+	if (!ffmpegPath) {
+		return { success: false, error: "FFmpeg not found" };
+	}
+
+	const { execFile } = await import("node:child_process");
+	const { promisify } = await import("node:util");
+	const execFileAsync = promisify(execFile);
+	const env = getFfmpegEnv(ffmpegPath);
+
+	try {
+		await fs.access(inputPath);
+	} catch {
+		return { success: false, error: `Input file not found: ${inputPath}` };
+	}
+
+	const hasAudio = await probeHasAudio(inputPath, ffmpegPath, execFileAsync, env);
+
+	const encodeArgs = [
+		"-c:v",
+		"libx264",
+		"-preset",
+		"veryfast",
+		"-crf",
+		"23",
+		"-pix_fmt",
+		"yuv420p",
+		"-movflags",
+		"+faststart",
+		...(hasAudio ? ["-c:a", "aac", "-b:a", "160k"] : []),
+	];
+
+	const totalKeptMs = validSegments.reduce((sum, seg) => sum + (seg.endMs - seg.startMs), 0);
+	// Generous timeout: at least 10 minutes, scaled up for long exports.
+	const timeout = Math.max(600_000, Math.round(totalKeptMs * 2));
+
+	try {
+		if (validSegments.length === 1) {
+			// Single segment: -ss before -i uses fast keyframe seeking, and with
+			// re-encoding FFmpeg decodes from the keyframe and discards frames up
+			// to the requested start, so the cut is frame-accurate.
+			const seg = validSegments[0];
+			const startSec = (seg.startMs / 1000).toFixed(3);
+			const durationSec = ((seg.endMs - seg.startMs) / 1000).toFixed(3);
+			console.log(`[ffmpeg] Quick trim: single segment at ${startSec}s for ${durationSec}s`);
+
+			await execFileAsync(
+				ffmpegPath,
+				["-ss", startSec, "-i", inputPath, "-t", durationSec, ...encodeArgs, "-y", outputPath],
+				{ timeout, env },
+			);
+		} else {
+			// Multiple segments: cut and join in one pass with trim/concat filters.
+			// Frame-accurate and avoids temp files and concat-demuxer timestamp
+			// discontinuities.
+			const filterParts: string[] = [];
+			const concatInputs: string[] = [];
+			for (let i = 0; i < validSegments.length; i++) {
+				const startSec = (validSegments[i].startMs / 1000).toFixed(3);
+				const endSec = (validSegments[i].endMs / 1000).toFixed(3);
+				filterParts.push(`[0:v]trim=start=${startSec}:end=${endSec},setpts=PTS-STARTPTS[v${i}]`);
+				concatInputs.push(`[v${i}]`);
+				if (hasAudio) {
+					filterParts.push(
+						`[0:a]atrim=start=${startSec}:end=${endSec},asetpts=PTS-STARTPTS[a${i}]`,
+					);
+					concatInputs[concatInputs.length - 1] += `[a${i}]`;
+				}
+			}
+			const concatOut = hasAudio ? "[outv][outa]" : "[outv]";
+			filterParts.push(
+				`${concatInputs.join("")}concat=n=${validSegments.length}:v=1:a=${hasAudio ? 1 : 0}${concatOut}`,
+			);
+
+			console.log(`[ffmpeg] Quick trim: ${validSegments.length} segments via concat filter`);
+			await execFileAsync(
+				ffmpegPath,
+				[
+					"-i",
+					inputPath,
+					"-filter_complex",
+					filterParts.join(";"),
+					"-map",
+					"[outv]",
+					...(hasAudio ? ["-map", "[outa]"] : []),
+					...encodeArgs,
+					"-y",
+					outputPath,
+				],
+				{ timeout, env },
+			);
+		}
+
+		console.log("[ffmpeg] Quick trim succeeded");
+		return { success: true };
+	} catch (err) {
+		console.error("[ffmpeg] Quick trim failed:", err);
+		return { success: false, error: `Quick trim failed: ${err}` };
+	}
+}
+
 async function findSystemFfmpeg(): Promise<string | null> {
 	const { execFile } = await import("node:child_process");
 	const { promisify } = await import("node:util");

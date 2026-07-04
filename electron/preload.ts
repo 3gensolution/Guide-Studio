@@ -368,6 +368,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	concatVideos: (inputPaths: string[], outputPath: string) => {
 		return ipcRenderer.invoke("concat-videos", inputPaths, outputPath);
 	},
+	quickTrimExport: (
+		inputPath: string,
+		outputPath: string,
+		segments: Array<{ startMs: number; endMs: number }>,
+	) => {
+		return ipcRenderer.invoke("quick-trim-export", inputPath, outputPath, segments);
+	},
 
 	// ── UI state ──
 	setMicrophoneExpanded: (expanded: boolean) => {

@@ -59,9 +59,10 @@ export default defineConfig({
 		minify: "terser",
 		terserOptions: {
 			compress: {
-				drop_console: true,
+				// KEEP_CONSOLE=1 preserves logs for debugging built apps (e2e runs).
+				drop_console: !process.env.KEEP_CONSOLE,
 				drop_debugger: true,
-				pure_funcs: ["console.log", "console.debug"],
+				pure_funcs: process.env.KEEP_CONSOLE ? [] : ["console.log", "console.debug"],
 			},
 		},
 		rollupOptions: {

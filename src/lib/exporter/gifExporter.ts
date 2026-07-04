@@ -16,7 +16,7 @@ import type {
 	ZoomTransitionEasing,
 } from "@/components/video-editor/types";
 import { FrameRenderer } from "./frameRenderer";
-import { StreamingVideoDecoder } from "./streamingDecoder";
+import { StreamingVideoDecoder, shouldRetryWithReadableFileSource } from "./streamingDecoder";
 import type {
 	ExportProgress,
 	ExportResult,
@@ -215,6 +215,26 @@ export class GifExporter {
 	}
 
 	async export(): Promise<ExportResult> {
+		const firstAttempt = await this.runExportAttempt(false);
+		if (
+			firstAttempt.success ||
+			firstAttempt.error === "Export cancelled" ||
+			!shouldRetryWithReadableFileSource(firstAttempt.error)
+		) {
+			return firstAttempt;
+		}
+
+		// The streaming demuxer reads the source over XHR, which can fail even
+		// when the file is fine (file:// blocked in workers, local media server
+		// unavailable). Retry once with the file read into memory over IPC.
+		console.warn(
+			"[GifExporter] Primary decode path failed; retrying export once with a readable file-backed media source:",
+			firstAttempt.error,
+		);
+		return this.runExportAttempt(true);
+	}
+
+	private async runExportAttempt(forceReadableFileSource: boolean): Promise<ExportResult> {
 		try {
 			this.cleanup();
 			this.cancelled = false;
@@ -228,7 +248,9 @@ export class GifExporter {
 				maxDecodeQueue: this.config.maxDecodeQueue,
 				maxPendingFrames: this.config.maxPendingFrames,
 			});
-			const videoInfo = await this.streamingDecoder.loadMetadata(this.config.videoUrl);
+			const videoInfo = await this.streamingDecoder.loadMetadata(this.config.videoUrl, {
+				forceReadableFileSource,
+			});
 
 			// Initialize frame renderer
 			this.renderer = new FrameRenderer(buildGifFrameRendererConfig(this.config, videoInfo));

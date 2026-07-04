@@ -1,5 +1,5 @@
 import { ipcMain } from "electron";
-import { concatenateVideos, getFfmpegPath } from "../ffmpeg";
+import { concatenateVideos, getFfmpegPath, quickTrimExport } from "../ffmpeg";
 
 export function registerFfmpegHandlers() {
 	ipcMain.handle("get-ffmpeg-path", async () => {
@@ -20,4 +20,21 @@ export function registerFfmpegHandlers() {
 			return { success: false, error: String(error) };
 		}
 	});
+
+	ipcMain.handle(
+		"quick-trim-export",
+		async (
+			_event,
+			inputPath: string,
+			outputPath: string,
+			segments: Array<{ startMs: number; endMs: number }>,
+		) => {
+			try {
+				return await quickTrimExport(inputPath, outputPath, segments);
+			} catch (error) {
+				console.error("Failed to quick-trim export:", error);
+				return { success: false, error: String(error) };
+			}
+		},
+	);
 }
