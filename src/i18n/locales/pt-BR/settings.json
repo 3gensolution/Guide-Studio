@@ -56,7 +56,8 @@
 		"on": "ativado",
 		"shadow": "Sombra",
 		"roundness": "Arredondamento",
-		"padding": "Espaçamento"
+		"padding": "Espaçamento",
+		"videoFrame": "Moldura do vídeo"
 	},
 	"background": {
 		"title": "Fundo",

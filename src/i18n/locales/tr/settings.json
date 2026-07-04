@@ -58,7 +58,8 @@
 		"shadow": "Gölge",
 		"roundness": "Yuvarlaklık",
 		"padding": "Dolgu",
-		"on": "açık"
+		"on": "açık",
+		"videoFrame": "Video çerçevesi"
 	},
 	"background": {
 		"title": "Arka Plan",

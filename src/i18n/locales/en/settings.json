@@ -59,7 +59,8 @@
 		"on": "on",
 		"shadow": "Shadow",
 		"roundness": "Roundness",
-		"padding": "Padding"
+		"padding": "Padding",
+		"videoFrame": "Video frame"
 	},
 	"background": {
 		"title": "Background",

@@ -58,7 +58,8 @@
 		"on": "acceso",
 		"shadow": "Ombra",
 		"roundness": "Arrotondamento",
-		"padding": "Spaziatura"
+		"padding": "Spaziatura",
+		"videoFrame": "Cornice video"
 	},
 	"background": {
 		"title": "Sfondo",

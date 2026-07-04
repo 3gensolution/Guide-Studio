@@ -58,7 +58,8 @@
 		"shadow": "Bóng đổ",
 		"roundness": "Độ bo tròn",
 		"padding": "Phần đệm",
-		"on": "bật"
+		"on": "bật",
+		"videoFrame": "Khung video"
 	},
 	"background": {
 		"title": "Nền",

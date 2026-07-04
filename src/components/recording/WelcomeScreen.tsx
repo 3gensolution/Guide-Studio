@@ -56,12 +56,12 @@ function ActionCard({
 			onClick={onClick}
 			className={`flex flex-col gap-2 p-5 rounded-2xl border transition-all text-left w-full ${
 				primary
-					? "bg-[#A855F7]/10 border-[#A855F7]/30 hover:bg-[#A855F7]/20 hover:border-[#A855F7]/50"
+					? "bg-[#6E6BFF]/10 border-[#6E6BFF]/30 hover:bg-[#6E6BFF]/20 hover:border-[#6E6BFF]/50"
 					: "bg-white/[0.03] border-white/[0.08] hover:bg-white/[0.06] hover:border-white/[0.12]"
 			}`}
 		>
 			<div className="flex items-center gap-2">
-				<Icon size={18} className={primary ? "text-[#A855F7]" : "text-white/50"} />
+				<Icon size={18} className={primary ? "text-[#6E6BFF]" : "text-white/50"} />
 				<span className={`font-medium ${primary ? "text-white" : "text-white/70"}`}>{title}</span>
 				{badge}
 			</div>
@@ -93,7 +93,7 @@ export function WelcomeScreen({
 					style={{ WebkitAppRegion: "drag" } as CSSProperties}
 				>
 					<img src={guideLogo} alt="Guide" className="w-8 h-8" />
-					<span className="text-sm font-bold tracking-wider uppercase bg-gradient-to-r from-[#A855F7] to-[#22D3EE] bg-clip-text text-transparent">
+					<span className="text-sm font-bold tracking-wider uppercase bg-gradient-to-r from-[#6E6BFF] to-[#22D3EE] bg-clip-text text-transparent">
 						Guide
 					</span>
 				</div>
@@ -113,9 +113,9 @@ export function WelcomeScreen({
 						<button
 							type="button"
 							onClick={showLogin}
-							className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-[#A855F7]/10 hover:bg-[#A855F7]/20 border border-[#A855F7]/30 hover:border-[#A855F7]/50 text-xs text-white/80 transition-colors"
+							className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-[#6E6BFF]/10 hover:bg-[#6E6BFF]/20 border border-[#6E6BFF]/30 hover:border-[#6E6BFF]/50 text-xs text-white/80 transition-colors"
 						>
-							<LogIn size={12} className="text-[#A855F7]" />
+							<LogIn size={12} className="text-[#6E6BFF]" />
 							Sign in to unlock AI features
 						</button>
 					</div>

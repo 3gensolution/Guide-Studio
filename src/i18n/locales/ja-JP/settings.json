@@ -58,7 +58,8 @@
 		"shadow": "影",
 		"roundness": "丸み",
 		"padding": "余白",
-		"on": "オン"
+		"on": "オン",
+		"videoFrame": "ビデオフレーム"
 	},
 	"background": {
 		"title": "背景",

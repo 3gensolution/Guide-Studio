@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Columns3, Languages, Rows3 } from "lucide-react";
+import { Check, ChevronDown, Columns3, Languages, MoreVertical, Rows3 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BsPauseCircle, BsPlayCircle, BsRecordCircle } from "react-icons/bs";
@@ -74,20 +74,23 @@ function getIcon(name: IconName, className?: string) {
 }
 
 const hudGroupClasses =
-	"flex items-center gap-0.5 rounded-xl border border-white/[0.07] bg-white/[0.045] transition-colors duration-150 hover:bg-white/[0.075]";
+	"flex items-center gap-0.5 rounded-lg border border-[#262933] bg-white/[0.03] transition-colors duration-150 hover:bg-white/[0.06]";
 
 const hudIconBtnClasses =
-	"flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-150 cursor-pointer text-white hover:bg-white/10 active:scale-95";
+	"flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-150 cursor-pointer text-white hover:bg-white/10 active:scale-95 focus:outline-none focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#6E6BFF]/70";
 
 const hudAuxIconBtnClasses =
-	"flex h-7 w-7 items-center justify-center rounded-lg transition-colors duration-150 text-white/55 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed";
+	"flex h-7 w-7 items-center justify-center rounded-lg transition-colors duration-150 text-white/55 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#6E6BFF]/70";
 
 const windowBtnClasses =
 	"flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-150 cursor-pointer opacity-50 hover:opacity-90 hover:bg-white/[0.08]";
 
-const hudSidebarClasses = "ml-0.5 pl-1.5 border-l border-white/10 flex items-center gap-0.5";
+const hudSidebarClasses = "mr-0.5 pr-1.5 border-r border-white/10 flex items-center gap-0.5";
 const hudSidebarVerticalClasses =
-	"mt-0.5 pt-1.5 border-t border-white/10 flex flex-col items-center gap-0.5";
+	"mb-0.5 pb-1.5 border-b border-white/10 flex flex-col items-center gap-0.5";
+
+const moreMenuItemClasses =
+	"flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-[11px] font-medium text-white/85 transition-colors hover:bg-white/10";
 
 /** Launches the floating recording HUD and its recorder controls. */
 export function LaunchWindow() {
@@ -140,6 +143,13 @@ export function LaunchWindow() {
 	const [isWebcamFocused, setIsWebcamFocused] = useState(false);
 	const webcamExpanded = isWebcamHovered || isWebcamFocused;
 	const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
+	const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+	const moreTriggerRef = useRef<HTMLButtonElement | null>(null);
+	const moreMenuPanelRef = useRef<HTMLDivElement | null>(null);
+	const [moreMenuStyle, setMoreMenuStyle] = useState<{ right: number; bottom: number }>({
+		right: 12,
+		bottom: 64,
+	});
 	const [trayLayout, setTrayLayout] = useState<"horizontal" | "vertical">(
 		() => loadUserPreferences().trayLayout,
 	);
@@ -301,6 +311,53 @@ export function LaunchWindow() {
 		return () => cancelAnimationFrame(id);
 	}, [isLanguageMenuOpen]);
 
+	useEffect(() => {
+		if (!isMoreMenuOpen) return;
+
+		const handlePointerDown = (event: PointerEvent) => {
+			const target = event.target as Node;
+			const clickedTrigger = moreTriggerRef.current?.contains(target);
+			const clickedMenu = moreMenuPanelRef.current?.contains(target);
+			if (!clickedTrigger && !clickedMenu) {
+				setIsMoreMenuOpen(false);
+			}
+		};
+
+		const handleEscape = (event: KeyboardEvent) => {
+			if (event.key === "Escape") {
+				setIsMoreMenuOpen(false);
+			}
+		};
+
+		window.addEventListener("pointerdown", handlePointerDown);
+		window.addEventListener("keydown", handleEscape);
+
+		return () => {
+			window.removeEventListener("pointerdown", handlePointerDown);
+			window.removeEventListener("keydown", handleEscape);
+		};
+	}, [isMoreMenuOpen]);
+
+	useEffect(() => {
+		if (!isMoreMenuOpen || !moreTriggerRef.current) return;
+
+		const updatePosition = () => {
+			if (!moreTriggerRef.current) return;
+			const rect = moreTriggerRef.current.getBoundingClientRect();
+			setMoreMenuStyle({
+				right: Math.max(8, window.innerWidth - rect.right),
+				bottom: Math.max(8, window.innerHeight - rect.top + 8),
+			});
+		};
+
+		updatePosition();
+		window.addEventListener("resize", updatePosition);
+
+		return () => {
+			window.removeEventListener("resize", updatePosition);
+		};
+	}, [isMoreMenuOpen]);
+
 	// Resize the overlay window to fit content, else the taller vertical tray gets clipped
 	// and scrolls. Measure from the window's bottom-centre (the anchor the main process
 	// preserves) so fixed bottom/centre offsets keep this stable and it doesn't oscillate.
@@ -347,6 +404,16 @@ export function LaunchWindow() {
 		if (languageMenuPanelRef.current) {
 			const rect = languageMenuPanelRef.current.getBoundingClientRect();
 			halfWidth = Math.max(halfWidth, centerX - rect.left, rect.right - centerX);
+		}
+
+		// The more-options menu opens above the bar with fixed content height; grow the
+		// window so it isn't clipped (rect.top may be negative while the window is small).
+		if (moreMenuPanelRef.current) {
+			const rect = moreMenuPanelRef.current.getBoundingClientRect();
+			if (rect.width !== 0 || rect.height !== 0) {
+				topFromBottom = Math.max(topFromBottom, viewportHeight - rect.top);
+				halfWidth = Math.max(halfWidth, centerX - rect.left, rect.right - centerX);
+			}
 		}
 
 		setHudBarHeight((prev) => {
@@ -400,6 +467,10 @@ export function LaunchWindow() {
 		(el: HTMLDivElement | null) => observeHudElement(el, languageMenuPanelRef),
 		[observeHudElement],
 	);
+	const setMoreMenuPanelEl = useCallback(
+		(el: HTMLDivElement | null) => observeHudElement(el, moreMenuPanelRef),
+		[observeHudElement],
+	);
 
 	const hudMouseEventsEnabledRef = useRef<boolean | undefined>(undefined);
 	const setHudMouseEventsEnabled = useCallback((enabled: boolean) => {
@@ -418,8 +489,8 @@ export function LaunchWindow() {
 	}, [setHudMouseEventsEnabled]);
 
 	useEffect(() => {
-		setHudMouseEventsEnabled(isLanguageMenuOpen);
-	}, [isLanguageMenuOpen, setHudMouseEventsEnabled]);
+		setHudMouseEventsEnabled(isLanguageMenuOpen || isMoreMenuOpen);
+	}, [isLanguageMenuOpen, isMoreMenuOpen, setHudMouseEventsEnabled]);
 
 	const [selectedSource, setSelectedSource] = useState("Screen");
 	const [hasSelectedSource, setHasSelectedSource] = useState(false);
@@ -508,11 +579,13 @@ export function LaunchWindow() {
 			onPointerMove={(event) => {
 				const el = document.elementFromPoint(event.clientX, event.clientY);
 				const shouldCapture =
-					isLanguageMenuOpen || Boolean(el?.closest("[data-hud-interactive='true']"));
+					isLanguageMenuOpen ||
+					isMoreMenuOpen ||
+					Boolean(el?.closest("[data-hud-interactive='true']"));
 				setHudMouseEventsEnabled(shouldCapture);
 			}}
 			onPointerLeave={() => {
-				if (!isLanguageMenuOpen) {
+				if (!isLanguageMenuOpen && !isMoreMenuOpen) {
 					setHudMouseEventsEnabled(false);
 				}
 			}}
@@ -702,7 +775,7 @@ export function LaunchWindow() {
 				ref={setHudBarEl}
 				data-hud-interactive="true"
 				data-tray-layout={trayLayout}
-				className={`fixed bottom-5 left-1/2 -translate-x-1/2 flex rounded-2xl border border-[#A855F7]/20 bg-gradient-to-r from-[#1A0A2E]/90 via-[#12082A]/90 to-[#0D0A1F]/90 shadow-[0_20px_60px_rgba(0,0,0,0.5),0_0_24px_rgba(168,85,247,0.12),0_0_40px_rgba(34,211,238,0.08),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl backdrop-saturate-[140%] ${
+				className={`fixed bottom-5 left-1/2 -translate-x-1/2 flex rounded-[10px] border border-[#262933] bg-[#0E0F14]/95 shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl ${
 					trayLayout === "vertical"
 						? "max-h-[calc(100vh-2.5rem)] flex-col items-center gap-1 overflow-y-auto px-1 py-1.5"
 						: "items-center gap-1.5 px-2 py-1.5"
@@ -711,19 +784,27 @@ export function LaunchWindow() {
 				onPointerDown={() => setHudMouseEventsEnabled(true)}
 				onMouseEnter={() => setHudMouseEventsEnabled(true)}
 				onMouseLeave={() => {
-					if (!isLanguageMenuOpen) {
+					if (!isLanguageMenuOpen && !isMoreMenuOpen) {
 						setHudMouseEventsEnabled(false);
 					}
 				}}
 			>
-				{/* Gradient accent line */}
+				{/* Window controls — far left */}
 				<div
-					className={`absolute ${trayLayout === "vertical" ? "top-0 left-2 right-2 h-[1px]" : "top-0 left-3 right-3 h-[1px]"} bg-gradient-to-r from-[#A855F7]/40 via-[#22D3EE]/25 to-[#A855F7]/40 rounded-full`}
-				/>
+					className={`order-1 flex items-center gap-0.5 ${trayLayout === "vertical" ? "flex-col" : ""}`}
+				>
+					<button
+						className={`${windowBtnClasses} ${styles.electronNoDrag}`}
+						title={t("tooltips.closeApp")}
+						onClick={sendHudOverlayClose}
+					>
+						{getIcon("close", "text-white")}
+					</button>
+				</div>
 
 				{/* Drag handle */}
 				<div
-					className={`flex ${trayLayout === "vertical" ? "h-6 w-8" : "h-8 w-7"} cursor-grab items-center justify-center active:cursor-grabbing ${styles.electronNoDrag}`}
+					className={`order-2 flex ${trayLayout === "vertical" ? "h-6 w-8" : "h-8 w-7"} cursor-grab items-center justify-center active:cursor-grabbing ${styles.electronNoDrag}`}
 					onPointerDown={handleHudDragPointerDown}
 					onPointerMove={handleHudDragPointerMove}
 					onPointerUp={handleHudDragPointerEnd}
@@ -732,56 +813,64 @@ export function LaunchWindow() {
 					{getIcon("drag", "text-white/30")}
 				</div>
 
-				{/* Record/Stop group */}
+				{/* Record/Stop — labeled CTA, far right */}
 				<button
 					data-testid="launch-record-button"
-					className={`flex items-center justify-center rounded-full p-2 transition-[min-width,background-color] duration-150 ${recording ? "min-w-[78px]" : "min-w-[36px]"} ${trayLayout === "vertical" ? "min-h-9" : ""} ${styles.electronNoDrag} ${
+					className={`order-7 flex items-center justify-center rounded-lg p-2 transition-[min-width,background-color] duration-150 focus:outline-none focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#6E6BFF]/70 ${recording ? "min-w-[78px]" : trayLayout === "vertical" ? "min-w-[36px]" : "min-w-[64px] px-3"} ${trayLayout === "vertical" ? "min-h-9" : ""} ${styles.electronNoDrag} ${
 						recording
 							? paused
 								? "bg-amber-500/10 hover:bg-amber-500/15"
-								: "bg-red-500/12 hover:bg-red-500/16"
-							: "bg-white/[0.06] hover:bg-white/[0.10]"
+								: "bg-red-500/15 hover:bg-red-500/20"
+							: hasSelectedSource
+								? "bg-[#6E6BFF] hover:bg-[#5E5BE6]"
+								: "bg-white/[0.06]"
 					}`}
 					onClick={toggleRecording}
 					disabled={!hasSelectedSource && !recording}
 					style={{ flex: "0 0 auto" }}
 				>
-					<div className={`flex items-center justify-center ${recording ? "gap-1.5" : ""}`}>
+					<div className="flex items-center justify-center gap-1.5">
 						{recording
 							? getIcon("stop", paused ? "text-amber-400" : "text-red-400")
-							: getIcon("record", hasSelectedSource ? "text-white/80" : "text-white/30")}
-						{recording && (
+							: getIcon("record", hasSelectedSource ? "text-white" : "text-white/30")}
+						{recording ? (
 							<span
 								className={`${paused ? "text-amber-400" : "text-red-400"} inline-block w-[34px] text-left text-xs font-semibold tabular-nums`}
 							>
 								{formatTimePadded(elapsedSeconds)}
 							</span>
+						) : (
+							trayLayout !== "vertical" && (
+								<span
+									className={`text-xs font-semibold ${hasSelectedSource ? "text-white" : "text-white/30"}`}
+								>
+									Rec
+								</span>
+							)
 						)}
 					</div>
 				</button>
 
-				{/* Webcam toggle */}
-				<button
-					data-testid="launch-webcam-button"
-					className={`${hudIconBtnClasses} ${webcamEnabled ? "drop-shadow-[0_0_4px_rgba(168,85,247,0.4)]" : ""} ${styles.electronNoDrag}`}
-					onClick={async () => {
-						await setWebcamEnabled(!webcamEnabled);
-					}}
-					disabled={recording}
-					title={webcamEnabled ? t("webcam.disableWebcam") : t("webcam.enableWebcam")}
-				>
-					{webcamEnabled
-						? getIcon("webcamOn", "text-[#A855F7]")
-						: getIcon("webcamOff", "text-white/40")}
-				</button>
-
-				{/* Audio controls group */}
+				{/* Device toggles group: webcam, system audio, mic, cursor */}
 				<div
-					className={`${hudGroupClasses} ${trayLayout === "vertical" ? "flex-col py-1" : ""} ${styles.electronNoDrag}`}
+					className={`order-4 ${hudGroupClasses} ${trayLayout === "vertical" ? "flex-col py-1" : ""} ${styles.electronNoDrag}`}
 				>
 					<button
+						data-testid="launch-webcam-button"
+						className={`${hudIconBtnClasses} ${webcamEnabled ? "bg-[#6E6BFF]/12" : ""}`}
+						onClick={async () => {
+							await setWebcamEnabled(!webcamEnabled);
+						}}
+						disabled={recording}
+						title={webcamEnabled ? t("webcam.disableWebcam") : t("webcam.enableWebcam")}
+					>
+						{webcamEnabled
+							? getIcon("webcamOn", "text-[#8B89FF]")
+							: getIcon("webcamOff", "text-white/40")}
+					</button>
+					<button
 						data-testid="launch-system-audio-button"
-						className={`${hudIconBtnClasses} ${systemAudioEnabled ? "drop-shadow-[0_0_4px_rgba(168,85,247,0.4)]" : ""}`}
+						className={`${hudIconBtnClasses} ${systemAudioEnabled ? "bg-[#6E6BFF]/12" : ""}`}
 						onClick={() => !recording && setSystemAudioEnabled(!systemAudioEnabled)}
 						disabled={recording}
 						title={
@@ -789,12 +878,12 @@ export function LaunchWindow() {
 						}
 					>
 						{systemAudioEnabled
-							? getIcon("volumeOn", "text-[#A855F7]")
+							? getIcon("volumeOn", "text-[#8B89FF]")
 							: getIcon("volumeOff", "text-white/40")}
 					</button>
 					<button
 						data-testid="launch-microphone-button"
-						className={`${hudIconBtnClasses} ${microphoneEnabled ? "drop-shadow-[0_0_4px_rgba(168,85,247,0.4)]" : ""}`}
+						className={`${hudIconBtnClasses} ${microphoneEnabled ? "bg-[#6E6BFF]/12" : ""}`}
 						onClick={toggleMicrophone}
 						disabled={recording}
 						title={microphoneEnabled ? t("audio.disableMicrophone") : t("audio.enableMicrophone")}
@@ -803,16 +892,14 @@ export function LaunchWindow() {
 						}}
 					>
 						{microphoneEnabled
-							? getIcon("micOn", "text-[#A855F7]")
+							? getIcon("micOn", "text-[#8B89FF]")
 							: getIcon("micOff", "text-white/40")}
 					</button>
 					{supportsCursorModeToggle && (
 						<button
 							data-testid="launch-cursor-mode-button"
 							className={`${hudIconBtnClasses} ${
-								cursorCaptureMode === "editable-overlay"
-									? "drop-shadow-[0_0_4px_rgba(168,85,247,0.4)]"
-									: ""
+								cursorCaptureMode === "editable-overlay" ? "bg-[#6E6BFF]/12" : ""
 							}`}
 							onClick={() =>
 								!recording &&
@@ -829,7 +916,7 @@ export function LaunchWindow() {
 						>
 							{getIcon(
 								"cursor",
-								cursorCaptureMode === "editable-overlay" ? "text-[#A855F7]" : "text-white/40",
+								cursorCaptureMode === "editable-overlay" ? "text-[#8B89FF]" : "text-white/40",
 							)}
 						</button>
 					)}
@@ -837,7 +924,7 @@ export function LaunchWindow() {
 
 				{recording && (
 					<div
-						className={`flex items-center gap-0.5 ${trayLayout === "vertical" ? "flex-col" : ""} ${styles.electronNoDrag}`}
+						className={`order-6 flex items-center gap-0.5 ${trayLayout === "vertical" ? "flex-col" : ""} ${styles.electronNoDrag}`}
 					>
 						{canPauseRecording && (
 							<Tooltip
@@ -864,44 +951,10 @@ export function LaunchWindow() {
 					</div>
 				)}
 
-				{!recording && (
-					<Tooltip content={t("tooltips.openStudio")}>
-						<button
-							data-testid="launch-open-studio-button"
-							className={`${hudIconBtnClasses} ${styles.electronNoDrag}`}
-							onClick={() => window.electronAPI.switchToEditor()}
-						>
-							<img src={guideLogo} alt="" className="w-5 h-5 object-contain" />
-						</button>
-					</Tooltip>
-				)}
-
-				{/* Right sidebar controls */}
+				{/* Setup group: capture source */}
 				<div
-					className={`${trayLayout === "vertical" ? hudSidebarVerticalClasses : hudSidebarClasses} ${styles.electronNoDrag}`}
+					className={`order-3 ${trayLayout === "vertical" ? hudSidebarVerticalClasses : hudSidebarClasses} ${styles.electronNoDrag}`}
 				>
-					<div className={`${styles.languageMenuContainer} ${styles.electronNoDrag}`}>
-						<button
-							ref={languageTriggerRef}
-							type="button"
-							aria-label={t("language")}
-							aria-expanded={isLanguageMenuOpen}
-							aria-haspopup="menu"
-							onClick={() => setIsLanguageMenuOpen((open) => !open)}
-							title={activeLanguageLabel}
-							className={`flex h-8 items-center rounded-lg border border-white/10 bg-white/[0.045] text-white/85 shadow-none transition-colors hover:bg-white/10 ${
-								trayLayout === "vertical" ? "w-8 justify-center px-0" : "gap-1.5 px-2"
-							} ${styles.electronNoDrag}`}
-						>
-							<Languages size={13} className="text-white/70" />
-							<span
-								className={`${trayLayout === "vertical" ? "sr-only" : "max-w-[54px]"} truncate text-[10px] font-semibold text-white/75`}
-							>
-								{activeLanguageLabel}
-							</span>
-						</button>
-					</div>
-
 					{isLanguageMenuOpen
 						? createPortal(
 								<div
@@ -964,55 +1017,111 @@ export function LaunchWindow() {
 							{selectedSource}
 						</span>
 					</button>
-
-					{/* Tray layout toggle */}
-					<Tooltip
-						content={
-							trayLayout === "horizontal"
-								? t("tooltips.useVerticalTray")
-								: t("tooltips.useHorizontalTray")
-						}
-					>
-						<button
-							data-testid="launch-tray-layout-button"
-							type="button"
-							aria-label={
-								trayLayout === "horizontal"
-									? t("tooltips.useVerticalTray")
-									: t("tooltips.useHorizontalTray")
-							}
-							aria-pressed={trayLayout === "vertical"}
-							className={`${hudIconBtnClasses} ${styles.electronNoDrag}`}
-							onClick={toggleTrayLayout}
-						>
-							{trayLayout === "horizontal" ? (
-								<Columns3 size={ICON_SIZE} className="text-white/60" />
-							) : (
-								<Rows3 size={ICON_SIZE} className="text-white/60" />
-							)}
-						</button>
-					</Tooltip>
-
-					{/* Window controls */}
-					<div
-						className={`flex items-center gap-0.5 ${trayLayout === "vertical" ? "flex-col" : ""}`}
-					>
-						<button
-							className={windowBtnClasses}
-							title={t("tooltips.hideHUD")}
-							onClick={sendHudOverlayHide}
-						>
-							{getIcon("minimize", "text-white")}
-						</button>
-						<button
-							className={windowBtnClasses}
-							title={t("tooltips.closeApp")}
-							onClick={sendHudOverlayClose}
-						>
-							{getIcon("close", "text-white")}
-						</button>
-					</div>
 				</div>
+
+				{/* More options menu trigger */}
+				<button
+					ref={(el) => {
+						moreTriggerRef.current = el;
+						languageTriggerRef.current = el;
+					}}
+					type="button"
+					aria-haspopup="menu"
+					aria-expanded={isMoreMenuOpen}
+					title="More"
+					className={`order-5 ${hudIconBtnClasses} ${styles.electronNoDrag}`}
+					onClick={() => {
+						setIsLanguageMenuOpen(false);
+						setIsMoreMenuOpen((open) => !open);
+					}}
+				>
+					<MoreVertical size={ICON_SIZE} className="text-white/60" />
+				</button>
+
+				{isMoreMenuOpen
+					? createPortal(
+							<div
+								ref={setMoreMenuPanelEl}
+								data-hud-interactive="true"
+								role="menu"
+								className={`fixed z-[60] min-w-[195px] rounded-lg border border-[#262933] bg-[#14161C] p-1 shadow-[0_16px_40px_rgba(0,0,0,0.5)] ${styles.electronNoDrag}`}
+								style={
+									{
+										WebkitAppRegion: "no-drag",
+										pointerEvents: "auto",
+										right: `${moreMenuStyle.right}px`,
+										bottom: `${moreMenuStyle.bottom}px`,
+									} as React.CSSProperties
+								}
+								onPointerDown={(event) => event.stopPropagation()}
+								onPointerEnter={() => setHudMouseEventsEnabled(true)}
+								onPointerMove={() => setHudMouseEventsEnabled(true)}
+							>
+								{!recording && (
+									<button
+										type="button"
+										role="menuitem"
+										data-testid="launch-open-studio-button"
+										className={moreMenuItemClasses}
+										onClick={() => {
+											setIsMoreMenuOpen(false);
+											window.electronAPI.switchToEditor();
+										}}
+									>
+										<img src={guideLogo} alt="" className="h-4 w-4 object-contain" />
+										<span>{t("tooltips.openStudio")}</span>
+									</button>
+								)}
+								<button
+									type="button"
+									role="menuitem"
+									className={moreMenuItemClasses}
+									onClick={() => {
+										setIsMoreMenuOpen(false);
+										setIsLanguageMenuOpen(true);
+									}}
+								>
+									<Languages size={15} className="text-white/60" />
+									<span className="flex-1 text-left">{t("language")}</span>
+									<span className="text-white/40">{activeLanguageLabel}</span>
+								</button>
+								<button
+									type="button"
+									role="menuitem"
+									data-testid="launch-tray-layout-button"
+									className={moreMenuItemClasses}
+									onClick={() => {
+										toggleTrayLayout();
+										setIsMoreMenuOpen(false);
+									}}
+								>
+									{trayLayout === "horizontal" ? (
+										<Columns3 size={15} className="text-white/60" />
+									) : (
+										<Rows3 size={15} className="text-white/60" />
+									)}
+									<span>
+										{trayLayout === "horizontal"
+											? t("tooltips.useVerticalTray")
+											: t("tooltips.useHorizontalTray")}
+									</span>
+								</button>
+								<button
+									type="button"
+									role="menuitem"
+									className={moreMenuItemClasses}
+									onClick={() => {
+										setIsMoreMenuOpen(false);
+										sendHudOverlayHide();
+									}}
+								>
+									<FiMinus size={15} className="text-white/60" />
+									<span>{t("tooltips.hideHUD")}</span>
+								</button>
+							</div>,
+							document.body,
+						)
+					: null}
 			</div>
 		</div>
 	);

@@ -58,7 +58,8 @@
 		"on": "تشغيل",
 		"shadow": "ظل",
 		"roundness": "الاستدارة",
-		"padding": "المسافة البادئة"
+		"padding": "المسافة البادئة",
+		"videoFrame": "إطار الفيديو"
 	},
 	"background": {
 		"title": "الخلفية",

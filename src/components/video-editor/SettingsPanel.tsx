@@ -223,7 +223,7 @@ function ZoomFocusCoordInput({
 			onKeyDown={(e) => {
 				if (e.key === "Enter") (e.target as HTMLInputElement).blur();
 			}}
-			className="h-7 w-full rounded-md border border-white/10 bg-white/5 px-2 text-[11px] text-slate-200 outline-none focus:border-[#A855F7]/50 focus:ring-1 focus:ring-[#A855F7]/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
+			className="h-7 w-full rounded-md border border-white/10 bg-white/5 px-2 text-[11px] text-slate-200 outline-none focus:border-[#6E6BFF]/50 focus:ring-1 focus:ring-[#6E6BFF]/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
 		/>
 	);
 }
@@ -325,6 +325,10 @@ interface SettingsPanelProps {
 	/** Controlled active panel — when set, overrides internal state. */
 	activePanel?: SettingsPanelMode;
 	onActivePanelChange?: (panel: SettingsPanelMode) => void;
+	/** Hide the built-in icon mode rail (when an external tool rail drives activePanel). */
+	hideModeRail?: boolean;
+	cropDialogOpen?: boolean;
+	onCropDialogOpenChange?: (open: boolean) => void;
 	unsavedExport?: {
 		arrayBuffer: ArrayBuffer;
 		fileName: string;
@@ -403,7 +407,13 @@ const ZOOM_DEPTH_OPTIONS: Array<{ depth: ZoomDepth; label: string }> = [
 	{ depth: 6, label: "5×" },
 ];
 
-type SettingsPanelMode = "background" | "effects" | "layout" | "cursor" | "export" | "timeline";
+export type SettingsPanelMode =
+	| "background"
+	| "effects"
+	| "layout"
+	| "cursor"
+	| "export"
+	| "timeline";
 
 const MP4_EXPORT_SHORT_SIDES = {
 	medium: 720,
@@ -537,6 +547,9 @@ export function SettingsPanel({
 	showCursorSettings = true,
 	activePanel: controlledPanel,
 	onActivePanelChange,
+	hideModeRail = false,
+	cropDialogOpen,
+	onCropDialogOpenChange,
 }: SettingsPanelProps) {
 	const t = useScopedT("settings");
 	const [internalPanelMode, setInternalPanelMode] = useState<SettingsPanelMode>("background");
@@ -721,8 +734,13 @@ export function SettingsPanel({
 		},
 		[cropRegion, videoWidth, videoHeight],
 	);
-	const [showCropDropdown, setShowCropDropdown] = useState(false);
-	const handleCropToggle = () => setShowCropDropdown((open) => !open);
+	const [internalCropOpen, setInternalCropOpen] = useState(false);
+	const showCropDropdown = cropDialogOpen ?? internalCropOpen;
+	const setShowCropDropdown = (open: boolean) => {
+		setInternalCropOpen(open);
+		onCropDialogOpenChange?.(open);
+	};
+	const handleCropToggle = () => setShowCropDropdown(!showCropDropdown);
 
 	const zoomEnabled = Boolean(selectedZoomDepth);
 	const trimEnabled = Boolean(selectedTrimId);
@@ -901,42 +919,44 @@ export function SettingsPanel({
 	return (
 		<div className="editor-inspector-shell flex min-w-0 flex-col h-full overflow-hidden">
 			<div className="flex min-h-0 flex-1">
-				<div className="settings-mode-rail flex w-12 shrink-0 flex-col items-center gap-1.5 border-r border-white/[0.07] bg-black/20 px-1.5 py-3">
-					{panelModes.map((mode) => {
-						const Icon = mode.icon;
-						const isActive = activePanelMode === mode.id && !hasTimelineSelection;
-						return (
-							<button
-								key={mode.id}
-								type="button"
-								title={mode.label}
-								disabled={mode.disabled}
-								onClick={() => {
-									if (mode.id === "layout" && mode.disabled) return;
-									setActivePanelMode(mode.id);
-								}}
-								className={cn(
-									"flex h-8 w-8 items-center justify-center rounded-lg border transition-all",
-									mode.disabled
-										? "cursor-not-allowed border-transparent text-slate-700"
-										: isActive
-											? "border-[#A855F7]/50 bg-[#A855F7]/15 text-[#A855F7] shadow-[0_0_0_1px_rgba(168,85,247,0.12)]"
-											: "border-transparent text-slate-500 hover:border-white/10 hover:bg-white/[0.06] hover:text-slate-200",
-								)}
-							>
-								<Icon className="h-4 w-4" />
-							</button>
-						);
-					})}
-					<button
-						type="button"
-						title={t("crop.cropVideo")}
-						onClick={handleCropToggle}
-						className="mt-1 flex h-8 w-8 items-center justify-center rounded-lg border border-transparent text-slate-500 transition-all hover:border-white/10 hover:bg-white/[0.06] hover:text-slate-200"
-					>
-						<Crop className="h-4 w-4" />
-					</button>
-				</div>
+				{!hideModeRail && (
+					<div className="settings-mode-rail flex w-12 shrink-0 flex-col items-center gap-1.5 border-r border-white/[0.07] bg-black/20 px-1.5 py-3">
+						{panelModes.map((mode) => {
+							const Icon = mode.icon;
+							const isActive = activePanelMode === mode.id && !hasTimelineSelection;
+							return (
+								<button
+									key={mode.id}
+									type="button"
+									title={mode.label}
+									disabled={mode.disabled}
+									onClick={() => {
+										if (mode.id === "layout" && mode.disabled) return;
+										setActivePanelMode(mode.id);
+									}}
+									className={cn(
+										"flex h-8 w-8 items-center justify-center rounded-lg border transition-all",
+										mode.disabled
+											? "cursor-not-allowed border-transparent text-slate-700"
+											: isActive
+												? "border-[#6E6BFF]/50 bg-[#6E6BFF]/15 text-[#6E6BFF] shadow-[0_0_0_1px_rgba(168,85,247,0.12)]"
+												: "border-transparent text-slate-500 hover:border-white/10 hover:bg-white/[0.06] hover:text-slate-200",
+									)}
+								>
+									<Icon className="h-4 w-4" />
+								</button>
+							);
+						})}
+						<button
+							type="button"
+							title={t("crop.cropVideo")}
+							onClick={handleCropToggle}
+							className="mt-1 flex h-8 w-8 items-center justify-center rounded-lg border border-transparent text-slate-500 transition-all hover:border-white/10 hover:bg-white/[0.06] hover:text-slate-200"
+						>
+							<Crop className="h-4 w-4" />
+						</button>
+					</div>
+				)}
 				<div className="flex-1 overflow-y-auto custom-scrollbar p-3.5 pb-0">
 					<div className="mb-3.5 flex items-center justify-between px-0.5">
 						<span className="text-sm font-semibold text-slate-100">{activeModeLabel}</span>
@@ -948,7 +968,7 @@ export function SettingsPanel({
 								<span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
 									{t("zoom.level")}
 								</span>
-								<span className="rounded-full border border-[#A855F7]/25 bg-[#A855F7]/10 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-[#A855F7]">
+								<span className="rounded-full border border-[#6E6BFF]/25 bg-[#6E6BFF]/10 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-[#6E6BFF]">
 									{(
 										selectedZoomCustomScale ??
 										(selectedZoomDepth != null
@@ -976,7 +996,7 @@ export function SettingsPanel({
 													? "opacity-100 cursor-pointer"
 													: "opacity-40 cursor-not-allowed",
 												isActive
-													? "border-[#A855F7]/70 bg-[#A855F7] text-white shadow-[0_8px_20px_rgba(168,85,247,0.18)]"
+													? "border-[#6E6BFF]/70 bg-[#6E6BFF] text-white shadow-[0_8px_20px_rgba(168,85,247,0.18)]"
 													: "border-white/[0.06] bg-white/[0.035] text-slate-400 hover:bg-white/[0.075] hover:border-white/15 hover:text-slate-200",
 											)}
 										>
@@ -1006,17 +1026,17 @@ export function SettingsPanel({
 											<SliderPrimitive.Range
 												className={cn(
 													"absolute h-full transition-colors duration-150",
-													selectedZoomCustomScale != null ? "bg-[#A855F7]" : "bg-white/20",
+													selectedZoomCustomScale != null ? "bg-[#6E6BFF]" : "bg-white/20",
 												)}
 											/>
 										</SliderPrimitive.Track>
 										<SliderPrimitive.Thumb
 											className={cn(
 												"block h-3.5 w-3.5 rounded-full border-2 shadow transition-all duration-150",
-												"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A855F7]/50",
+												"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6E6BFF]/50",
 												"disabled:pointer-events-none disabled:opacity-50 cursor-grab active:cursor-grabbing",
 												selectedZoomCustomScale != null
-													? "border-[#A855F7] bg-[#A855F7] shadow-[0_0_6px_rgba(168,85,247,0.4)]"
+													? "border-[#6E6BFF] bg-[#6E6BFF] shadow-[0_0_6px_rgba(168,85,247,0.4)]"
 													: "border-white/20 bg-[#2a2a30] hover:border-white/40",
 											)}
 										/>
@@ -1045,7 +1065,7 @@ export function SettingsPanel({
 														className={cn(
 															"h-6 w-full rounded-md border px-1 text-center transition-all duration-150 ease-out",
 															isActive
-																? "border-[#A855F7]/50 bg-[#A855F7] text-white"
+																? "border-[#6E6BFF]/50 bg-[#6E6BFF] text-white"
 																: "border-transparent bg-transparent text-slate-400 hover:bg-white/[0.06] hover:text-slate-200",
 															focusModeLocked ? "cursor-not-allowed opacity-50" : "cursor-pointer",
 														)}
@@ -1086,7 +1106,7 @@ export function SettingsPanel({
 										}
 									}}
 									onBlur={() => onZoomPreviewEnd()}
-									className="h-7 w-full select-none rounded-md border border-white/[0.08] bg-white/[0.04] text-[10px] font-semibold text-slate-300 transition-all duration-150 ease-out hover:bg-white/[0.08] hover:text-slate-100 active:border-[#A855F7]/50 active:bg-[#A855F7] active:text-white cursor-pointer"
+									className="h-7 w-full select-none rounded-md border border-white/[0.08] bg-white/[0.04] text-[10px] font-semibold text-slate-300 transition-all duration-150 ease-out hover:bg-white/[0.08] hover:text-slate-100 active:border-[#6E6BFF]/50 active:bg-[#6E6BFF] active:text-white cursor-pointer"
 								>
 									{t("zoom.previewHold")}
 								</Button>
@@ -1174,7 +1194,7 @@ export function SettingsPanel({
 													className={cn(
 														"h-8 w-full rounded-lg border px-1 text-center transition-all duration-150 ease-out cursor-pointer",
 														isActive
-															? "border-[#A855F7]/60 bg-[#A855F7] text-white"
+															? "border-[#6E6BFF]/60 bg-[#6E6BFF] text-white"
 															: "border-white/[0.06] bg-white/[0.035] text-slate-400 hover:bg-white/[0.075] hover:border-white/15 hover:text-slate-200",
 													)}
 												>
@@ -1357,7 +1377,7 @@ export function SettingsPanel({
 								<AccordionItem value="layout" className="editor-panel-section px-3">
 									<AccordionTrigger className="py-2.5 hover:no-underline">
 										<div className="flex items-center gap-2">
-											<Sparkles className="w-4 h-4 text-[#A855F7]" />
+											<Sparkles className="w-4 h-4 text-[#6E6BFF]" />
 											<span className="text-xs font-medium">{t("layout.title")}</span>
 										</div>
 									</AccordionTrigger>
@@ -1403,7 +1423,7 @@ export function SettingsPanel({
 												<Switch
 													checked={webcamMirrored}
 													onCheckedChange={onWebcamMirroredChange}
-													className="data-[state=checked]:bg-[#A855F7] scale-90"
+													className="data-[state=checked]:bg-[#6E6BFF] scale-90"
 													aria-label={t("layout.mirrorWebcam")}
 												/>
 											</div>
@@ -1428,7 +1448,7 @@ export function SettingsPanel({
 												<Switch
 													checked={webcamReactiveZoom}
 													onCheckedChange={onWebcamReactiveZoomChange}
-													className="data-[state=checked]:bg-[#A855F7] scale-90"
+													className="data-[state=checked]:bg-[#6E6BFF] scale-90"
 													aria-label={t("layout.reactiveWebcam")}
 												/>
 											</div>
@@ -1454,7 +1474,7 @@ export function SettingsPanel({
 															className={cn(
 																"h-10 rounded-lg border flex flex-col items-center justify-center gap-0.5 transition-all",
 																webcamMaskShape === shape.value
-																	? "bg-[#A855F7] border-[#A855F7] text-white"
+																	? "bg-[#6E6BFF] border-[#6E6BFF] text-white"
 																	: "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20 text-slate-400",
 															)}
 														>
@@ -1544,9 +1564,9 @@ export function SettingsPanel({
 									<AccordionTrigger className="py-2.5 hover:no-underline">
 										<div className="flex items-center gap-2">
 											{activePanelMode === "cursor" ? (
-												<MousePointerClick className="w-4 h-4 text-[#A855F7]" />
+												<MousePointerClick className="w-4 h-4 text-[#6E6BFF]" />
 											) : (
-												<Settings2 className="w-4 h-4 text-[#A855F7]" />
+												<Settings2 className="w-4 h-4 text-[#6E6BFF]" />
 											)}
 											<span className="text-xs font-medium">{t("effects.title")}</span>
 										</div>
@@ -1562,7 +1582,7 @@ export function SettingsPanel({
 														<Switch
 															checked={showBlur}
 															onCheckedChange={onBlurChange}
-															className="data-[state=checked]:bg-[#A855F7] scale-90"
+															className="data-[state=checked]:bg-[#6E6BFF] scale-90"
 														/>
 													</div>
 												</div>
@@ -1586,7 +1606,7 @@ export function SettingsPanel({
 															min={0}
 															max={1}
 															step={0.01}
-															className="w-full [&_[role=slider]]:bg-[#A855F7] [&_[role=slider]]:border-[#A855F7] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+															className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
 														/>
 													</div>
 													<div className="p-2 rounded-lg editor-control-surface">
@@ -1605,7 +1625,7 @@ export function SettingsPanel({
 															min={0}
 															max={1}
 															step={0.01}
-															className="w-full [&_[role=slider]]:bg-[#A855F7] [&_[role=slider]]:border-[#A855F7] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+															className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
 														/>
 													</div>
 													<div className="p-2 rounded-lg editor-control-surface">
@@ -1624,7 +1644,7 @@ export function SettingsPanel({
 															min={0}
 															max={64}
 															step={0.5}
-															className="w-full [&_[role=slider]]:bg-[#A855F7] [&_[role=slider]]:border-[#A855F7] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+															className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
 														/>
 													</div>
 													<div
@@ -1646,7 +1666,7 @@ export function SettingsPanel({
 															max={100}
 															step={1}
 															disabled={webcamLayoutPreset === "vertical-stack"}
-															className="w-full [&_[role=slider]]:bg-[#A855F7] [&_[role=slider]]:border-[#A855F7] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+															className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
 														/>
 													</div>
 												</div>
@@ -1662,7 +1682,7 @@ export function SettingsPanel({
 													<Switch
 														checked={showCursor}
 														onCheckedChange={onShowCursorChange}
-														className="data-[state=checked]:bg-[#A855F7] scale-90"
+														className="data-[state=checked]:bg-[#6E6BFF] scale-90"
 													/>
 												</div>
 												{showCursor && (
@@ -1686,7 +1706,7 @@ export function SettingsPanel({
 															<Switch
 																checked={cursorClipToBounds}
 																onCheckedChange={onCursorClipToBoundsChange}
-																className="data-[state=checked]:bg-[#A855F7] scale-90"
+																className="data-[state=checked]:bg-[#6E6BFF] scale-90"
 																aria-label={t("cursor.clipToBounds")}
 															/>
 														</div>
@@ -1709,8 +1729,8 @@ export function SettingsPanel({
 																				className={cn(
 																					"flex items-center justify-center w-8 h-8 rounded-lg border overflow-hidden transition-all duration-150 shadow-sm bg-white/5",
 																					isSelected
-																						? "border-[#A855F7] ring-1 ring-[#A855F7]/30"
-																						: "border-white/10 hover:border-[#A855F7]/40 opacity-80 hover:opacity-100",
+																						? "border-[#6E6BFF] ring-1 ring-[#6E6BFF]/30"
+																						: "border-white/10 hover:border-[#6E6BFF]/40 opacity-80 hover:opacity-100",
 																				)}
 																			>
 																				<img
@@ -1741,7 +1761,7 @@ export function SettingsPanel({
 																	min={0.5}
 																	max={10}
 																	step={0.1}
-																	className="w-full [&_[role=slider]]:bg-[#A855F7] [&_[role=slider]]:border-[#A855F7] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+																	className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
 																/>
 															</div>
 															<div className="p-2 rounded-lg bg-white/5 border border-white/5">
@@ -1759,7 +1779,7 @@ export function SettingsPanel({
 																	min={0}
 																	max={1}
 																	step={0.01}
-																	className="w-full [&_[role=slider]]:bg-[#A855F7] [&_[role=slider]]:border-[#A855F7] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+																	className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
 																/>
 															</div>
 															<div className="p-2 rounded-lg bg-white/5 border border-white/5">
@@ -1777,7 +1797,7 @@ export function SettingsPanel({
 																	min={0}
 																	max={1}
 																	step={0.01}
-																	className="w-full [&_[role=slider]]:bg-[#A855F7] [&_[role=slider]]:border-[#A855F7] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+																	className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
 																/>
 															</div>
 															<div className="p-2 rounded-lg bg-white/5 border border-white/5">
@@ -1795,7 +1815,7 @@ export function SettingsPanel({
 																	min={0}
 																	max={5}
 																	step={0.1}
-																	className="w-full [&_[role=slider]]:bg-[#A855F7] [&_[role=slider]]:border-[#A855F7] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+																	className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
 																/>
 															</div>
 														</div>
@@ -1811,7 +1831,7 @@ export function SettingsPanel({
 								<AccordionItem value="background" className="editor-panel-section px-3">
 									<AccordionTrigger className="py-2.5 hover:no-underline">
 										<div className="flex items-center gap-2">
-											<Paintbrush className="w-4 h-4 text-[#A855F7]" />
+											<Paintbrush className="w-4 h-4 text-[#6E6BFF]" />
 											<span className="text-xs font-medium">{t("background.title")}</span>
 										</div>
 									</AccordionTrigger>
@@ -1820,19 +1840,19 @@ export function SettingsPanel({
 											<TabsList className="mb-2 bg-white/5 border border-white/5 p-0.5 w-full grid grid-cols-3 h-7 rounded-lg">
 												<TabsTrigger
 													value="image"
-													className="data-[state=active]:bg-[#A855F7] data-[state=active]:text-white text-slate-400 text-[10px] py-1 rounded-md transition-all"
+													className="data-[state=active]:bg-[#6E6BFF] data-[state=active]:text-white text-slate-400 text-[10px] py-1 rounded-md transition-all"
 												>
 													{t("background.image")}
 												</TabsTrigger>
 												<TabsTrigger
 													value="color"
-													className="data-[state=active]:bg-[#A855F7] data-[state=active]:text-white text-slate-400 text-[10px] py-1 rounded-md transition-all"
+													className="data-[state=active]:bg-[#6E6BFF] data-[state=active]:text-white text-slate-400 text-[10px] py-1 rounded-md transition-all"
 												>
 													{t("background.color")}
 												</TabsTrigger>
 												<TabsTrigger
 													value="gradient"
-													className="data-[state=active]:bg-[#A855F7] data-[state=active]:text-white text-slate-400 text-[10px] py-1 rounded-md transition-all"
+													className="data-[state=active]:bg-[#6E6BFF] data-[state=active]:text-white text-slate-400 text-[10px] py-1 rounded-md transition-all"
 												>
 													{t("background.gradient")}
 												</TabsTrigger>
@@ -1850,7 +1870,7 @@ export function SettingsPanel({
 													<Button
 														onClick={() => fileInputRef.current?.click()}
 														variant="outline"
-														className="w-full gap-2 bg-white/5 text-slate-200 border-white/10 hover:bg-[#A855F7] hover:text-white hover:border-[#A855F7] transition-all h-7 text-[10px]"
+														className="w-full gap-2 bg-white/5 text-slate-200 border-white/10 hover:bg-[#6E6BFF] hover:text-white hover:border-[#6E6BFF] transition-all h-7 text-[10px]"
 													>
 														<Upload className="w-3 h-3" />
 														{t("background.uploadCustom")}
@@ -1865,8 +1885,8 @@ export function SettingsPanel({
 																	className={cn(
 																		"aspect-square w-8 h-8 rounded-lg border overflow-hidden cursor-pointer transition-all duration-150 relative group shadow-sm",
 																		isSelected
-																			? "border-[#A855F7] ring-1 ring-[#A855F7]/30"
-																			: "border-white/10 hover:border-[#A855F7]/40 opacity-80 hover:opacity-100 bg-white/5",
+																			? "border-[#6E6BFF] ring-1 ring-[#6E6BFF]/30"
+																			: "border-white/10 hover:border-[#6E6BFF]/40 opacity-80 hover:opacity-100 bg-white/5",
 																	)}
 																	style={{
 																		backgroundImage: `url(${imageUrl})`,
@@ -1895,8 +1915,8 @@ export function SettingsPanel({
 																	className={cn(
 																		"aspect-square w-8 h-8 rounded-lg border overflow-hidden cursor-pointer transition-all duration-150 shadow-sm",
 																		isSelected
-																			? "border-[#A855F7] ring-1 ring-[#A855F7]/30"
-																			: "border-white/10 hover:border-[#A855F7]/40 opacity-80 hover:opacity-100 bg-white/5",
+																			? "border-[#6E6BFF] ring-1 ring-[#6E6BFF]/30"
+																			: "border-white/10 hover:border-[#6E6BFF]/40 opacity-80 hover:opacity-100 bg-white/5",
 																	)}
 																	style={{
 																		backgroundImage: `url(${previewUrl})`,
@@ -1934,8 +1954,8 @@ export function SettingsPanel({
 																className={cn(
 																	"aspect-square w-8 h-8 rounded-lg border overflow-hidden cursor-pointer transition-all duration-150 shadow-sm",
 																	gradient === g
-																		? "border-[#A855F7] ring-1 ring-[#A855F7]/30"
-																		: "border-white/10 hover:border-[#A855F7]/40 opacity-80 hover:opacity-100 bg-white/5",
+																		? "border-[#6E6BFF] ring-1 ring-[#6E6BFF]/30"
+																		: "border-white/10 hover:border-[#6E6BFF]/40 opacity-80 hover:opacity-100 bg-white/5",
 																)}
 																style={{ background: g }}
 																aria-label={t("background.gradientLabel", {
@@ -1973,7 +1993,7 @@ export function SettingsPanel({
 														min={0}
 														max={100}
 														step={1}
-														className="w-full [&_[role=slider]]:bg-[#A855F7] [&_[role=slider]]:border-[#A855F7] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+														className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
 													/>
 												</div>
 												<div className="p-2 rounded-lg editor-control-surface">
@@ -1992,7 +2012,7 @@ export function SettingsPanel({
 														min={0}
 														max={64}
 														step={0.5}
-														className="w-full [&_[role=slider]]:bg-[#A855F7] [&_[role=slider]]:border-[#A855F7] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+														className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
 													/>
 												</div>
 											</div>
@@ -2004,7 +2024,7 @@ export function SettingsPanel({
 								<AccordionItem value="timeline" className="editor-panel-section px-3">
 									<AccordionTrigger className="py-2.5 hover:no-underline">
 										<div className="flex items-center gap-2">
-											<Timer className="w-4 h-4 text-[#A855F7]" />
+											<Timer className="w-4 h-4 text-[#6E6BFF]" />
 											<span className="text-xs font-medium">{t("timeline.title")}</span>
 										</div>
 									</AccordionTrigger>
@@ -2016,7 +2036,7 @@ export function SettingsPanel({
 											<Switch
 												checked={showTrimWaveform}
 												onCheckedChange={onTrimWaveformChange}
-												className="data-[state=checked]:bg-[#A855F7] scale-90 ml-2 shrink-0"
+												className="data-[state=checked]:bg-[#6E6BFF] scale-90 ml-2 shrink-0"
 											/>
 										</div>
 									</AccordionContent>
@@ -2072,7 +2092,7 @@ export function SettingsPanel({
 											max={max}
 											value={getCropPixelValue(field)}
 											onChange={(e) => handleCropNumericChange(field, Number(e.target.value))}
-											className="w-[90px] h-8 rounded-md border border-white/10 bg-white/5 px-2 text-xs text-slate-200 outline-none focus:border-[#A855F7]/50 focus:ring-1 focus:ring-[#A855F7]/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+											className="w-[90px] h-8 rounded-md border border-white/10 bg-white/5 px-2 text-xs text-slate-200 outline-none focus:border-[#6E6BFF]/50 focus:ring-1 focus:ring-[#6E6BFF]/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
 										/>
 									</div>
 								))}
@@ -2085,7 +2105,7 @@ export function SettingsPanel({
 										<select
 											value={cropAspectRatio}
 											onChange={(e) => applyCropAspectPreset(e.target.value)}
-											className="h-8 rounded-md border border-white/10 bg-[#1a1a1f] px-2 text-xs text-slate-200 outline-none focus:border-[#A855F7]/50 cursor-pointer"
+											className="h-8 rounded-md border border-white/10 bg-[#1a1a1f] px-2 text-xs text-slate-200 outline-none focus:border-[#6E6BFF]/50 cursor-pointer"
 										>
 											<option value="" className="bg-[#1a1a1f] text-slate-200">
 												{t("crop.free")}
@@ -2115,7 +2135,7 @@ export function SettingsPanel({
 											className={cn(
 												"h-8 w-8 flex items-center justify-center rounded-md border transition-all",
 												cropAspectLocked
-													? "border-[#A855F7]/50 bg-[#A855F7]/10 text-[#A855F7]"
+													? "border-[#6E6BFF]/50 bg-[#6E6BFF]/10 text-[#6E6BFF]"
 													: "border-white/10 bg-white/5 text-slate-400 hover:text-slate-200",
 											)}
 											title={
@@ -2140,7 +2160,7 @@ export function SettingsPanel({
 								<Button
 									onClick={() => setShowCropDropdown(false)}
 									size="lg"
-									className="bg-[#A855F7] hover:bg-[#A855F7]/90 text-white"
+									className="bg-[#6E6BFF] hover:bg-[#6E6BFF]/90 text-white"
 								>
 									{t("crop.done")}
 								</Button>
@@ -2160,7 +2180,7 @@ export function SettingsPanel({
 								className={cn(
 									"flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border transition-all text-xs font-medium",
 									exportFormat === "mp4"
-										? "bg-[#A855F7]/10 border-[#A855F7]/50 text-white"
+										? "bg-[#6E6BFF]/10 border-[#6E6BFF]/50 text-white"
 										: "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-slate-200",
 								)}
 							>
@@ -2173,7 +2193,7 @@ export function SettingsPanel({
 								className={cn(
 									"flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border transition-all text-xs font-medium",
 									exportFormat === "gif"
-										? "bg-[#A855F7]/10 border-[#A855F7]/50 text-white"
+										? "bg-[#6E6BFF]/10 border-[#6E6BFF]/50 text-white"
 										: "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-slate-200",
 								)}
 							>
@@ -2185,7 +2205,7 @@ export function SettingsPanel({
 						{LIGHTNING_PIPELINE_ENABLED && exportFormat === "mp4" && (
 							<div className="mb-3 flex items-center justify-between px-0.5">
 								<div className="flex items-center gap-1.5">
-									<div className="w-1.5 h-1.5 rounded-full bg-[#A855F7] animate-pulse" />
+									<div className="w-1.5 h-1.5 rounded-full bg-[#6E6BFF] animate-pulse" />
 									<span className="text-[10px] font-medium text-slate-300">Lightning</span>
 									<span className="text-[8px] font-medium text-amber-300/80 bg-amber-300/10 px-1 py-0.5 rounded">
 										Beta
@@ -2335,7 +2355,7 @@ export function SettingsPanel({
 										<button
 											type="button"
 											onClick={applyRecommendedExport}
-											className="font-medium text-[#A855F7] hover:text-[#C084FC] transition-colors"
+											className="font-medium text-[#6E6BFF] hover:text-[#C084FC] transition-colors"
 											title="Best balance of quality, size, and export speed"
 										>
 											Use recommended
@@ -2393,7 +2413,7 @@ export function SettingsPanel({
 										<Switch
 											checked={gifLoop}
 											onCheckedChange={onGifLoopChange}
-											className="data-[state=checked]:bg-[#A855F7] scale-75"
+											className="data-[state=checked]:bg-[#6E6BFF] scale-75"
 										/>
 									</div>
 								</div>
@@ -2416,7 +2436,7 @@ export function SettingsPanel({
 							type="button"
 							size="lg"
 							onClick={onExport}
-							className="w-full py-5 text-sm font-semibold flex items-center justify-center gap-2 bg-gradient-to-r from-[#A855F7] to-[#22D3EE] text-white rounded-xl shadow-lg shadow-[#A855F7]/30 hover:shadow-[#A855F7]/40 hover:scale-[1.01] active:scale-[0.99] transition-all duration-200"
+							className="w-full py-5 text-sm font-semibold flex items-center justify-center gap-2 bg-gradient-to-r from-[#6E6BFF] to-[#22D3EE] text-white rounded-xl shadow-lg shadow-[#6E6BFF]/30 hover:shadow-[#6E6BFF]/40 hover:scale-[1.01] active:scale-[0.99] transition-all duration-200"
 						>
 							<Download className="w-4 h-4" />
 							{exportFormat === "gif" ? t("export.gifButton") : t("export.videoButton")}

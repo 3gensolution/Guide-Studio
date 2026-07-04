@@ -58,7 +58,8 @@
 		"on": "вкл",
 		"shadow": "Тень",
 		"roundness": "Скругление",
-		"padding": "Отступ"
+		"padding": "Отступ",
+		"videoFrame": "Рамка видео"
 	},
 	"background": {
 		"title": "Фон",

@@ -58,7 +58,8 @@
 		"shadow": "Sombra",
 		"roundness": "Redondez",
 		"padding": "Relleno",
-		"on": "activado"
+		"on": "activado",
+		"videoFrame": "Marco de vídeo"
 	},
 	"background": {
 		"title": "Fondo",

@@ -58,7 +58,8 @@
 		"shadow": "阴影",
 		"roundness": "圆角",
 		"padding": "内边距",
-		"on": "开"
+		"on": "开",
+		"videoFrame": "视频边框"
 	},
 	"background": {
 		"title": "背景",

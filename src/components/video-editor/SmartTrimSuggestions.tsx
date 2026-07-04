@@ -78,7 +78,7 @@ export function SmartTrimSuggestions({
 	}
 
 	function confidenceColor(confidence: number): string {
-		if (confidence >= 0.8) return "text-[#A855F7]";
+		if (confidence >= 0.8) return "text-[#6E6BFF]";
 		if (confidence >= 0.6) return "text-yellow-400";
 		return "text-orange-400";
 	}

@@ -147,7 +147,7 @@ export function ExportDialog({
 							<div className="relative mb-6">
 								{isExporting ? (
 									<>
-										<div className="w-[72px] h-[72px] rounded-full bg-[#A855F7]/[0.06] flex items-center justify-center">
+										<div className="w-[72px] h-[72px] rounded-full bg-[#6E6BFF]/[0.06] flex items-center justify-center">
 											<img src={guideLogo} alt="" className="w-9 h-9 object-contain" />
 										</div>
 										{/* Spinning gradient ring */}
@@ -165,7 +165,7 @@ export function ExportDialog({
 													y2="0%"
 												>
 													<stop offset="0%" stopColor="#22D3EE" />
-													<stop offset="100%" stopColor="#A855F7" />
+													<stop offset="100%" stopColor="#6E6BFF" />
 												</linearGradient>
 											</defs>
 											<circle
@@ -173,7 +173,7 @@ export function ExportDialog({
 												cy="36"
 												r="35"
 												fill="none"
-												stroke="rgba(168, 85, 247, 0.12)"
+												stroke="rgba(110, 107, 255, 0.12)"
 												strokeWidth="1"
 											/>
 											<circle
@@ -218,7 +218,7 @@ export function ExportDialog({
 												<span className="text-[16px] text-white/25 ml-0.5">%</span>
 											</>
 										) : (
-											<Loader2 className="w-6 h-6 text-[#A855F7]/60 animate-spin mx-auto" />
+											<Loader2 className="w-6 h-6 text-[#6E6BFF]/60 animate-spin mx-auto" />
 										)}
 									</div>
 
@@ -229,7 +229,7 @@ export function ExportDialog({
 												className="h-full rounded-full transition-all duration-700 ease-out"
 												style={{
 													width: `${Math.min(percentage, 100)}%`,
-													background: "linear-gradient(90deg, #22D3EE, #A855F7)",
+													background: "linear-gradient(90deg, #22D3EE, #6E6BFF)",
 												}}
 											/>
 										) : (
@@ -237,7 +237,7 @@ export function ExportDialog({
 												<div
 													className="absolute h-full w-1/4 rounded-full"
 													style={{
-														background: "linear-gradient(90deg, #22D3EE, #A855F7)",
+														background: "linear-gradient(90deg, #22D3EE, #6E6BFF)",
 														opacity: 0.6,
 														animation: "exportIndeterminate 1.8s ease-in-out infinite",
 													}}

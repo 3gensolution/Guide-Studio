@@ -15,7 +15,7 @@ function getBarColor(level: number, threshold: number) {
 	if (!level || level < threshold) return "bg-slate-700";
 	if (threshold > 80) return "bg-red-500";
 	if (threshold > 60) return "bg-yellow-500";
-	if (threshold > 40) return "bg-[#A855F7]";
+	if (threshold > 40) return "bg-[#6E6BFF]";
 	return "bg-[#22D3EE]";
 }
 

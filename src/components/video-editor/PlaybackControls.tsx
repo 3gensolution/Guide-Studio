@@ -11,6 +11,8 @@ interface PlaybackControlsProps {
 	onToggleFullscreen?: () => void;
 	onTogglePlayPause: () => void;
 	onSeek: (time: number) => void;
+	/** "docked" renders flat for the timeline header; "floating" keeps the overlay pill. */
+	variant?: "floating" | "docked";
 }
 
 export default function PlaybackControls({
@@ -21,6 +23,7 @@ export default function PlaybackControls({
 	onToggleFullscreen,
 	onTogglePlayPause,
 	onSeek,
+	variant = "floating",
 }: PlaybackControlsProps) {
 	const t = useScopedT("common");
 
@@ -38,7 +41,14 @@ export default function PlaybackControls({
 	const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
 	return (
-		<div className="flex items-center gap-2 px-1 py-0.5 rounded-full bg-black/60 backdrop-blur-md border border-white/10 shadow-xl transition-all duration-300 hover:bg-black/70 hover:border-white/20">
+		<div
+			className={cn(
+				"flex items-center gap-2",
+				variant === "docked"
+					? "w-full px-1"
+					: "px-1 py-0.5 rounded-full bg-black/60 backdrop-blur-md border border-white/10 shadow-xl transition-all duration-300 hover:bg-black/70 hover:border-white/20",
+			)}
+		>
 			<Button
 				onClick={onTogglePlayPause}
 				size="icon"
@@ -64,7 +74,7 @@ export default function PlaybackControls({
 			<div className="flex-1 relative h-6 flex items-center group">
 				{/* Custom Track Background */}
 				<div className="absolute left-0 right-0 h-0.5 bg-white/10 rounded-full overflow-hidden">
-					<div className="h-full bg-[#A855F7] rounded-full" style={{ width: `${progress}%` }} />
+					<div className="h-full bg-[#6E6BFF] rounded-full" style={{ width: `${progress}%` }} />
 				</div>
 
 				{/* Interactive Input */}

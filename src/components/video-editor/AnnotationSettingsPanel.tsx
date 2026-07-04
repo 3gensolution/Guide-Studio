@@ -185,21 +185,21 @@ export function AnnotationSettingsPanel({
 					<TabsList className="mb-4 bg-white/[0.035] border border-white/[0.06] p-0.5 w-full grid grid-cols-3 h-9 rounded-xl">
 						<TabsTrigger
 							value="text"
-							className="data-[state=active]:bg-[#A855F7] data-[state=active]:text-white text-slate-400 rounded-lg transition-all gap-1.5 text-[11px]"
+							className="data-[state=active]:bg-[#6E6BFF] data-[state=active]:text-white text-slate-400 rounded-lg transition-all gap-1.5 text-[11px]"
 						>
 							<Type className="w-4 h-4" />
 							{t("annotation.typeText")}
 						</TabsTrigger>
 						<TabsTrigger
 							value="image"
-							className="data-[state=active]:bg-[#A855F7] data-[state=active]:text-white text-slate-400 rounded-lg transition-all gap-1.5 text-[11px]"
+							className="data-[state=active]:bg-[#6E6BFF] data-[state=active]:text-white text-slate-400 rounded-lg transition-all gap-1.5 text-[11px]"
 						>
 							<ImageIcon className="w-4 h-4" />
 							{t("annotation.typeImage")}
 						</TabsTrigger>
 						<TabsTrigger
 							value="figure"
-							className="data-[state=active]:bg-[#A855F7] data-[state=active]:text-white text-slate-400 rounded-lg transition-all gap-1.5 text-[11px]"
+							className="data-[state=active]:bg-[#6E6BFF] data-[state=active]:text-white text-slate-400 rounded-lg transition-all gap-1.5 text-[11px]"
 						>
 							<svg
 								className="w-4 h-4"
@@ -225,7 +225,7 @@ export function AnnotationSettingsPanel({
 								onChange={(e) => onContentChange(e.target.value)}
 								placeholder={t("annotation.textPlaceholder")}
 								rows={5}
-								className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-slate-200 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-[#A855F7] focus:border-transparent resize-none"
+								className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-slate-200 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-[#6E6BFF] focus:border-transparent resize-none"
 							/>
 						</div>
 
@@ -343,7 +343,7 @@ export function AnnotationSettingsPanel({
 												fontWeight: annotation.style.fontWeight === "bold" ? "normal" : "bold",
 											})
 										}
-										className="h-8 w-8 data-[state=on]:bg-[#A855F7] data-[state=on]:text-white text-slate-400 hover:bg-white/5 hover:text-slate-200"
+										className="h-8 w-8 data-[state=on]:bg-[#6E6BFF] data-[state=on]:text-white text-slate-400 hover:bg-white/5 hover:text-slate-200"
 									>
 										<Bold className="h-4 w-4" />
 									</ToggleGroupItem>
@@ -356,7 +356,7 @@ export function AnnotationSettingsPanel({
 												fontStyle: annotation.style.fontStyle === "italic" ? "normal" : "italic",
 											})
 										}
-										className="h-8 w-8 data-[state=on]:bg-[#A855F7] data-[state=on]:text-white text-slate-400 hover:bg-white/5 hover:text-slate-200"
+										className="h-8 w-8 data-[state=on]:bg-[#6E6BFF] data-[state=on]:text-white text-slate-400 hover:bg-white/5 hover:text-slate-200"
 									>
 										<Italic className="h-4 w-4" />
 									</ToggleGroupItem>
@@ -370,7 +370,7 @@ export function AnnotationSettingsPanel({
 													annotation.style.textDecoration === "underline" ? "none" : "underline",
 											})
 										}
-										className="h-8 w-8 data-[state=on]:bg-[#A855F7] data-[state=on]:text-white text-slate-400 hover:bg-white/5 hover:text-slate-200"
+										className="h-8 w-8 data-[state=on]:bg-[#6E6BFF] data-[state=on]:text-white text-slate-400 hover:bg-white/5 hover:text-slate-200"
 									>
 										<Underline className="h-4 w-4" />
 									</ToggleGroupItem>
@@ -385,7 +385,7 @@ export function AnnotationSettingsPanel({
 										value="left"
 										aria-label="Align left"
 										onClick={() => onStyleChange({ textAlign: "left" })}
-										className="h-8 w-8 data-[state=on]:bg-[#A855F7] data-[state=on]:text-white text-slate-400 hover:bg-white/5 hover:text-slate-200"
+										className="h-8 w-8 data-[state=on]:bg-[#6E6BFF] data-[state=on]:text-white text-slate-400 hover:bg-white/5 hover:text-slate-200"
 									>
 										<AlignLeft className="h-4 w-4" />
 									</ToggleGroupItem>
@@ -393,7 +393,7 @@ export function AnnotationSettingsPanel({
 										value="center"
 										aria-label="Align center"
 										onClick={() => onStyleChange({ textAlign: "center" })}
-										className="h-8 w-8 data-[state=on]:bg-[#A855F7] data-[state=on]:text-white text-slate-400 hover:bg-white/5 hover:text-slate-200"
+										className="h-8 w-8 data-[state=on]:bg-[#6E6BFF] data-[state=on]:text-white text-slate-400 hover:bg-white/5 hover:text-slate-200"
 									>
 										<AlignCenter className="h-4 w-4" />
 									</ToggleGroupItem>
@@ -401,7 +401,7 @@ export function AnnotationSettingsPanel({
 										value="right"
 										aria-label="Align right"
 										onClick={() => onStyleChange({ textAlign: "right" })}
-										className="h-8 w-8 data-[state=on]:bg-[#A855F7] data-[state=on]:text-white text-slate-400 hover:bg-white/5 hover:text-slate-200"
+										className="h-8 w-8 data-[state=on]:bg-[#6E6BFF] data-[state=on]:text-white text-slate-400 hover:bg-white/5 hover:text-slate-200"
 									>
 										<AlignRight className="h-4 w-4" />
 									</ToggleGroupItem>
@@ -509,7 +509,7 @@ export function AnnotationSettingsPanel({
 						<Button
 							onClick={() => fileInputRef.current?.click()}
 							variant="outline"
-							className="w-full gap-2 bg-white/5 text-slate-200 border-white/10 hover:bg-[#A855F7] hover:text-white hover:border-[#A855F7] transition-all py-8"
+							className="w-full gap-2 bg-white/5 text-slate-200 border-white/10 hover:bg-[#6E6BFF] hover:text-white hover:border-[#6E6BFF] transition-all py-8"
 						>
 							<Upload className="w-5 h-5" />
 							{t("annotation.uploadImage")}
@@ -562,7 +562,7 @@ export function AnnotationSettingsPanel({
 											className={cn(
 												"h-16 rounded-lg border flex items-center justify-center transition-all p-2",
 												annotation.figureData?.arrowDirection === direction
-													? "bg-[#A855F7] border-[#A855F7]"
+													? "bg-[#6E6BFF] border-[#6E6BFF]"
 													: "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20",
 											)}
 										>
@@ -614,17 +614,17 @@ export function AnnotationSettingsPanel({
 									>
 										<div
 											className="w-5 h-5 rounded-full border border-white/20"
-											style={{ backgroundColor: annotation.figureData?.color || "#A855F7" }}
+											style={{ backgroundColor: annotation.figureData?.color || "#6E6BFF" }}
 										/>
 										<span className="text-xs text-slate-300 truncate flex-1 text-left">
-											{annotation.figureData?.color || "#A855F7"}
+											{annotation.figureData?.color || "#6E6BFF"}
 										</span>
 										<ChevronDown className="h-3 w-3 opacity-50" />
 									</Button>
 								</PopoverTrigger>
 								<PopoverContent className="w-[260px] p-3 bg-[#1a1a1c] border border-white/10 rounded-xl shadow-xl">
 									<Block
-										color={annotation.figureData?.color || "#A855F7"}
+										color={annotation.figureData?.color || "#6E6BFF"}
 										colors={colorPalette}
 										onChange={(color) => {
 											const newFigureData: FigureData = {

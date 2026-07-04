@@ -2,8 +2,8 @@
 	position: relative;
 	border-radius: 10px;
 	-corner-smoothing: antialiased;
-	background: linear-gradient(180deg, rgba(168, 85, 247, 0.28), rgba(34, 211, 238, 0.2));
-	border: 1px solid rgba(168, 85, 247, 0.36);
+	background: linear-gradient(180deg, rgba(110, 107, 255, 0.28), rgba(34, 211, 238, 0.2));
+	border: 1px solid rgba(110, 107, 255, 0.36);
 	box-shadow:
 		0 1px 0 rgba(255, 255, 255, 0.1) inset,
 		0 8px 22px rgba(0, 0, 0, 0.22);
@@ -12,16 +12,16 @@
 }
 
 .glassGreen:hover {
-	background: linear-gradient(180deg, rgba(168, 85, 247, 0.36), rgba(34, 211, 238, 0.25));
-	border-color: rgba(168, 85, 247, 0.62);
+	background: linear-gradient(180deg, rgba(110, 107, 255, 0.36), rgba(34, 211, 238, 0.25));
+	border-color: rgba(110, 107, 255, 0.62);
 }
 
 .glassGreen.selected {
-	background: linear-gradient(180deg, rgba(168, 85, 247, 0.48), rgba(34, 211, 238, 0.32));
-	border-color: #A855F7;
+	background: linear-gradient(180deg, rgba(110, 107, 255, 0.48), rgba(34, 211, 238, 0.32));
+	border-color: #6E6BFF;
 	box-shadow:
-		0 0 0 1px rgba(168, 85, 247, 0.95),
-		0 0 0 4px rgba(168, 85, 247, 0.14),
+		0 0 0 1px rgba(110, 107, 255, 0.95),
+		0 0 0 4px rgba(110, 107, 255, 0.14),
 		0 12px 26px rgba(0, 0, 0, 0.28);
 	z-index: 10;
 }
@@ -86,9 +86,9 @@
 	position: relative;
 	border-radius: 10px;
 	-corner-smoothing: antialiased;
-	background: rgba(168, 85, 247, 0.15);
-	border: 1px solid rgba(168, 85, 247, 0.3);
-	box-shadow: 0 2px 12px 0 rgba(168, 85, 247, 0.1) inset;
+	background: rgba(110, 107, 255, 0.15);
+	border: 1px solid rgba(110, 107, 255, 0.3);
+	box-shadow: 0 2px 12px 0 rgba(110, 107, 255, 0.1) inset;
 	margin: 3px 0;
 	backdrop-filter: blur(4px);
 	-webkit-backdrop-filter: blur(4px);
@@ -96,17 +96,17 @@
 }
 
 .glassAmber:hover {
-	background: rgba(168, 85, 247, 0.25);
-	border-color: rgba(168, 85, 247, 0.5);
-	box-shadow: 0 4px 20px 0 rgba(168, 85, 247, 0.2) inset;
+	background: rgba(110, 107, 255, 0.25);
+	border-color: rgba(110, 107, 255, 0.5);
+	box-shadow: 0 4px 20px 0 rgba(110, 107, 255, 0.2) inset;
 }
 
 .glassAmber.selected {
-	background: rgba(168, 85, 247, 0.35);
-	border-color: #a855f7;
+	background: rgba(110, 107, 255, 0.35);
+	border-color: #6E6BFF;
 	box-shadow:
-		0 0 0 1px #a855f7,
-		0 4px 20px 0 rgba(168, 85, 247, 0.3) inset;
+		0 0 0 1px #6E6BFF,
+		0 4px 20px 0 rgba(110, 107, 255, 0.3) inset;
 	z-index: 10;
 }
 

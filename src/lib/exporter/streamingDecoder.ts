@@ -91,6 +91,7 @@ export function getDecodedFrameTimelineOffsetUs(
 export class StreamingVideoDecoder {
 	private demuxer: WebDemuxer | null = null;
 	private decoder: VideoDecoder | null = null;
+	private activeReader: { cancel(): unknown } | null = null;
 	private cancelled = false;
 	private metadata: DecodedVideoInfo | null = null;
 	private pendingFrames: VideoFrame[] = [];
@@ -222,9 +223,78 @@ export class StreamingVideoDecoder {
 			throw new Error("Must call loadMetadata() before decodeAll()");
 		}
 
-		const decoderConfig = await this.demuxer.getDecoderConfig("video");
-		const codec = this.metadata.codec.toLowerCase();
-		const shouldPreferSoftwareDecode = codec.includes("av01") || codec.includes("av1");
+		const baseConfig = await this.demuxer.getDecoderConfig("video");
+		const candidates = await this.buildDecoderConfigCandidates(baseConfig);
+
+		let emittedFrames = 0;
+		const countingOnFrame: OnFrameCallback = (frame, exportTimestampUs, sourceMs, cursorMs) => {
+			emittedFrames++;
+			return onFrame(frame, exportTimestampUs, sourceMs, cursorMs);
+		};
+
+		for (let i = 0; i < candidates.length; i++) {
+			try {
+				await this.runDecodePass(
+					candidates[i],
+					targetFrameRate,
+					trimRegions,
+					speedRegions,
+					countingOnFrame,
+				);
+				return;
+			} catch (error) {
+				// A fallback config can only be swapped in cleanly before any frame has
+				// been handed to the consumer; afterwards a restart would duplicate output.
+				const canRetry = i < candidates.length - 1 && emittedFrames === 0 && !this.cancelled;
+				if (!canRetry) throw error;
+				this.cleanupPassState();
+				console.warn(
+					`[StreamingVideoDecoder] Decode with hardwareAcceleration="${candidates[i].hardwareAcceleration ?? "no-preference"}" failed before the first frame; retrying with fallback:`,
+					error,
+				);
+			}
+		}
+	}
+
+	/**
+	 * Hardware decode is dramatically faster where available, so prefer it and keep
+	 * the demuxer-provided config as a fallback. AV1 hardware decoders have been
+	 * unreliable with this pipeline, so AV1 keeps preferring software.
+	 */
+	private async buildDecoderConfigCandidates(
+		baseConfig: VideoDecoderConfig,
+	): Promise<VideoDecoderConfig[]> {
+		const codec = (this.metadata?.codec ?? "").toLowerCase();
+		const preference =
+			codec.includes("av01") || codec.includes("av1") ? "prefer-software" : "prefer-hardware";
+		const preferred: VideoDecoderConfig = { ...baseConfig, hardwareAcceleration: preference };
+
+		try {
+			const support = await VideoDecoder.isConfigSupported(preferred);
+			if (support.supported) {
+				console.log(`[StreamingVideoDecoder] Decoding with hardwareAcceleration="${preference}"`);
+				return [preferred, baseConfig];
+			}
+			console.log(
+				`[StreamingVideoDecoder] hardwareAcceleration="${preference}" unsupported for "${codec}", using default decoder config`,
+			);
+		} catch (error) {
+			console.warn("[StreamingVideoDecoder] Decoder support probe failed:", error);
+		}
+		return [baseConfig];
+	}
+
+	private async runDecodePass(
+		decoderConfig: VideoDecoderConfig,
+		targetFrameRate: number,
+		trimRegions: TrimRegion[] | undefined,
+		speedRegions: SpeedRegion[] | undefined,
+		onFrame: OnFrameCallback,
+	): Promise<void> {
+		if (!this.demuxer || !this.metadata) {
+			throw new Error("Must call loadMetadata() before decodeAll()");
+		}
+
 		const effectiveVideoDuration = getEffectiveVideoStreamDurationSeconds({
 			duration: this.metadata.duration,
 			streamDuration: this.metadata.streamDuration,
@@ -299,22 +369,7 @@ export class StreamingVideoDecoder {
 				notifyBackpressureProgress();
 			},
 		});
-		const preferredDecoderConfig = shouldPreferSoftwareDecode
-			? {
-					...decoderConfig,
-					hardwareAcceleration: "prefer-software" as const,
-				}
-			: decoderConfig;
-
-		try {
-			this.decoder.configure(preferredDecoderConfig);
-		} catch (error) {
-			if (!shouldPreferSoftwareDecode) {
-				throw error;
-			}
-			// Fall back to default decoder config if software preference is unsupported.
-			this.decoder.configure(decoderConfig);
-		}
+		this.decoder.configure(decoderConfig);
 
 		const getNextFrame = (): Promise<VideoFrame | null> => {
 			if (decodeError) throw decodeError;
@@ -351,6 +406,7 @@ export class StreamingVideoDecoder {
 			);
 		}
 		const reader = this.demuxer.read("video", readStartSec, readEndSec).getReader();
+		this.activeReader = reader;
 
 		// Feed chunks to decoder in background with backpressure
 		const feedPromise = (async () => {
@@ -572,6 +628,7 @@ export class StreamingVideoDecoder {
 		} catch {
 			/* already closed */
 		}
+		this.activeReader = null;
 		await feedPromise;
 		for (const f of pendingFrames) f.close();
 		pendingFrames.length = 0;
@@ -680,12 +737,47 @@ export class StreamingVideoDecoder {
 		this.cancelled = true;
 	}
 
+	/** Releases decoder/reader/frame state left behind by a failed decode pass. */
+	private cleanupPassState(): void {
+		try {
+			this.activeReader?.cancel();
+		} catch {
+			/* already closed */
+		}
+		this.activeReader = null;
+
+		for (const frame of this.pendingFrames) {
+			try {
+				frame.close();
+			} catch {
+				/* already closed */
+			}
+		}
+		this.pendingFrames.length = 0;
+
+		if (this.decoder) {
+			try {
+				if (this.decoder.state === "configured") this.decoder.close();
+			} catch {
+				/* ignore */
+			}
+			this.decoder = null;
+		}
+	}
+
 	getDemuxer() {
 		return this.demuxer;
 	}
 
 	destroy(): void {
 		this.cancelled = true;
+
+		try {
+			this.activeReader?.cancel();
+		} catch {
+			/* already closed */
+		}
+		this.activeReader = null;
 
 		if (this.decoder) {
 			try {
