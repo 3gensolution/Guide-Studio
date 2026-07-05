@@ -98,7 +98,9 @@
 	"gifSettings": {
 		"frameRate": "Tốc độ khung hình GIF",
 		"size": "Kích thước GIF",
-		"loop": "Lặp lại GIF"
+		"loop": "Lặp lại GIF",
+		"videoOnly": "Chỉ video",
+		"videoOnlyDescription": "Tệp nhỏ nhất — bỏ qua nền, thu phóng và hiệu ứng con trỏ"
 	},
 	"project": {
 		"save": "Lưu dự án",

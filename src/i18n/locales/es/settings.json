@@ -98,7 +98,9 @@
 	"gifSettings": {
 		"frameRate": "Velocidad de cuadros del GIF",
 		"size": "Tamaño del GIF",
-		"loop": "Repetir GIF"
+		"loop": "Repetir GIF",
+		"videoOnly": "Solo vídeo",
+		"videoOnlyDescription": "Archivo más pequeño: omite fondo, zoom y efectos de cursor"
 	},
 	"project": {
 		"save": "Guardar proyecto",

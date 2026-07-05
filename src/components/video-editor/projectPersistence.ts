@@ -94,6 +94,7 @@ export interface ProjectEditorState {
 	gifFrameRate: GifFrameRate;
 	gifLoop: boolean;
 	gifSizePreset: GifSizePreset;
+	gifVideoOnly?: boolean;
 	cursorTheme: string;
 	// Cursor overlay settings
 	cursorSmoothing?: number;
@@ -577,6 +578,10 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 			editor.gifSizePreset === "original"
 				? editor.gifSizePreset
 				: DEFAULT_GIF_SETTINGS.sizePreset,
+		gifVideoOnly:
+			typeof editor.gifVideoOnly === "boolean"
+				? editor.gifVideoOnly
+				: DEFAULT_GIF_SETTINGS.videoOnly,
 		// Cursor overlay settings
 		cursorSmoothing: isFiniteNumber(editor.cursorSmoothing)
 			? clamp(editor.cursorSmoothing, 0, 1)

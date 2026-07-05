@@ -96,7 +96,9 @@
 	"gifSettings": {
 		"frameRate": "Taxa de Quadros do GIF",
 		"size": "Tamanho do GIF",
-		"loop": "Loop no GIF"
+		"loop": "Loop no GIF",
+		"videoOnly": "Somente vídeo",
+		"videoOnlyDescription": "Menor arquivo — ignora fundo, zoom e efeitos do cursor"
 	},
 	"project": {
 		"save": "Salvar Projeto",

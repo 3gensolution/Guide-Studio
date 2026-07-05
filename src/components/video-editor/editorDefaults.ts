@@ -104,10 +104,12 @@ export const DEFAULT_GIF_SETTINGS: {
 	frameRate: GifFrameRate;
 	loop: boolean;
 	sizePreset: GifSizePreset;
+	videoOnly: boolean;
 	outputDimensions: typeof DEFAULT_GIF_OUTPUT_DIMENSIONS;
 } = {
 	frameRate: 15,
 	loop: true,
 	sizePreset: "medium",
+	videoOnly: false,
 	outputDimensions: DEFAULT_GIF_OUTPUT_DIMENSIONS,
 };

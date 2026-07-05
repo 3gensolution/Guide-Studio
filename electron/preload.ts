@@ -382,6 +382,21 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	) => {
 		return ipcRenderer.invoke("optimize-gif", filePath, loop, sizePreset);
 	},
+	convertVideoToGif: (
+		inputPath: string,
+		outputPath: string,
+		options: {
+			fps: number;
+			width: number;
+			height: number;
+			loop: boolean;
+			sizePreset?: "small" | "medium" | "large" | "original";
+			segments?: Array<{ startMs: number; endMs: number }>;
+			crop?: { x: number; y: number; width: number; height: number };
+		},
+	) => {
+		return ipcRenderer.invoke("convert-video-to-gif", inputPath, outputPath, options);
+	},
 
 	// ── UI state ──
 	setMicrophoneExpanded: (expanded: boolean) => {

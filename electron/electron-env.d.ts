@@ -237,6 +237,19 @@ interface Window {
 			optimizedBytes?: number;
 			error?: string;
 		}>;
+		convertVideoToGif: (
+			inputPath: string,
+			outputPath: string,
+			options: {
+				fps: number;
+				width: number;
+				height: number;
+				loop: boolean;
+				sizePreset?: "small" | "medium" | "large" | "original";
+				segments?: Array<{ startMs: number; endMs: number }>;
+				crop?: { x: number; y: number; width: number; height: number };
+			},
+		) => Promise<{ success: boolean; outputBytes?: number; error?: string }>;
 		saveExportedVideo: (
 			videoData: ArrayBuffer,
 			fileName: string,

@@ -98,7 +98,9 @@
 	"gifSettings": {
 		"frameRate": "GIF 프레임 속도",
 		"size": "GIF 크기",
-		"loop": "GIF 반복"
+		"loop": "GIF 반복",
+		"videoOnly": "영상만",
+		"videoOnlyDescription": "가장 작은 파일 — 배경, 줌, 커서 효과 제외"
 	},
 	"project": {
 		"save": "프로젝트 저장",

@@ -98,7 +98,9 @@
 	"gifSettings": {
 		"frameRate": "GIF 帧率",
 		"size": "GIF 尺寸",
-		"loop": "循环 GIF"
+		"loop": "循环 GIF",
+		"videoOnly": "仅视频",
+		"videoOnlyDescription": "文件最小 — 跳过背景、缩放和光标效果"
 	},
 	"project": {
 		"save": "保存项目",

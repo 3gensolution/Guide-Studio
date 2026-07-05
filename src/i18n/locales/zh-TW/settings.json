@@ -99,7 +99,9 @@
 	"gifSettings": {
 		"frameRate": "GIF 影格率",
 		"size": "GIF 尺寸",
-		"loop": "循環 GIF"
+		"loop": "循環 GIF",
+		"videoOnly": "僅影片",
+		"videoOnlyDescription": "檔案最小 — 略過背景、縮放與游標效果"
 	},
 	"project": {
 		"save": "儲存專案",

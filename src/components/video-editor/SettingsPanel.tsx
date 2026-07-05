@@ -320,6 +320,8 @@ interface SettingsPanelProps {
 	onGifLoopChange?: (loop: boolean) => void;
 	gifSizePreset?: GifSizePreset;
 	onGifSizePresetChange?: (preset: GifSizePreset) => void;
+	gifVideoOnly?: boolean;
+	onGifVideoOnlyChange?: (videoOnly: boolean) => void;
 	gifOutputDimensions?: { width: number; height: number };
 	onExport?: () => void;
 	/** Controlled active panel — when set, overrides internal state. */
@@ -491,6 +493,8 @@ export function SettingsPanel({
 	gifLoop = DEFAULT_GIF_SETTINGS.loop,
 	onGifLoopChange,
 	gifSizePreset = DEFAULT_GIF_SETTINGS.sizePreset,
+	gifVideoOnly = DEFAULT_GIF_SETTINGS.videoOnly,
+	onGifVideoOnlyChange,
 	onGifSizePresetChange,
 	gifOutputDimensions = DEFAULT_GIF_SETTINGS.outputDimensions,
 	onExport,
@@ -2416,6 +2420,22 @@ export function SettingsPanel({
 											className="data-[state=checked]:bg-[#6E6BFF] scale-75"
 										/>
 									</div>
+								</div>
+								<div className="flex items-center justify-between">
+									<div className="min-w-0 pr-2">
+										<span className="block text-[10px] text-slate-400">
+											{t("gifSettings.videoOnly")}
+										</span>
+										<span className="block text-[9px] leading-tight text-slate-500">
+											{t("gifSettings.videoOnlyDescription")}
+										</span>
+									</div>
+									<Switch
+										data-testid={getTestId("gif-video-only-switch")}
+										checked={gifVideoOnly}
+										onCheckedChange={onGifVideoOnlyChange}
+										className="data-[state=checked]:bg-[#6E6BFF] scale-75"
+									/>
 								</div>
 							</div>
 						)}

@@ -98,7 +98,9 @@
 	"gifSettings": {
 		"frameRate": "GIF フレームレート",
 		"size": "GIF サイズ",
-		"loop": "GIF をループする"
+		"loop": "GIF をループする",
+		"videoOnly": "動画のみ",
+		"videoOnlyDescription": "最小ファイル — 背景・ズーム・カーソル効果を省略"
 	},
 	"project": {
 		"save": "プロジェクトを保存",

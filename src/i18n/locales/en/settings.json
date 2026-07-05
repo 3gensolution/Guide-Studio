@@ -99,7 +99,9 @@
 	"gifSettings": {
 		"frameRate": "GIF Frame Rate",
 		"size": "GIF Size",
-		"loop": "Loop GIF"
+		"loop": "Loop GIF",
+		"videoOnly": "Video only",
+		"videoOnlyDescription": "Smallest file — skips background, zoom, and cursor effects"
 	},
 	"project": {
 		"save": "Save Project",

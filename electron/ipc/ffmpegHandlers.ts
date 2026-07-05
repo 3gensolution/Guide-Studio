@@ -1,5 +1,12 @@
 import { ipcMain } from "electron";
-import { concatenateVideos, getFfmpegPath, optimizeGif, quickTrimExport } from "../ffmpeg";
+import {
+	type ConvertVideoToGifOptions,
+	concatenateVideos,
+	convertVideoToGif,
+	getFfmpegPath,
+	optimizeGif,
+	quickTrimExport,
+} from "../ffmpeg";
 
 export function registerFfmpegHandlers() {
 	ipcMain.handle("get-ffmpeg-path", async () => {
@@ -33,6 +40,18 @@ export function registerFfmpegHandlers() {
 				return await optimizeGif(filePath, loop ?? true, sizePreset ?? "original");
 			} catch (error) {
 				console.error("Failed to optimize GIF:", error);
+				return { success: false, error: String(error) };
+			}
+		},
+	);
+
+	ipcMain.handle(
+		"convert-video-to-gif",
+		async (_event, inputPath: string, outputPath: string, options: ConvertVideoToGifOptions) => {
+			try {
+				return await convertVideoToGif(inputPath, outputPath, options);
+			} catch (error) {
+				console.error("Failed to convert video to GIF:", error);
 				return { success: false, error: String(error) };
 			}
 		},

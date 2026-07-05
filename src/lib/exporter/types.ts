@@ -190,6 +190,12 @@ export interface GifExportConfig {
 	sizePreset: GifSizePreset;
 	width: number;
 	height: number;
+	/**
+	 * Convert the raw recording straight to GIF with FFmpeg, skipping the
+	 * wallpaper/zoom/cursor compositor — much smaller files. Trim and crop
+	 * still apply.
+	 */
+	videoOnly?: boolean;
 }
 
 export interface ExportSettings {

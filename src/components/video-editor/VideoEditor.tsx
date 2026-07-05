@@ -278,6 +278,7 @@ export default function VideoEditor() {
 	const [gifSizePreset, setGifSizePreset] = useState<GifSizePreset>(
 		DEFAULT_GIF_SETTINGS.sizePreset,
 	);
+	const [gifVideoOnly, setGifVideoOnly] = useState(DEFAULT_GIF_SETTINGS.videoOnly);
 	const [exportedFilePath, setExportedFilePath] = useState<string | null>(null);
 	const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string | null>(null);
 	const [unsavedExport, setUnsavedExport] = useState<{
@@ -489,6 +490,7 @@ export default function VideoEditor() {
 			setGifFrameRate(normalizedEditor.gifFrameRate);
 			setGifLoop(normalizedEditor.gifLoop);
 			setGifSizePreset(normalizedEditor.gifSizePreset);
+			setGifVideoOnly(normalizedEditor.gifVideoOnly ?? DEFAULT_GIF_SETTINGS.videoOnly);
 			setCursorTheme(normalizedEditor.cursorTheme);
 
 			setSelectedZoomId(null);
@@ -567,6 +569,7 @@ export default function VideoEditor() {
 			gifFrameRate,
 			gifLoop,
 			gifSizePreset,
+			gifVideoOnly,
 			cursorTheme,
 			videoClips: editorState.videoClips,
 			introClip: editorState.introClip,
@@ -602,6 +605,7 @@ export default function VideoEditor() {
 		gifFrameRate,
 		gifLoop,
 		gifSizePreset,
+		gifVideoOnly,
 		editorState.videoClips,
 		editorState.introClip,
 	]);
@@ -734,6 +738,7 @@ export default function VideoEditor() {
 				gifFrameRate,
 				gifLoop,
 				gifSizePreset,
+				gifVideoOnly,
 				cursorTheme,
 				videoClips: editorState.videoClips,
 				introClip: editorState.introClip,
@@ -805,6 +810,7 @@ export default function VideoEditor() {
 			gifFrameRate,
 			gifLoop,
 			gifSizePreset,
+			gifVideoOnly,
 			cursorTheme,
 			videoPath,
 			t,
@@ -2196,6 +2202,71 @@ export default function VideoEditor() {
 				const previewHeight = containerElement?.clientHeight || DEFAULT_SOURCE_DIMENSIONS.height;
 
 				if (settings.format === "gif" && settings.gifConfig) {
+					// Video-only fast path: convert the raw recording straight to GIF
+					// with FFmpeg, skipping the wallpaper/zoom/cursor compositor.
+					// Trim regions and crop still apply. Produces much smaller files
+					// because only the recording's own pixels change frame to frame.
+					if (settings.gifConfig.videoOnly) {
+						const localSourcePath = videoSourcePath ?? (videoPath ? fromFileUrl(videoPath) : null);
+						if (localSourcePath && window.electronAPI?.convertVideoToGif) {
+							console.log("[VideoEditor] Using direct FFmpeg GIF conversion (video only)");
+							setExportProgress({
+								currentFrame: 0,
+								totalFrames: 1,
+								percentage: 10,
+								estimatedTimeRemaining: 0,
+							});
+
+							// Compute kept segments from trim regions
+							const totalDurationMs = duration * 1000;
+							const sortedTrims = [...trimRegions].sort((a, b) => a.startMs - b.startMs);
+							const keptSegments: Array<{ startMs: number; endMs: number }> = [];
+							let trimCursor = 0;
+							for (const trim of sortedTrims) {
+								if (trimCursor < trim.startMs) {
+									keptSegments.push({ startMs: trimCursor, endMs: trim.startMs });
+								}
+								trimCursor = Math.max(trimCursor, trim.endMs);
+							}
+							if (trimCursor < totalDurationMs) {
+								keptSegments.push({ startMs: trimCursor, endMs: totalDurationMs });
+							}
+
+							const convertResult = await window.electronAPI.convertVideoToGif(
+								localSourcePath,
+								targetPath,
+								{
+									fps: settings.gifConfig.frameRate,
+									width: settings.gifConfig.width,
+									height: settings.gifConfig.height,
+									loop: settings.gifConfig.loop,
+									sizePreset: settings.gifConfig.sizePreset,
+									segments: trimRegions.length > 0 ? keptSegments : undefined,
+									crop: cropRegion,
+								},
+							);
+
+							if (convertResult.success) {
+								setExportProgress({
+									currentFrame: 1,
+									totalFrames: 1,
+									percentage: 100,
+									estimatedTimeRemaining: 0,
+								});
+								handleExportSaved("GIF", targetPath);
+								return;
+							}
+							console.warn(
+								"[VideoEditor] Direct GIF conversion failed, falling back to standard export:",
+								convertResult.error,
+							);
+							toast.warning(
+								"Direct GIF conversion failed — exporting with the standard renderer instead",
+							);
+							// Fall through to the standard GIF pipeline below
+						}
+					}
+
 					// GIF Export
 					const gifExporter = new GifExporter({
 						videoUrl: videoPath,
@@ -2583,6 +2654,7 @@ export default function VideoEditor() {
 							sizePreset: gifSizePreset,
 							width: gifDimensions.width,
 							height: gifDimensions.height,
+							videoOnly: gifVideoOnly,
 						}
 					: undefined,
 		};
@@ -2600,6 +2672,7 @@ export default function VideoEditor() {
 		gifFrameRate,
 		gifLoop,
 		gifSizePreset,
+		gifVideoOnly,
 		aspectRatio,
 		cropRegion,
 		handleExport,
@@ -3452,6 +3525,8 @@ export default function VideoEditor() {
 													onGifLoopChange={setGifLoop}
 													gifSizePreset={gifSizePreset}
 													onGifSizePresetChange={setGifSizePreset}
+													gifVideoOnly={gifVideoOnly}
+													onGifVideoOnlyChange={setGifVideoOnly}
 													gifOutputDimensions={calculateOutputDimensions(
 														calculateEffectiveSourceDimensions(
 															videoPlaybackRef.current?.video?.videoWidth ||

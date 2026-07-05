@@ -98,7 +98,9 @@
 	"gifSettings": {
 		"frameRate": "GIF Kare Hızı",
 		"size": "GIF Boyutu",
-		"loop": "GIF Döngüsü"
+		"loop": "GIF Döngüsü",
+		"videoOnly": "Yalnızca video",
+		"videoOnlyDescription": "En küçük dosya — arka plan, yakınlaştırma ve imleç efektlerini atlar"
 	},
 	"project": {
 		"save": "Projeyi Kaydet",

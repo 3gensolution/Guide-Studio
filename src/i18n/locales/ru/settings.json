@@ -98,7 +98,9 @@
 	"gifSettings": {
 		"frameRate": "Частота кадров GIF",
 		"size": "Размер GIF",
-		"loop": "Зациклить GIF"
+		"loop": "Зациклить GIF",
+		"videoOnly": "Только видео",
+		"videoOnlyDescription": "Минимальный размер файла — без фона, зума и эффектов курсора"
 	},
 	"project": {
 		"save": "Сохранить проект",
