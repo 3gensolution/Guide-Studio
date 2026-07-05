@@ -562,6 +562,7 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 				? editor.pipelineModel
 				: DEFAULT_EXPORT_SETTINGS.pipelineModel,
 		gifFrameRate:
+			editor.gifFrameRate === 10 ||
 			editor.gifFrameRate === 15 ||
 			editor.gifFrameRate === 20 ||
 			editor.gifFrameRate === 25 ||
@@ -570,6 +571,7 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 				: DEFAULT_GIF_SETTINGS.frameRate,
 		gifLoop: typeof editor.gifLoop === "boolean" ? editor.gifLoop : DEFAULT_GIF_SETTINGS.loop,
 		gifSizePreset:
+			editor.gifSizePreset === "small" ||
 			editor.gifSizePreset === "medium" ||
 			editor.gifSizePreset === "large" ||
 			editor.gifSizePreset === "original"

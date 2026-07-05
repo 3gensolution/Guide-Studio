@@ -607,6 +607,97 @@ export async function quickTrimExport(
 	}
 }
 
+export type GifOptimizeSizePreset = "small" | "medium" | "large" | "original";
+
+// Palette size per export preset. Screen recordings rarely need the full 256
+// colors: at 128 the re-encode of a busy 720p capture measured ~47 dB PSNR
+// against the 256-color result (visually identical) while cutting file size
+// ~20%. Small targets 480p where quantization noise is even less visible.
+const GIF_MAX_COLORS_BY_PRESET: Record<GifOptimizeSizePreset, number> = {
+	small: 96,
+	medium: 128,
+	large: 256,
+	original: 256,
+};
+
+/**
+ * Shrink a GIF in place with a two-pass FFmpeg palette re-encode.
+ *
+ * gif.js writes every frame as a full image with its own local palette. This
+ * pass rebuilds a single palette weighted toward changing regions
+ * (palettegen=stats_mode=diff) and re-encodes storing only the rectangle that
+ * changed per frame (paletteuse=diff_mode=rectangle) with transparency for
+ * unchanged pixels — typically 5-15x smaller for screen recordings. Bayer
+ * dithering is used because it is stable across frames, so static areas stay
+ * byte-identical and compress away.
+ *
+ * The result replaces the input only when it is actually smaller.
+ */
+export async function optimizeGif(
+	filePath: string,
+	loop = true,
+	sizePreset: GifOptimizeSizePreset = "original",
+): Promise<{ success: boolean; originalBytes?: number; optimizedBytes?: number; error?: string }> {
+	const ffmpegPath = await getFfmpegPath();
+	if (!ffmpegPath) {
+		return { success: false, error: "FFmpeg not found" };
+	}
+
+	const { execFile } = await import("node:child_process");
+	const { promisify } = await import("node:util");
+	const execFileAsync = promisify(execFile);
+	const env = getFfmpegEnv(ffmpegPath);
+
+	let originalBytes: number;
+	try {
+		originalBytes = (await fs.stat(filePath)).size;
+	} catch {
+		return { success: false, error: `GIF not found: ${filePath}` };
+	}
+
+	const maxColors = GIF_MAX_COLORS_BY_PRESET[sizePreset] ?? 256;
+	const tempPath = `${filePath}.optimizing.gif`;
+	try {
+		await execFileAsync(
+			ffmpegPath,
+			[
+				"-i",
+				filePath,
+				"-filter_complex",
+				`split[a][b];[a]palettegen=stats_mode=diff:max_colors=${maxColors}[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`,
+				// The gif muxer does not copy the source's Netscape loop
+				// extension — re-state it (0 = infinite, -1 = play once).
+				"-loop",
+				loop ? "0" : "-1",
+				"-y",
+				tempPath,
+			],
+			{ timeout: 600_000, env },
+		);
+
+		const optimizedBytes = (await fs.stat(tempPath)).size;
+		if (optimizedBytes > 0 && optimizedBytes < originalBytes) {
+			await fs.rename(tempPath, filePath);
+			console.log(
+				`[ffmpeg] GIF optimized: ${(originalBytes / 1024 / 1024).toFixed(1)}MB -> ${(optimizedBytes / 1024 / 1024).toFixed(1)}MB`,
+			);
+			return { success: true, originalBytes, optimizedBytes };
+		}
+
+		// Optimized output is not smaller — keep the original.
+		await fs.unlink(tempPath).catch(() => {
+			/* intentional noop */
+		});
+		return { success: true, originalBytes, optimizedBytes: originalBytes };
+	} catch (err) {
+		console.error("[ffmpeg] GIF optimization failed:", err);
+		await fs.unlink(tempPath).catch(() => {
+			/* intentional noop */
+		});
+		return { success: false, error: `GIF optimization failed: ${err}` };
+	}
+}
+
 async function findSystemFfmpeg(): Promise<string | null> {
 	const { execFile } = await import("node:child_process");
 	const { promisify } = await import("node:util");

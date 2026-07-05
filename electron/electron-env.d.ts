@@ -227,6 +227,16 @@ interface Window {
 			outputPath: string,
 			segments: Array<{ startMs: number; endMs: number }>,
 		) => Promise<{ success: boolean; error?: string }>;
+		optimizeGif: (
+			filePath: string,
+			loop?: boolean,
+			sizePreset?: "small" | "medium" | "large" | "original",
+		) => Promise<{
+			success: boolean;
+			originalBytes?: number;
+			optimizedBytes?: number;
+			error?: string;
+		}>;
 		saveExportedVideo: (
 			videoData: ArrayBuffer,
 			fileName: string,

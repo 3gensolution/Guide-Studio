@@ -1,5 +1,5 @@
 import { ipcMain } from "electron";
-import { concatenateVideos, getFfmpegPath, quickTrimExport } from "../ffmpeg";
+import { concatenateVideos, getFfmpegPath, optimizeGif, quickTrimExport } from "../ffmpeg";
 
 export function registerFfmpegHandlers() {
 	ipcMain.handle("get-ffmpeg-path", async () => {
@@ -20,6 +20,23 @@ export function registerFfmpegHandlers() {
 			return { success: false, error: String(error) };
 		}
 	});
+
+	ipcMain.handle(
+		"optimize-gif",
+		async (
+			_event,
+			filePath: string,
+			loop?: boolean,
+			sizePreset?: "small" | "medium" | "large" | "original",
+		) => {
+			try {
+				return await optimizeGif(filePath, loop ?? true, sizePreset ?? "original");
+			} catch (error) {
+				console.error("Failed to optimize GIF:", error);
+				return { success: false, error: String(error) };
+			}
+		},
+	);
 
 	ipcMain.handle(
 		"quick-trim-export",

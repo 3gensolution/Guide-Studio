@@ -271,7 +271,10 @@ export class GifExporter {
 				repeat,
 				background: "#000000",
 				transparent: null,
-				dither: "FloydSteinberg",
+				// Error-diffusion dither adds per-frame noise that inflates LZW
+				// size and defeats the FFmpeg diff-optimization pass that runs
+				// after save; the optimizer re-applies stable ordered dithering.
+				dither: false,
 			});
 
 			// Calculate effective duration and frame count (excluding trim regions)

@@ -2117,6 +2117,13 @@ export default function VideoEditor() {
 			);
 			if (saveResult.success && saveResult.path) {
 				setUnsavedExport(null);
+				if (unsavedExport.format === "gif" && window.electronAPI.optimizeGif) {
+					await window.electronAPI
+						.optimizeGif(saveResult.path, gifLoop, gifSizePreset)
+						.catch((err) => {
+							console.warn("[VideoEditor] GIF optimization skipped:", err);
+						});
+				}
 				handleExportSaved(unsavedExport.format === "gif" ? "GIF" : "Video", saveResult.path);
 			} else {
 				toast.error(
@@ -2135,7 +2142,7 @@ export default function VideoEditor() {
 				),
 			);
 		}
-	}, [unsavedExport, handleExportSaved]);
+	}, [unsavedExport, handleExportSaved, gifLoop, gifSizePreset]);
 
 	const handleExport = useCallback(
 		async (settings: ExportSettings) => {
@@ -2238,6 +2245,24 @@ export default function VideoEditor() {
 
 						if (saveResult.success && saveResult.path) {
 							setUnsavedExport(null);
+							// Post-compress with FFmpeg (inter-frame diff optimization
+							// gif.js can't do). Best-effort: the saved GIF is already
+							// valid, so a failure here is not an export failure.
+							if (window.electronAPI.optimizeGif) {
+								const optimizeResult = await window.electronAPI
+									.optimizeGif(
+										saveResult.path,
+										settings.gifConfig.loop,
+										settings.gifConfig.sizePreset,
+									)
+									.catch((err) => ({ success: false as const, error: String(err) }));
+								if (!optimizeResult.success) {
+									console.warn("[VideoEditor] GIF optimization skipped:", optimizeResult.error);
+									toast.warning(
+										"GIF compression pass failed — the file was saved but may be larger than expected",
+									);
+								}
+							}
 							handleExportSaved("GIF", saveResult.path);
 						} else {
 							setUnsavedExport({ arrayBuffer, fileName: targetFileName, format: "gif" });

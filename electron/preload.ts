@@ -375,6 +375,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	) => {
 		return ipcRenderer.invoke("quick-trim-export", inputPath, outputPath, segments);
 	},
+	optimizeGif: (
+		filePath: string,
+		loop?: boolean,
+		sizePreset?: "small" | "medium" | "large" | "original",
+	) => {
+		return ipcRenderer.invoke("optimize-gif", filePath, loop, sizePreset);
+	},
 
 	// ── UI state ──
 	setMicrophoneExpanded: (expanded: boolean) => {
