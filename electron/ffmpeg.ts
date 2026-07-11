@@ -196,6 +196,114 @@ async function probeHasAudio(
 }
 
 /**
+ * Probe a file with ffmpeg -i for its stream codecs and duration.
+ * Like probeHasAudio, parses stderr since ffmpeg exits 1 with no output file.
+ */
+async function probeStreamInfo(
+	filePath: string,
+	ffmpegPath: string,
+	execFileAsync: (
+		file: string,
+		args: string[],
+		opts: object,
+	) => Promise<{ stdout: string; stderr: string }>,
+	env: NodeJS.ProcessEnv,
+): Promise<{ videoCodec: string | null; audioCodec: string | null; durationMs: number | null }> {
+	try {
+		await execFileAsync(ffmpegPath, ["-i", filePath, "-hide_banner"], { timeout: 10_000, env });
+		return { videoCodec: null, audioCodec: null, durationMs: null };
+	} catch (err: unknown) {
+		const stderr = String((err as { stderr?: string })?.stderr || "");
+		const videoMatch = stderr.match(/Stream #\d+:\d+[^:]*: Video: (\w+)/i);
+		const audioMatch = stderr.match(/Stream #\d+:\d+[^:]*: Audio: (\w+)/i);
+		const durationMatch = stderr.match(/Duration: (\d+):(\d+):(\d+)\.(\d+)/);
+		let durationMs: number | null = null;
+		if (durationMatch) {
+			const [, h, m, s, cs] = durationMatch;
+			durationMs = Number(h) * 3_600_000 + Number(m) * 60_000 + Number(s) * 1_000 + Number(cs) * 10;
+		}
+		return {
+			videoCodec: videoMatch ? videoMatch[1].toLowerCase() : null,
+			audioCodec: audioMatch ? audioMatch[1].toLowerCase() : null,
+			durationMs,
+		};
+	}
+}
+
+// ── Hardware H.264 encoder selection ─────────────────────────────────────
+//
+// The bundled ffmpeg exposes the OS hardware encoder (VideoToolbox on macOS,
+// NVENC/QSV/AMF on Windows) which encodes 3-10x faster than libx264 at
+// screen-recording quality. Probed once per app run; null means software.
+
+let cachedHwEncoder: string | null | undefined;
+
+async function pickHwH264Encoder(
+	ffmpegPath: string,
+	execFileAsync: (
+		file: string,
+		args: string[],
+		opts: object,
+	) => Promise<{ stdout: string; stderr: string }>,
+	env: NodeJS.ProcessEnv,
+): Promise<string | null> {
+	if (cachedHwEncoder !== undefined) return cachedHwEncoder;
+
+	const candidates =
+		process.platform === "darwin"
+			? ["h264_videotoolbox"]
+			: process.platform === "win32"
+				? ["h264_nvenc", "h264_qsv", "h264_amf"]
+				: [];
+
+	if (candidates.length === 0) {
+		cachedHwEncoder = null;
+		return null;
+	}
+
+	try {
+		const { stdout } = await execFileAsync(ffmpegPath, ["-hide_banner", "-encoders"], {
+			timeout: 10_000,
+			env,
+		});
+		cachedHwEncoder = candidates.find((name) => stdout.includes(name)) ?? null;
+	} catch {
+		cachedHwEncoder = null;
+	}
+
+	if (cachedHwEncoder) {
+		console.log(`[ffmpeg] Hardware H.264 encoder available: ${cachedHwEncoder}`);
+	}
+	return cachedHwEncoder;
+}
+
+/**
+ * Encode args for a given encoder (null = software libx264). Hardware
+ * encoders are bitrate-driven (no CRF); 8 Mbps comfortably exceeds
+ * screen-recording quality at 1080-1440p.
+ */
+function buildH264EncodeArgs(encoder: string | null, hasAudio: boolean): string[] {
+	const video = encoder
+		? [
+				"-c:v",
+				encoder,
+				"-b:v",
+				"8M",
+				...(encoder === "h264_videotoolbox" ? ["-allow_sw", "1"] : []),
+			]
+		: ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23"];
+
+	return [
+		...video,
+		"-pix_fmt",
+		"yuv420p",
+		"-movflags",
+		"+faststart",
+		...(hasAudio ? ["-c:a", "aac", "-b:a", "160k"] : []),
+	];
+}
+
+/**
  * Probe a file with ffmpeg -i for its video resolution.
  */
 async function probeResolution(
@@ -490,11 +598,12 @@ export function getFfmpegEnv(ffmpegPath: string): NodeJS.ProcessEnv {
  * pipeline because there is no canvas rendering — FFmpeg decodes and encodes
  * directly.
  *
- * The video is re-encoded (libx264 veryfast + AAC) rather than stream-copied:
- * stream copy can only cut at keyframes (screen recordings often have 5-10s
- * GOPs, making trims off by seconds) and would put VP8/VP9 webm streams into
- * an .mp4 container that many players reject. Re-encoding is frame-accurate,
- * always produces a compliant H.264 MP4, and typically shrinks the file.
+ * The video is re-encoded (hardware H.264 where available, libx264 fallback)
+ * rather than stream-copied: stream copy can only cut at keyframes (screen
+ * recordings often have 5-10s GOPs, making trims off by seconds) and would
+ * put VP8/VP9 webm streams into an .mp4 container that many players reject.
+ * Re-encoding is frame-accurate, always produces a compliant H.264 MP4, and
+ * typically shrinks the file.
  */
 export async function quickTrimExport(
 	inputPath: string,
@@ -524,25 +633,11 @@ export async function quickTrimExport(
 
 	const hasAudio = await probeHasAudio(inputPath, ffmpegPath, execFileAsync, env);
 
-	const encodeArgs = [
-		"-c:v",
-		"libx264",
-		"-preset",
-		"veryfast",
-		"-crf",
-		"23",
-		"-pix_fmt",
-		"yuv420p",
-		"-movflags",
-		"+faststart",
-		...(hasAudio ? ["-c:a", "aac", "-b:a", "160k"] : []),
-	];
-
 	const totalKeptMs = validSegments.reduce((sum, seg) => sum + (seg.endMs - seg.startMs), 0);
 	// Generous timeout: at least 10 minutes, scaled up for long exports.
 	const timeout = Math.max(600_000, Math.round(totalKeptMs * 2));
 
-	try {
+	const runTrim = async (encodeArgs: string[]) => {
 		if (validSegments.length === 1) {
 			// Single segment: -ss before -i uses fast keyframe seeking, and with
 			// re-encoding FFmpeg decodes from the keyframe and discards frames up
@@ -558,53 +653,385 @@ export async function quickTrimExport(
 				{ timeout, env },
 			);
 		} else {
-			// Multiple segments: cut and join in one pass with trim/concat filters.
-			// Frame-accurate and avoids temp files and concat-demuxer timestamp
-			// discontinuities.
-			const filterParts: string[] = [];
-			const concatInputs: string[] = [];
-			for (let i = 0; i < validSegments.length; i++) {
-				const startSec = (validSegments[i].startMs / 1000).toFixed(3);
-				const endSec = (validSegments[i].endMs / 1000).toFixed(3);
-				filterParts.push(`[0:v]trim=start=${startSec}:end=${endSec},setpts=PTS-STARTPTS[v${i}]`);
-				concatInputs.push(`[v${i}]`);
-				if (hasAudio) {
-					filterParts.push(
-						`[0:a]atrim=start=${startSec}:end=${endSec},asetpts=PTS-STARTPTS[a${i}]`,
+			// Multiple segments: encode each kept segment on its own (fast -ss
+			// keyframe seek, frame-accurate with re-encode), then join losslessly
+			// with the concat demuxer. NOTE: the bundled Remotion ffmpeg does not
+			// include the setpts/asetpts filters, so the previous single-pass
+			// trim+setpts+concat filtergraph fails with "Filter not found" —
+			// per-segment encodes with identical parameters concat cleanly with
+			// -c copy instead (this is also how CapCut-style editors cut).
+			console.log(`[ffmpeg] Quick trim: ${validSegments.length} segments via concat demuxer`);
+			const tempDir = app.getPath("temp");
+			const stamp = Date.now();
+			const segmentPaths = validSegments.map((_, i) =>
+				path.join(tempDir, `guide-studio-trim-${stamp}-${i}.mp4`),
+			);
+			const listPath = path.join(tempDir, `guide-studio-trim-${stamp}-list.txt`);
+
+			try {
+				for (let i = 0; i < validSegments.length; i++) {
+					const startSec = (validSegments[i].startMs / 1000).toFixed(3);
+					const durationSec = ((validSegments[i].endMs - validSegments[i].startMs) / 1000).toFixed(
+						3,
 					);
-					concatInputs[concatInputs.length - 1] += `[a${i}]`;
+					await execFileAsync(
+						ffmpegPath,
+						[
+							"-ss",
+							startSec,
+							"-i",
+							inputPath,
+							"-t",
+							durationSec,
+							...encodeArgs,
+							"-y",
+							segmentPaths[i],
+						],
+						{ timeout, env },
+					);
 				}
+
+				const listBody = segmentPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n");
+				await fs.writeFile(listPath, listBody, "utf-8");
+
+				await execFileAsync(
+					ffmpegPath,
+					[
+						"-f",
+						"concat",
+						"-safe",
+						"0",
+						"-i",
+						listPath,
+						"-c",
+						"copy",
+						"-movflags",
+						"+faststart",
+						"-y",
+						outputPath,
+					],
+					{ timeout, env },
+				);
+			} finally {
+				await Promise.all(
+					[...segmentPaths, listPath].map((p) => fs.unlink(p).catch(() => undefined)),
+				);
 			}
-			const concatOut = hasAudio ? "[outv][outa]" : "[outv]";
-			filterParts.push(
-				`${concatInputs.join("")}concat=n=${validSegments.length}:v=1:a=${hasAudio ? 1 : 0}${concatOut}`,
-			);
-
-			console.log(`[ffmpeg] Quick trim: ${validSegments.length} segments via concat filter`);
-			await execFileAsync(
-				ffmpegPath,
-				[
-					"-i",
-					inputPath,
-					"-filter_complex",
-					filterParts.join(";"),
-					"-map",
-					"[outv]",
-					...(hasAudio ? ["-map", "[outa]"] : []),
-					...encodeArgs,
-					"-y",
-					outputPath,
-				],
-				{ timeout, env },
-			);
 		}
+	};
 
-		console.log("[ffmpeg] Quick trim succeeded");
+	// Try the hardware encoder first (3-10x faster); fall back to libx264 if
+	// the device is unavailable or the hardware session fails mid-encode.
+	const hwEncoder = await pickHwH264Encoder(ffmpegPath, execFileAsync, env);
+	try {
+		await runTrim(buildH264EncodeArgs(hwEncoder, hasAudio));
+		console.log(`[ffmpeg] Quick trim succeeded (${hwEncoder ?? "libx264"})`);
+		return { success: true };
+	} catch (err) {
+		if (!hwEncoder) {
+			console.error("[ffmpeg] Quick trim failed:", err);
+			return { success: false, error: `Quick trim failed: ${err}` };
+		}
+		console.warn(`[ffmpeg] Quick trim with ${hwEncoder} failed, retrying with libx264:`, err);
+	}
+
+	try {
+		await runTrim(buildH264EncodeArgs(null, hasAudio));
+		console.log("[ffmpeg] Quick trim succeeded (libx264 fallback)");
 		return { success: true };
 	} catch (err) {
 		console.error("[ffmpeg] Quick trim failed:", err);
 		return { success: false, error: `Quick trim failed: ${err}` };
 	}
+}
+
+export interface FlattenClipSegment {
+	sourcePath: string;
+	startMs: number;
+	endMs: number;
+}
+
+/**
+ * Flatten a multi-clip timeline into a single intermediate MP4 so the
+ * effects/export pipeline (which decodes exactly one source) can run over it.
+ *
+ * Each segment is cut from its source and normalized to a common resolution,
+ * frame rate, and audio format (sources may differ in all three, and some may
+ * have no audio track at all — those get synthesized silence so the concat
+ * streams match). Normalized segments concat losslessly with the demuxer.
+ */
+export async function flattenVideoClips(
+	segments: FlattenClipSegment[],
+): Promise<{ success: boolean; tempPath?: string; error?: string }> {
+	const validSegments = segments.filter((seg) => seg.endMs - seg.startMs > 1);
+	if (validSegments.length === 0) {
+		return { success: false, error: "No clip segments to flatten" };
+	}
+
+	const ffmpegPath = await getFfmpegPath();
+	if (!ffmpegPath) {
+		return { success: false, error: "FFmpeg not found" };
+	}
+
+	const { execFile } = await import("node:child_process");
+	const { promisify } = await import("node:util");
+	const execFileAsync = promisify(execFile);
+	const env = getFfmpegEnv(ffmpegPath);
+
+	const uniqueSources = [...new Set(validSegments.map((seg) => seg.sourcePath))];
+	for (const sourcePath of uniqueSources) {
+		try {
+			await fs.access(sourcePath);
+		} catch {
+			return { success: false, error: `Clip source not found: ${sourcePath}` };
+		}
+	}
+
+	const audioBySource = new Map<string, boolean>();
+	for (const sourcePath of uniqueSources) {
+		audioBySource.set(sourcePath, await probeHasAudio(sourcePath, ffmpegPath, execFileAsync, env));
+	}
+	const anyHasAudio = [...audioBySource.values()].some(Boolean);
+
+	// Target resolution comes from the first segment (the primary recording when
+	// present); everything else is letterboxed into it.
+	const targetRes = (await probeResolution(
+		validSegments[0].sourcePath,
+		ffmpegPath,
+		execFileAsync,
+		env,
+	)) ?? {
+		width: 1920,
+		height: 1080,
+	};
+	const tw = Math.floor(targetRes.width / 2) * 2;
+	const th = Math.floor(targetRes.height / 2) * 2;
+	const targetFps = 30;
+
+	const totalMs = validSegments.reduce((sum, seg) => sum + (seg.endMs - seg.startMs), 0);
+	const timeout = Math.max(600_000, Math.round(totalMs * 3));
+
+	const tempDir = app.getPath("temp");
+	const stamp = Date.now();
+	const segmentPaths = validSegments.map((_, i) =>
+		path.join(tempDir, `guide-studio-flatten-${stamp}-${i}.mp4`),
+	);
+	const listPath = path.join(tempDir, `guide-studio-flatten-${stamp}-list.txt`);
+	const outputPath = path.join(tempDir, `guide-studio-flatten-${stamp}.mp4`);
+
+	// The bundled Remotion ffmpeg ships a stripped filter set (no pad/setsar/
+	// fps), so normalization is a plain stretch-scale plus an output `-r` for
+	// constant frame rate. Mixed aspect ratios distort rather than letterbox.
+	const normalizeFilter = `scale=${tw}:${th}`;
+
+	const encodeSegment = async (
+		seg: FlattenClipSegment,
+		outPath: string,
+		videoEncodeArgs: string[],
+	) => {
+		const startSec = (seg.startMs / 1000).toFixed(3);
+		const durationSec = ((seg.endMs - seg.startMs) / 1000).toFixed(3);
+		const hasAudio = audioBySource.get(seg.sourcePath) ?? false;
+
+		const inputArgs = ["-ss", startSec, "-i", seg.sourcePath];
+		const mapArgs = ["-map", "0:v:0"];
+		if (anyHasAudio) {
+			if (hasAudio) {
+				mapArgs.push("-map", "0:a:0");
+			} else {
+				inputArgs.push("-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000");
+				mapArgs.push("-map", "1:a:0");
+			}
+		}
+
+		await execFileAsync(
+			ffmpegPath,
+			[
+				...inputArgs,
+				"-t",
+				durationSec,
+				...mapArgs,
+				"-vf",
+				normalizeFilter,
+				"-r",
+				String(targetFps),
+				...videoEncodeArgs,
+				"-pix_fmt",
+				"yuv420p",
+				// Identical audio params across segments so the concat demuxer can
+				// stream-copy the joined file.
+				...(anyHasAudio ? ["-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2"] : ["-an"]),
+				"-movflags",
+				"+faststart",
+				"-y",
+				outPath,
+			],
+			{ timeout, env },
+		);
+	};
+
+	const encodeAllSegments = async (videoEncodeArgs: string[]) => {
+		for (let i = 0; i < validSegments.length; i++) {
+			await encodeSegment(validSegments[i], segmentPaths[i], videoEncodeArgs);
+		}
+	};
+
+	const hwEncoder = await pickHwH264Encoder(ffmpegPath, execFileAsync, env);
+	const hwVideoArgs = hwEncoder
+		? [
+				"-c:v",
+				hwEncoder,
+				"-b:v",
+				"8M",
+				...(hwEncoder === "h264_videotoolbox" ? ["-allow_sw", "1"] : []),
+			]
+		: null;
+	const swVideoArgs = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"];
+
+	try {
+		try {
+			await encodeAllSegments(hwVideoArgs ?? swVideoArgs);
+		} catch (err) {
+			if (!hwVideoArgs) throw err;
+			console.warn(`[ffmpeg] Flatten with ${hwEncoder} failed, retrying with libx264:`, err);
+			await encodeAllSegments(swVideoArgs);
+		}
+
+		if (segmentPaths.length === 1) {
+			await fs.rename(segmentPaths[0], outputPath);
+			return { success: true, tempPath: outputPath };
+		}
+
+		const listBody = segmentPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n");
+		await fs.writeFile(listPath, listBody, "utf-8");
+
+		try {
+			await execFileAsync(
+				ffmpegPath,
+				[
+					"-f",
+					"concat",
+					"-safe",
+					"0",
+					"-i",
+					listPath,
+					"-c",
+					"copy",
+					"-movflags",
+					"+faststart",
+					"-y",
+					outputPath,
+				],
+				{ timeout, env },
+			);
+		} catch (concatErr) {
+			// Identically-encoded segments should always stream-copy; if not,
+			// concatenateVideos has re-encode fallbacks for mismatched streams.
+			console.warn("[ffmpeg] Flatten concat stream-copy failed, re-encoding:", concatErr);
+			const fallback = await concatenateVideos(segmentPaths, outputPath);
+			if (!fallback.success) {
+				return { success: false, error: fallback.error };
+			}
+		}
+
+		console.log(
+			`[ffmpeg] Flattened ${validSegments.length} clip segment(s) → ${outputPath} (${tw}x${th}@${targetFps})`,
+		);
+		return { success: true, tempPath: outputPath };
+	} catch (err) {
+		console.error("[ffmpeg] Flatten failed:", err);
+		return { success: false, error: `Clip flatten failed: ${err}` };
+	} finally {
+		await Promise.all([...segmentPaths, listPath].map((p) => fs.unlink(p).catch(() => undefined)));
+	}
+}
+
+/**
+ * Remux export — the "nothing changed" fast path. When the export has no
+ * edits at all, the source's compressed frames are already exactly what the
+ * output needs, so re-encoding is pure waste (this is what makes CapCut-style
+ * exports feel instant). H.264 sources are rewrapped with `-c:v copy` in
+ * seconds regardless of length; VP8/VP9 sources (browser recordings) can't
+ * live in an .mp4, so they take one hardware-encoded transcode pass instead.
+ */
+export async function remuxExport(
+	inputPath: string,
+	outputPath: string,
+): Promise<{ success: boolean; error?: string; mode?: "remux" | "transcode" }> {
+	const ffmpegPath = await getFfmpegPath();
+	if (!ffmpegPath) {
+		return { success: false, error: "FFmpeg not found" };
+	}
+
+	const { execFile } = await import("node:child_process");
+	const { promisify } = await import("node:util");
+	const execFileAsync = promisify(execFile);
+	const env = getFfmpegEnv(ffmpegPath);
+
+	try {
+		await fs.access(inputPath);
+	} catch {
+		return { success: false, error: `Input file not found: ${inputPath}` };
+	}
+
+	const info = await probeStreamInfo(inputPath, ffmpegPath, execFileAsync, env);
+	const timeout = Math.max(600_000, Math.round((info.durationMs ?? 0) * 2));
+
+	if (info.videoCodec === "h264") {
+		// AAC audio copies straight across; anything else (e.g. Opus) is
+		// transcoded to AAC — still near-instant since only audio re-encodes.
+		const audioArgs =
+			info.audioCodec === "aac"
+				? ["-c:a", "copy"]
+				: info.audioCodec
+					? ["-c:a", "aac", "-b:a", "160k"]
+					: ["-an"];
+
+		try {
+			console.log("[ffmpeg] Remux export: stream-copying H.264 video");
+			await execFileAsync(
+				ffmpegPath,
+				[
+					"-i",
+					inputPath,
+					"-c:v",
+					"copy",
+					...audioArgs,
+					"-movflags",
+					"+faststart",
+					"-y",
+					outputPath,
+				],
+				{ timeout, env },
+			);
+			console.log("[ffmpeg] Remux export succeeded (no re-encode)");
+			return { success: true, mode: "remux" };
+		} catch (err) {
+			console.warn("[ffmpeg] Stream copy failed, falling back to transcode:", err);
+		}
+	}
+
+	// Non-H.264 source (or copy failed) — single transcode pass, hardware first
+	const hasAudio = info.audioCodec !== null;
+	const hwEncoder = await pickHwH264Encoder(ffmpegPath, execFileAsync, env);
+	for (const encoder of hwEncoder ? [hwEncoder, null] : [null]) {
+		try {
+			console.log(`[ffmpeg] Remux export: transcoding with ${encoder ?? "libx264"}`);
+			await execFileAsync(
+				ffmpegPath,
+				["-i", inputPath, ...buildH264EncodeArgs(encoder, hasAudio), "-y", outputPath],
+				{ timeout, env },
+			);
+			return { success: true, mode: "transcode" };
+		} catch (err) {
+			if (encoder === null) {
+				console.error("[ffmpeg] Remux export failed:", err);
+				return { success: false, error: `Remux export failed: ${err}` };
+			}
+			console.warn(`[ffmpeg] Transcode with ${encoder} failed, retrying with libx264:`, err);
+		}
+	}
+	return { success: false, error: "Remux export failed" };
 }
 
 export type GifOptimizeSizePreset = "small" | "medium" | "large" | "original";
@@ -735,24 +1162,25 @@ export async function convertVideoToGif(
 	}
 	const maxColors = GIF_MAX_COLORS_BY_PRESET[options.sizePreset ?? "original"] ?? 256;
 
-	const filterParts: string[] = [];
-	let currentLabel = "[0:v]";
-
+	// Trim segments are pre-cut into a temp MP4 via quickTrimExport rather
+	// than a trim+setpts+concat filtergraph: the bundled Remotion ffmpeg has
+	// no setpts filter, so the filtergraph route fails with "Filter not found".
 	const segments = (options.segments ?? []).filter(
 		(s) => Number.isFinite(s.startMs) && Number.isFinite(s.endMs) && s.endMs > s.startMs,
 	);
+	let sourcePath = inputPath;
+	let tempCutPath: string | null = null;
 	if (segments.length > 0) {
-		const segmentLabels: string[] = [];
-		segments.forEach((segment, index) => {
-			const start = (segment.startMs / 1000).toFixed(3);
-			const end = (segment.endMs / 1000).toFixed(3);
-			filterParts.push(`[0:v]trim=start=${start}:end=${end},setpts=PTS-STARTPTS[seg${index}]`);
-			segmentLabels.push(`[seg${index}]`);
-		});
-		filterParts.push(`${segmentLabels.join("")}concat=n=${segments.length}:v=1:a=0[cut]`);
-		currentLabel = "[cut]";
+		tempCutPath = path.join(app.getPath("temp"), `guide-studio-gif-cut-${Date.now()}.mp4`);
+		const cutResult = await quickTrimExport(inputPath, tempCutPath, segments);
+		if (!cutResult.success) {
+			await fs.unlink(tempCutPath).catch(() => undefined);
+			return { success: false, error: cutResult.error || "Failed to cut trim segments" };
+		}
+		sourcePath = tempCutPath;
 	}
 
+	const filterParts: string[] = [];
 	const chain: string[] = [];
 	const crop = options.crop;
 	const isDefaultCrop =
@@ -766,10 +1194,13 @@ export async function convertVideoToGif(
 			`crop=iw*${cw.toFixed(4)}:ih*${ch.toFixed(4)}:iw*${cx.toFixed(4)}:ih*${cy.toFixed(4)}`,
 		);
 	}
-	chain.push(`fps=${fps}`);
+	// Frame rate is set with the -r output option instead of the fps filter,
+	// which the bundled ffmpeg also lacks. Output -r drops frames after the
+	// filtergraph; palettegen sees every source frame, which only makes the
+	// palette marginally more informed.
 	chain.push(`scale=${width}:${height}:flags=lanczos`);
 	chain.push("split[pal_a][pal_b]");
-	filterParts.push(`${currentLabel}${chain.join(",")}`);
+	filterParts.push(`[0:v]${chain.join(",")}`);
 	filterParts.push(`[pal_a]palettegen=stats_mode=diff:max_colors=${maxColors}[p]`);
 	filterParts.push("[pal_b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle");
 
@@ -783,9 +1214,11 @@ export async function convertVideoToGif(
 			ffmpegPath,
 			[
 				"-i",
-				inputPath,
+				sourcePath,
 				"-filter_complex",
 				filterParts.join(";"),
+				"-r",
+				String(fps),
 				"-loop",
 				options.loop ? "0" : "-1",
 				"-y",
@@ -805,6 +1238,10 @@ export async function convertVideoToGif(
 			/* intentional noop */
 		});
 		return { success: false, error: `GIF conversion failed: ${err}` };
+	} finally {
+		if (tempCutPath) {
+			await fs.unlink(tempCutPath).catch(() => undefined);
+		}
 	}
 }
 

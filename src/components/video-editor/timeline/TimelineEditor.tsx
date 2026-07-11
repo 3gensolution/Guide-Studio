@@ -5,11 +5,13 @@ import {
 	ChevronDown,
 	Film,
 	Gauge,
+	Maximize2,
 	MessageSquare,
 	Plus,
 	Scissors,
 	Trash2,
 	ZoomIn,
+	ZoomOut,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -31,6 +33,7 @@ import { formatShortcut } from "@/utils/platformUtils";
 import { BLUR_REGIONS_ENABLED } from "../featureFlags";
 import type { AnnotationRegion, SpeedRegion, TrimRegion, VideoClip, ZoomRegion } from "../types";
 import BackgroundWaveform from "./BackgroundWaveform";
+import FilmstripTrack from "./FilmstripTrack";
 import Item from "./Item";
 import KeyframeMarkers from "./KeyframeMarkers";
 import Row from "./Row";
@@ -867,6 +870,15 @@ function Timeline({
 					);
 				})()}
 
+			{/* CapCut-style filmstrip band for the main video track */}
+			<FilmstripTrack
+				videoUrl={videoUrl}
+				spanStartMs={introDurationMs}
+				spanEndMs={videoDurationMs}
+				rangeStartMs={range.start}
+				valueToPixels={valueToPixels}
+			/>
+
 			{clipItems.length > 0 && (
 				<Row id={CLIP_ROW_ID} isEmpty={false} hint="Video clips">
 					{clipItems.map((item) => (
@@ -1103,6 +1115,33 @@ export default function TimelineEditor({
 		},
 		[totalMs],
 	);
+
+	// View zoom (buttons + Ctrl/Cmd+Scroll drive the same visible range).
+	// Anchors on the playhead when it's in view so it stays put on screen.
+	const zoomViewBy = useCallback(
+		(factor: number) => {
+			setRange((prev) => {
+				const visible = Math.max(prev.end - prev.start, 1);
+				const target = Math.max(
+					timelineScale.minVisibleRangeMs,
+					Math.min(totalMs > 0 ? totalMs : visible, visible / factor),
+				);
+				if (Math.abs(target - visible) < 1) return prev;
+				const anchor =
+					currentTimeMs >= prev.start && currentTimeMs <= prev.end
+						? currentTimeMs
+						: (prev.start + prev.end) / 2;
+				const ratio = (anchor - prev.start) / visible;
+				const start = anchor - ratio * target;
+				return clampVisibleRange({ start, end: start + target }, totalMs);
+			});
+		},
+		[currentTimeMs, timelineScale.minVisibleRangeMs, totalMs],
+	);
+
+	const zoomViewToFit = useCallback(() => {
+		setRange(createInitialRange(totalMs));
+	}, [totalMs]);
 
 	const deleteSelectedZoom = useCallback(() => {
 		if (!selectedZoomId) return;
@@ -1789,6 +1828,35 @@ export default function TimelineEditor({
 					</DropdownMenu>
 				</div>
 				<div className="flex-1" />
+				<div className="flex items-center gap-0.5 mr-2">
+					<Button
+						onClick={() => zoomViewBy(1 / 1.5)}
+						variant="ghost"
+						size="icon"
+						className="h-7 w-7 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-white/[0.07] transition-all"
+						title="Zoom timeline out"
+					>
+						<ZoomOut className="w-4 h-4" />
+					</Button>
+					<Button
+						onClick={() => zoomViewBy(1.5)}
+						variant="ghost"
+						size="icon"
+						className="h-7 w-7 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-white/[0.07] transition-all"
+						title="Zoom timeline in"
+					>
+						<ZoomIn className="w-4 h-4" />
+					</Button>
+					<Button
+						onClick={zoomViewToFit}
+						variant="ghost"
+						size="icon"
+						className="h-7 w-7 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-white/[0.07] transition-all"
+						title="Fit whole timeline"
+					>
+						<Maximize2 className="w-4 h-4" />
+					</Button>
+				</div>
 				<div className="hidden md:flex items-center gap-3 text-[10px] text-slate-500 font-medium">
 					<span className="flex items-center gap-1.5">
 						<kbd className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[#6E6BFF] font-sans">

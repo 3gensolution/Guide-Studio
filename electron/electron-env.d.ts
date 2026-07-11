@@ -214,6 +214,16 @@ interface Window {
 			path?: string;
 			error?: string;
 		}>;
+		saveGuideDoc: (
+			content: string,
+			defaultFileName: string,
+			format: "html" | "md",
+		) => Promise<{
+			success: boolean;
+			path?: string;
+			canceled?: boolean;
+			error?: string;
+		}>;
 		deleteTempFile: (filePath: string) => Promise<{
 			success: boolean;
 			error?: string;
@@ -227,6 +237,13 @@ interface Window {
 			outputPath: string,
 			segments: Array<{ startMs: number; endMs: number }>,
 		) => Promise<{ success: boolean; error?: string }>;
+		flattenVideoClips: (
+			segments: Array<{ sourcePath: string; startMs: number; endMs: number }>,
+		) => Promise<{ success: boolean; tempPath?: string; error?: string }>;
+		remuxExport: (
+			inputPath: string,
+			outputPath: string,
+		) => Promise<{ success: boolean; error?: string; mode?: "remux" | "transcode" }>;
 		optimizeGif: (
 			filePath: string,
 			loop?: boolean,

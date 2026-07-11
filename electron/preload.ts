@@ -353,6 +353,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return ipcRenderer.invoke("save-diagnostic", payload);
 	},
 
+	// ── Guide doc export ──
+	saveGuideDoc: (content: string, defaultFileName: string, format: "html" | "md") => {
+		return ipcRenderer.invoke("save-guide-doc", content, defaultFileName, format);
+	},
+
 	// ── Intro video ──
 	saveIntroVideo: (videoData: ArrayBuffer) => {
 		return ipcRenderer.invoke("save-intro-video", videoData);
@@ -374,6 +379,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		segments: Array<{ startMs: number; endMs: number }>,
 	) => {
 		return ipcRenderer.invoke("quick-trim-export", inputPath, outputPath, segments);
+	},
+	flattenVideoClips: (segments: Array<{ sourcePath: string; startMs: number; endMs: number }>) => {
+		return ipcRenderer.invoke("flatten-video-clips", segments);
+	},
+	remuxExport: (inputPath: string, outputPath: string) => {
+		return ipcRenderer.invoke("remux-export", inputPath, outputPath);
 	},
 	optimizeGif: (
 		filePath: string,

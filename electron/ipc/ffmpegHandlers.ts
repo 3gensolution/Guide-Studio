@@ -3,9 +3,12 @@ import {
 	type ConvertVideoToGifOptions,
 	concatenateVideos,
 	convertVideoToGif,
+	type FlattenClipSegment,
+	flattenVideoClips,
 	getFfmpegPath,
 	optimizeGif,
 	quickTrimExport,
+	remuxExport,
 } from "../ffmpeg";
 
 export function registerFfmpegHandlers() {
@@ -56,6 +59,24 @@ export function registerFfmpegHandlers() {
 			}
 		},
 	);
+
+	ipcMain.handle("remux-export", async (_event, inputPath: string, outputPath: string) => {
+		try {
+			return await remuxExport(inputPath, outputPath);
+		} catch (error) {
+			console.error("Failed to remux export:", error);
+			return { success: false, error: String(error) };
+		}
+	});
+
+	ipcMain.handle("flatten-video-clips", async (_event, segments: FlattenClipSegment[]) => {
+		try {
+			return await flattenVideoClips(segments);
+		} catch (error) {
+			console.error("Failed to flatten video clips:", error);
+			return { success: false, error: String(error) };
+		}
+	});
 
 	ipcMain.handle(
 		"quick-trim-export",

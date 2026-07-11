@@ -65,6 +65,12 @@ import {
 	type Mp4FrameRate,
 	VideoExporter,
 } from "@/lib/exporter";
+import {
+	buildClipFlattenPlan,
+	remapPrimaryCursorTelemetry,
+	remapSpanRegions,
+	toFlattenIpcSegments,
+} from "@/lib/exporter/clipFlatten";
 import { computeFrameStepTime } from "@/lib/frameStep";
 import type { CursorCaptureMode, ProjectMedia } from "@/lib/recordingSession";
 import { matchesShortcut } from "@/lib/shortcuts";
@@ -1187,24 +1193,42 @@ export default function VideoEditor() {
 	const buildAutoZoomRegions = useCallback(
 		(existingRegions: ZoomRegion[]): ZoomRegion[] => {
 			const totalMs = Math.round(duration * 1000);
+			// Telemetry (and therefore each suggestion) is in the primary
+			// recording's own time. With clips on the timeline the recording may
+			// sit at an offset and be trimmed, so suggestions are projected onto
+			// the master timeline through the primary clip and clamped to it.
+			const primaryClip = editorState.videoClips.find((clip) => clip.sourceType === "recording");
+			const shiftMs = primaryClip ? primaryClip.offsetMs - primaryClip.startMs : 0;
+			const clampStartMs = primaryClip ? primaryClip.offsetMs : 0;
+			const clampEndMs = primaryClip ? primaryClip.offsetMs + primaryClip.durationMs : totalMs;
 			const suggestions = buildAutoZoomSuggestions({
 				cursorTelemetry,
 				totalMs,
-				existingRegions,
+				// Existing regions live on the master timeline — compare them in
+				// recording time, where the suggestions are computed.
+				existingRegions: shiftMs
+					? existingRegions.map((region) => ({
+							...region,
+							startMs: region.startMs - shiftMs,
+							endMs: region.endMs - shiftMs,
+						}))
+					: existingRegions,
 				defaultDurationMs: Math.max(1000, Math.round(totalMs * 0.05)),
 			});
-			return suggestions.map((suggestion) => ({
-				id: `zoom-${nextZoomIdRef.current++}`,
-				startMs: Math.round(suggestion.span.start),
-				endMs: Math.round(suggestion.span.end),
-				depth: DEFAULT_ZOOM_DEPTH,
-				customScale: ZOOM_DEPTH_SCALES[DEFAULT_ZOOM_DEPTH],
-				focus: clampFocusToDepth(suggestion.focus, DEFAULT_ZOOM_DEPTH),
-				focusMode: autoFocusAll ? ("auto" as const) : undefined,
-				source: "auto" as const,
-			}));
+			return suggestions
+				.map((suggestion) => ({
+					id: `zoom-${nextZoomIdRef.current++}`,
+					startMs: Math.max(clampStartMs, Math.round(suggestion.span.start + shiftMs)),
+					endMs: Math.min(clampEndMs, Math.round(suggestion.span.end + shiftMs)),
+					depth: DEFAULT_ZOOM_DEPTH,
+					customScale: ZOOM_DEPTH_SCALES[DEFAULT_ZOOM_DEPTH],
+					focus: clampFocusToDepth(suggestion.focus, DEFAULT_ZOOM_DEPTH),
+					focusMode: autoFocusAll ? ("auto" as const) : undefined,
+					source: "auto" as const,
+				}))
+				.filter((region) => region.endMs - region.startMs >= 500);
 		},
-		[cursorTelemetry, duration, autoFocusAll],
+		[cursorTelemetry, duration, autoFocusAll, editorState.videoClips],
 	);
 
 	// Auto-suggest zooms once per fresh recording (no existing zooms, telemetry
@@ -2182,10 +2206,61 @@ export default function VideoEditor() {
 			setExportError(null);
 			setExportedFilePath(null);
 
+			let flattenedTempPath: string | null = null;
+
 			try {
 				const wasPlaying = isPlaying;
 				if (wasPlaying) {
 					videoPlaybackRef.current?.pause();
+				}
+
+				// ── Multi-clip: flatten the timeline into one intermediate video ──
+				// The exporters decode a single source file, so a multi-clip timeline
+				// is cut+concatenated with FFmpeg first, and all master-time effect
+				// data is remapped onto the flattened timeline.
+				let exportVideoUrl = videoPath;
+				let exportSourcePath = videoSourcePath ?? (videoPath ? fromFileUrl(videoPath) : null);
+				let exportZoomRegions = zoomRegions;
+				let exportTrimRegions = trimRegions;
+				let exportSpeedRegions = speedRegions;
+				let exportAnnotationRegions = annotationRegions;
+				let exportCursorTelemetry = cursorTelemetry ?? cursorRecordingData?.samples;
+				let exportDurationMs = duration * 1000;
+
+				if (editorState.videoClips.length > 0) {
+					if (!window.electronAPI.flattenVideoClips) {
+						throw new Error("Multi-clip export is not supported in this build");
+					}
+					const plan = buildClipFlattenPlan(editorState.videoClips);
+					if (plan.segments.length > 0) {
+						setExportProgress({
+							currentFrame: 0,
+							totalFrames: 1,
+							percentage: 2,
+							estimatedTimeRemaining: 0,
+						});
+						const flattenResult = await window.electronAPI.flattenVideoClips(
+							toFlattenIpcSegments(plan),
+						);
+						if (!flattenResult.success || !flattenResult.tempPath) {
+							throw new Error(flattenResult.error || "Failed to combine timeline clips for export");
+						}
+						flattenedTempPath = flattenResult.tempPath;
+						exportVideoUrl = toFileUrl(flattenResult.tempPath);
+						exportSourcePath = flattenResult.tempPath;
+						exportZoomRegions = remapSpanRegions(zoomRegions, plan);
+						exportTrimRegions = remapSpanRegions(trimRegions, plan);
+						exportSpeedRegions = remapSpanRegions(speedRegions, plan);
+						exportAnnotationRegions = remapSpanRegions(annotationRegions, plan);
+						if (exportCursorTelemetry) {
+							const primarySourcePath =
+								videoSourcePath ?? (videoPath ? fromFileUrl(videoPath) : null);
+							exportCursorTelemetry = primarySourcePath
+								? remapPrimaryCursorTelemetry(exportCursorTelemetry, primarySourcePath, plan)
+								: [];
+						}
+						exportDurationMs = plan.flattenedDurationMs;
+					}
 				}
 
 				const sourceWidth = video.videoWidth || DEFAULT_SOURCE_DIMENSIONS.width;
@@ -2207,7 +2282,7 @@ export default function VideoEditor() {
 					// Trim regions and crop still apply. Produces much smaller files
 					// because only the recording's own pixels change frame to frame.
 					if (settings.gifConfig.videoOnly) {
-						const localSourcePath = videoSourcePath ?? (videoPath ? fromFileUrl(videoPath) : null);
+						const localSourcePath = exportSourcePath;
 						if (localSourcePath && window.electronAPI?.convertVideoToGif) {
 							console.log("[VideoEditor] Using direct FFmpeg GIF conversion (video only)");
 							setExportProgress({
@@ -2218,8 +2293,8 @@ export default function VideoEditor() {
 							});
 
 							// Compute kept segments from trim regions
-							const totalDurationMs = duration * 1000;
-							const sortedTrims = [...trimRegions].sort((a, b) => a.startMs - b.startMs);
+							const totalDurationMs = exportDurationMs;
+							const sortedTrims = [...exportTrimRegions].sort((a, b) => a.startMs - b.startMs);
 							const keptSegments: Array<{ startMs: number; endMs: number }> = [];
 							let trimCursor = 0;
 							for (const trim of sortedTrims) {
@@ -2241,7 +2316,7 @@ export default function VideoEditor() {
 									height: settings.gifConfig.height,
 									loop: settings.gifConfig.loop,
 									sizePreset: settings.gifConfig.sizePreset,
-									segments: trimRegions.length > 0 ? keptSegments : undefined,
+									segments: exportTrimRegions.length > 0 ? keptSegments : undefined,
 									crop: cropRegion,
 								},
 							);
@@ -2269,16 +2344,16 @@ export default function VideoEditor() {
 
 					// GIF Export
 					const gifExporter = new GifExporter({
-						videoUrl: videoPath,
+						videoUrl: exportVideoUrl,
 						width: settings.gifConfig.width,
 						height: settings.gifConfig.height,
 						frameRate: settings.gifConfig.frameRate,
 						loop: settings.gifConfig.loop,
 						sizePreset: settings.gifConfig.sizePreset,
 						wallpaper,
-						zoomRegions,
-						trimRegions,
-						speedRegions,
+						zoomRegions: exportZoomRegions,
+						trimRegions: exportTrimRegions,
+						speedRegions: exportSpeedRegions,
 						showShadow: shadowIntensity > 0,
 						shadowIntensity,
 						backgroundBlur: showBlur ? 1 : 0,
@@ -2286,13 +2361,13 @@ export default function VideoEditor() {
 						padding,
 						videoPadding: padding,
 						cropRegion,
-						cursorTelemetry: cursorTelemetry ?? cursorRecordingData?.samples,
+						cursorTelemetry: exportCursorTelemetry,
 						showCursor: effectiveShowCursor,
 						cursorSize: effectiveShowCursor ? cursorSize : 0,
 						cursorSmoothing,
 						cursorMotionBlur,
 						cursorClickBounce,
-						annotationRegions,
+						annotationRegions: exportAnnotationRegions,
 						previewWidth,
 						previewHeight,
 						onProgress: (progress: ExportProgress) => {
@@ -2359,18 +2434,22 @@ export default function VideoEditor() {
 				} else {
 					// MP4 Export
 
-					// Quick-trim fast path: when the user has only trimmed the video
-					// without applying visual effects, use FFmpeg stream-copy to cut
-					// the raw video — nearly instant vs full re-encode.
+					// Fast paths: when the export has no visual effects, skip the full
+					// WebCodecs decode+render+encode pipeline entirely.
+					// - No edits at all → FFmpeg remux (stream copy, near-instant)
+					// - Trims only → FFmpeg cut + hardware re-encode
 					const isDefaultCrop =
 						cropRegion.x === 0 &&
 						cropRegion.y === 0 &&
 						cropRegion.width === 1 &&
 						cropRegion.height === 1;
+					// The flattened multi-clip intermediate is itself a clean H.264 MP4,
+					// so the FFmpeg fast paths below stay valid when clips are present —
+					// they just run on the flattened file instead of the raw recording.
 					const hasNoVisualEffects =
-						zoomRegions.length === 0 &&
-						annotationRegions.length === 0 &&
-						speedRegions.length === 0 &&
+						exportZoomRegions.length === 0 &&
+						exportAnnotationRegions.length === 0 &&
+						exportSpeedRegions.length === 0 &&
 						!effectiveShowCursor &&
 						!webcamVideoPath &&
 						!editorState.introClip?.introConfig?.config &&
@@ -2378,10 +2457,44 @@ export default function VideoEditor() {
 						shadowIntensity === 0 &&
 						borderRadius === 0 &&
 						(padding === 0 || padding === undefined);
-					const localSourcePath = videoSourcePath ?? (videoPath ? fromFileUrl(videoPath) : null);
+					const localSourcePath = exportSourcePath;
+
+					const canRemux =
+						hasNoVisualEffects &&
+						exportTrimRegions.length === 0 &&
+						localSourcePath &&
+						window.electronAPI?.remuxExport;
+
+					if (canRemux) {
+						console.log("[VideoEditor] Using remux fast path (no edits, FFmpeg stream copy)");
+						setExportProgress({
+							currentFrame: 0,
+							totalFrames: 1,
+							percentage: 10,
+							estimatedTimeRemaining: 0,
+						});
+
+						const remuxResult = await window.electronAPI.remuxExport(localSourcePath, targetPath);
+						if (remuxResult.success) {
+							setExportProgress({
+								currentFrame: 1,
+								totalFrames: 1,
+								percentage: 100,
+								estimatedTimeRemaining: 0,
+							});
+							handleExportSaved("Video", targetPath);
+							return;
+						}
+						console.warn(
+							"[VideoEditor] Remux failed, falling back to full export:",
+							remuxResult.error,
+						);
+						// Fall through to full export below
+					}
+
 					const canQuickTrim =
 						hasNoVisualEffects &&
-						trimRegions.length > 0 &&
+						exportTrimRegions.length > 0 &&
 						localSourcePath &&
 						window.electronAPI?.quickTrimExport;
 
@@ -2395,8 +2508,8 @@ export default function VideoEditor() {
 						});
 
 						// Compute kept segments from trim regions
-						const totalDurationMs = duration * 1000;
-						const sorted = [...trimRegions].sort((a, b) => a.startMs - b.startMs);
+						const totalDurationMs = exportDurationMs;
+						const sorted = [...exportTrimRegions].sort((a, b) => a.startMs - b.startMs);
 						const keptSegments: Array<{ startMs: number; endMs: number }> = [];
 						let segCursor = 0;
 						for (const trim of sorted) {
@@ -2447,7 +2560,7 @@ export default function VideoEditor() {
 					});
 
 					const exporter = new VideoExporter({
-						videoUrl: videoPath,
+						videoUrl: exportVideoUrl,
 						width: exportWidth,
 						height: exportHeight,
 						frameRate: settings.mp4FrameRate || mp4FrameRate,
@@ -2455,22 +2568,22 @@ export default function VideoEditor() {
 						codec: "avc1.640033",
 						encodingMode,
 						wallpaper,
-						zoomRegions,
-						trimRegions,
-						speedRegions,
+						zoomRegions: exportZoomRegions,
+						trimRegions: exportTrimRegions,
+						speedRegions: exportSpeedRegions,
 						showShadow: shadowIntensity > 0,
 						shadowIntensity,
 						backgroundBlur: showBlur ? 1 : 0,
 						borderRadius,
 						padding,
 						cropRegion,
-						cursorTelemetry: cursorTelemetry ?? cursorRecordingData?.samples,
+						cursorTelemetry: exportCursorTelemetry,
 						showCursor: effectiveShowCursor,
 						cursorSize: effectiveShowCursor ? cursorSize : 0,
 						cursorSmoothing,
 						cursorMotionBlur,
 						cursorClickBounce,
-						annotationRegions,
+						annotationRegions: exportAnnotationRegions,
 						previewWidth,
 						previewHeight,
 						introConfig: editorState.introClip?.introConfig?.config,
@@ -2565,6 +2678,11 @@ export default function VideoEditor() {
 					toast.error(t("errors.exportFailedWithError", { error: message }));
 				}
 			} finally {
+				if (flattenedTempPath) {
+					void window.electronAPI.deleteTempFile(flattenedTempPath).catch(() => {
+						/* best-effort temp cleanup */
+					});
+				}
 				exporterRef.current = null;
 				setIsExporting(false);
 				// Don't clear exportProgress here — the ExportDialog needs to
@@ -2612,6 +2730,7 @@ export default function VideoEditor() {
 			cursorTheme,
 			t,
 			editorState.introClip,
+			editorState.videoClips,
 			duration,
 		],
 	);
@@ -3399,6 +3518,8 @@ export default function VideoEditor() {
 																setShowAutoCaptionsDialog(true);
 															}}
 															isGeneratingCaptions={isAutoCaptioning}
+															captionTrack={editorState.captionTrack ?? null}
+															videoPath={videoPath}
 														/>
 													)}
 												</div>

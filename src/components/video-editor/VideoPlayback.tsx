@@ -418,8 +418,20 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			[cursorRecordingData],
 		);
 
+		// The shared <video> element swaps sources when playback enters an added
+		// clip; its reported duration is then the clip's, not the recording's.
+		// Master duration must only ever track the primary recording.
+		const isPrimarySourceLoaded = useCallback(() => {
+			const activeClip = activeClipRef.current;
+			return !activeClip || activeClip.sourceType === "recording";
+		}, []);
+
 		const syncResolvedDuration = useCallback(
 			(video: HTMLVideoElement) => {
+				if (!isPrimarySourceLoaded()) {
+					return true;
+				}
+
 				const resolvedDuration = getResolvedVideoDuration(video);
 				if (!resolvedDuration) {
 					return false;
@@ -433,12 +445,12 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 
 				return true;
 			},
-			[onDurationChange],
+			[onDurationChange, isPrimarySourceLoaded],
 		);
 
 		const forceResolveDuration = useCallback(
 			(video: HTMLVideoElement) => {
-				if (isResolvingDurationRef.current) {
+				if (isResolvingDurationRef.current || !isPrimarySourceLoaded()) {
 					return;
 				}
 
@@ -520,7 +532,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 					finalize();
 				}
 			},
-			[onDurationChange, syncResolvedDuration],
+			[onDurationChange, syncResolvedDuration, isPrimarySourceLoaded],
 		);
 
 		// Clamp against getZoomScale(region), not region.depth: depth is just the preset
@@ -1591,12 +1603,16 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			let lastTransformIsIdentity = true;
 			let lastPerspectiveValue = 0;
 			const ticker = () => {
+				// Cursor telemetry belongs to the primary recording; while an added
+				// clip is on screen its local clock and the telemetry don't line up,
+				// so cursor-driven effects must not sample it.
+				const onPrimarySource = isPrimarySourceLoaded();
 				const { region, strength, blendedScale, rotation3D, transition } = findDominantRegion(
 					zoomRegionsRef.current,
 					masterTimeRef.current,
 					{
 						connectZooms: true,
-						cursorTelemetry: cursorTelemetryRef.current,
+						cursorTelemetry: onPrimarySource ? cursorTelemetryRef.current : undefined,
 					},
 				);
 
@@ -1786,7 +1802,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 						cursorTelemetryRef.current,
 						timeMs,
 						baseMaskRef.current,
-						showCursorRef.current && !hasNativeCursorRecordingRef.current,
+						showCursorRef.current && !hasNativeCursorRecordingRef.current && onPrimarySource,
 						!isPlayingRef.current || isSeekingRef.current,
 					);
 				}
@@ -1808,7 +1824,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 					resetNativeCursorMotionBlurState(nativeCursorMotionBlurStateRef.current);
 				};
 				if (nativeCursorImage) {
-					if (hasNativeCursorRecordingRef.current && showCursorRef.current) {
+					if (hasNativeCursorRecordingRef.current && showCursorRef.current && onPrimarySource) {
 						const timeMs = currentTimeRef.current; // already in ms
 						const frame = resolveInterpolatedNativeCursorFrame(
 							cursorRecordingDataRef.current,
@@ -1987,7 +2003,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 					app.ticker.remove(ticker);
 				}
 			};
-		}, [pixiReady, videoReady]);
+		}, [pixiReady, videoReady, isPrimarySourceLoaded]);
 
 		const handleLoadedMetadata = (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
 			const video = e.currentTarget;
