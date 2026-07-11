@@ -946,6 +946,238 @@ export async function flattenVideoClips(
 	}
 }
 
+export type SmartAssembleSegment =
+	| { kind: "copy"; sourcePath: string; startMs: number; endMs: number }
+	| { kind: "rendered"; startMs: number; endMs: number };
+
+export interface SmartAssembleOptions {
+	outputPath: string;
+	/** Effects-rendered spans, keyframe-aligned at each segment boundary. */
+	renderedPath: string;
+	/** Delete renderedPath when done (it may live outside the temp dir). */
+	cleanupRenderedFile?: boolean;
+	width: number;
+	height: number;
+	fps: number;
+	bitrate?: number;
+	segments: SmartAssembleSegment[];
+}
+
+/**
+ * Smart-render assembly: interleave untouched spans cut straight from the
+ * source files (fast hardware re-encode, no canvas compositing) with spans
+ * from the effects-rendered file (stream-copied at the keyframes the exporter
+ * forced), then join with the concat demuxer. Falls back to a re-encode
+ * concat if the stream-copy join is rejected.
+ */
+export async function assembleSmartExport(
+	options: SmartAssembleOptions,
+): Promise<{ success: boolean; error?: string }> {
+	const { outputPath, renderedPath, width, height, fps, bitrate, segments } = options;
+	if (segments.length === 0) {
+		return { success: false, error: "No segments to assemble" };
+	}
+
+	const ffmpegPath = await getFfmpegPath();
+	if (!ffmpegPath) {
+		return { success: false, error: "FFmpeg not found" };
+	}
+
+	const { execFile } = await import("node:child_process");
+	const { promisify } = await import("node:util");
+	const execFileAsync = promisify(execFile);
+	const env = getFfmpegEnv(ffmpegPath);
+
+	const copySources = [
+		...new Set(
+			segments
+				.filter(
+					(seg): seg is Extract<SmartAssembleSegment, { kind: "copy" }> => seg.kind === "copy",
+				)
+				.map((seg) => seg.sourcePath),
+		),
+	];
+	for (const sourcePath of [renderedPath, ...copySources]) {
+		try {
+			await fs.access(sourcePath);
+		} catch {
+			return { success: false, error: `Assembly input not found: ${sourcePath}` };
+		}
+	}
+
+	// The rendered file dictates audio presence: it carries the source audio
+	// whenever the source had any, so every joined segment must match it.
+	const renderedHasAudio = await probeHasAudio(renderedPath, ffmpegPath, execFileAsync, env);
+	const audioBySource = new Map<string, boolean>();
+	for (const sourcePath of copySources) {
+		audioBySource.set(sourcePath, await probeHasAudio(sourcePath, ffmpegPath, execFileAsync, env));
+	}
+
+	const totalMs = segments.reduce((sum, seg) => sum + (seg.endMs - seg.startMs), 0);
+	const timeout = Math.max(600_000, Math.round(totalMs * 3));
+
+	const tw = Math.floor(width / 2) * 2;
+	const th = Math.floor(height / 2) * 2;
+	const tempDir = app.getPath("temp");
+	const stamp = Date.now();
+	const segmentPaths = segments.map((_, i) =>
+		path.join(tempDir, `guide-studio-smart-${stamp}-${i}.mp4`),
+	);
+	const listPath = path.join(tempDir, `guide-studio-smart-${stamp}-list.txt`);
+	const halfFrameSec = 0.5 / fps;
+
+	const encodeCopySegment = async (
+		seg: Extract<SmartAssembleSegment, { kind: "copy" }>,
+		outPath: string,
+		videoEncodeArgs: string[],
+	) => {
+		const startSec = (seg.startMs / 1000).toFixed(3);
+		const durationSec = ((seg.endMs - seg.startMs) / 1000).toFixed(3);
+		const hasAudio = audioBySource.get(seg.sourcePath) ?? false;
+
+		const inputArgs = ["-ss", startSec, "-i", seg.sourcePath];
+		const mapArgs = ["-map", "0:v:0"];
+		if (renderedHasAudio) {
+			if (hasAudio) {
+				mapArgs.push("-map", "0:a:0");
+			} else {
+				inputArgs.push("-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000");
+				mapArgs.push("-map", "1:a:0");
+			}
+		}
+
+		await execFileAsync(
+			ffmpegPath,
+			[
+				...inputArgs,
+				"-t",
+				durationSec,
+				...mapArgs,
+				"-vf",
+				`scale=${tw}:${th}`,
+				"-r",
+				String(fps),
+				...videoEncodeArgs,
+				"-pix_fmt",
+				"yuv420p",
+				...(renderedHasAudio
+					? ["-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2"]
+					: ["-an"]),
+				"-movflags",
+				"+faststart",
+				"-y",
+				outPath,
+			],
+			{ timeout, env },
+		);
+	};
+
+	const cutRenderedSegment = async (
+		seg: Extract<SmartAssembleSegment, { kind: "rendered" }>,
+		outPath: string,
+	) => {
+		// -ss before -i with stream copy snaps to the keyframe at or before the
+		// seek point; aiming half a frame past the forced keyframe lands on it
+		// exactly regardless of float rounding.
+		const startSec = (seg.startMs / 1000 + halfFrameSec).toFixed(4);
+		const durationSec = ((seg.endMs - seg.startMs) / 1000).toFixed(3);
+		await execFileAsync(
+			ffmpegPath,
+			[
+				"-ss",
+				startSec,
+				"-i",
+				renderedPath,
+				"-t",
+				durationSec,
+				"-c",
+				"copy",
+				"-avoid_negative_ts",
+				"make_zero",
+				"-y",
+				outPath,
+			],
+			{ timeout, env },
+		);
+	};
+
+	const hwEncoder = await pickHwH264Encoder(ffmpegPath, execFileAsync, env);
+	const videoBitrate = `${Math.max(1, Math.round((bitrate ?? 8_000_000) / 1_000_000))}M`;
+	const hwVideoArgs = hwEncoder
+		? [
+				"-c:v",
+				hwEncoder,
+				"-b:v",
+				videoBitrate,
+				...(hwEncoder === "h264_videotoolbox" ? ["-allow_sw", "1"] : []),
+			]
+		: null;
+	const swVideoArgs = ["-c:v", "libx264", "-preset", "veryfast", "-b:v", videoBitrate];
+
+	try {
+		for (let i = 0; i < segments.length; i++) {
+			const seg = segments[i];
+			if (seg.kind === "rendered") {
+				await cutRenderedSegment(seg, segmentPaths[i]);
+				continue;
+			}
+			try {
+				await encodeCopySegment(seg, segmentPaths[i], hwVideoArgs ?? swVideoArgs);
+			} catch (err) {
+				if (!hwVideoArgs) throw err;
+				console.warn(`[ffmpeg] Smart copy segment ${i} failed on ${hwEncoder}, retrying:`, err);
+				await encodeCopySegment(seg, segmentPaths[i], swVideoArgs);
+			}
+		}
+
+		const listBody = segmentPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n");
+		await fs.writeFile(listPath, listBody, "utf-8");
+
+		try {
+			await execFileAsync(
+				ffmpegPath,
+				[
+					"-f",
+					"concat",
+					"-safe",
+					"0",
+					"-i",
+					listPath,
+					"-c",
+					"copy",
+					"-movflags",
+					"+faststart",
+					"-y",
+					outputPath,
+				],
+				{ timeout, env },
+			);
+		} catch (concatErr) {
+			// Mixed WebCodecs/FFmpeg H.264 params can upset stream-copy concat;
+			// concatenateVideos re-encodes as a last resort.
+			console.warn("[ffmpeg] Smart assembly stream-copy concat failed, re-encoding:", concatErr);
+			const fallback = await concatenateVideos(segmentPaths, outputPath);
+			if (!fallback.success) {
+				return { success: false, error: fallback.error };
+			}
+		}
+
+		console.log(
+			`[ffmpeg] Smart export assembled: ${segments.length} segments (${segments.filter((s) => s.kind === "copy").length} copied, ${segments.filter((s) => s.kind === "rendered").length} rendered) → ${outputPath}`,
+		);
+		return { success: true };
+	} catch (err) {
+		console.error("[ffmpeg] Smart assembly failed:", err);
+		return { success: false, error: `Smart export assembly failed: ${err}` };
+	} finally {
+		const cleanupPaths = [...segmentPaths, listPath];
+		if (options.cleanupRenderedFile) {
+			cleanupPaths.push(renderedPath);
+		}
+		await Promise.all(cleanupPaths.map((p) => fs.unlink(p).catch(() => undefined)));
+	}
+}
+
 /**
  * Remux export — the "nothing changed" fast path. When the export has no
  * edits at all, the source's compressed frames are already exactly what the

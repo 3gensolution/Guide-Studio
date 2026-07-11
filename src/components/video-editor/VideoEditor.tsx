@@ -67,10 +67,16 @@ import {
 } from "@/lib/exporter";
 import {
 	buildClipFlattenPlan,
+	type ClipFlattenPlan,
 	remapPrimaryCursorTelemetry,
 	remapSpanRegions,
 	toFlattenIpcSegments,
 } from "@/lib/exporter/clipFlatten";
+import {
+	buildEffectSpans,
+	buildSmartRenderPlan,
+	sliceFlattenPlanFlat,
+} from "@/lib/exporter/smartRender";
 import { computeFrameStepTime } from "@/lib/frameStep";
 import type { CursorCaptureMode, ProjectMedia } from "@/lib/recordingSession";
 import { matchesShortcut } from "@/lib/shortcuts";
@@ -2227,27 +2233,18 @@ export default function VideoEditor() {
 				let exportCursorTelemetry = cursorTelemetry ?? cursorRecordingData?.samples;
 				let exportDurationMs = duration * 1000;
 
+				let fullClipPlan: ClipFlattenPlan | null = null;
 				if (editorState.videoClips.length > 0) {
 					if (!window.electronAPI.flattenVideoClips) {
 						throw new Error("Multi-clip export is not supported in this build");
 					}
 					const plan = buildClipFlattenPlan(editorState.videoClips);
 					if (plan.segments.length > 0) {
-						setExportProgress({
-							currentFrame: 0,
-							totalFrames: 1,
-							percentage: 2,
-							estimatedTimeRemaining: 0,
-						});
-						const flattenResult = await window.electronAPI.flattenVideoClips(
-							toFlattenIpcSegments(plan),
-						);
-						if (!flattenResult.success || !flattenResult.tempPath) {
-							throw new Error(flattenResult.error || "Failed to combine timeline clips for export");
-						}
-						flattenedTempPath = flattenResult.tempPath;
-						exportVideoUrl = toFileUrl(flattenResult.tempPath);
-						exportSourcePath = flattenResult.tempPath;
+						fullClipPlan = plan;
+						// Remap master-time data onto the flattened timeline (pure math);
+						// the actual FFmpeg flatten is deferred until a consumer needs the
+						// combined file — the smart-render path cuts from the original
+						// sources instead and skips it entirely.
 						exportZoomRegions = remapSpanRegions(zoomRegions, plan);
 						exportTrimRegions = remapSpanRegions(trimRegions, plan);
 						exportSpeedRegions = remapSpanRegions(speedRegions, plan);
@@ -2263,6 +2260,25 @@ export default function VideoEditor() {
 					}
 				}
 
+				const ensureFlattenedSource = async () => {
+					if (!fullClipPlan || flattenedTempPath) return;
+					setExportProgress({
+						currentFrame: 0,
+						totalFrames: 1,
+						percentage: 2,
+						estimatedTimeRemaining: 0,
+					});
+					const flattenResult = await window.electronAPI.flattenVideoClips(
+						toFlattenIpcSegments(fullClipPlan),
+					);
+					if (!flattenResult.success || !flattenResult.tempPath) {
+						throw new Error(flattenResult.error || "Failed to combine timeline clips for export");
+					}
+					flattenedTempPath = flattenResult.tempPath;
+					exportVideoUrl = toFileUrl(flattenResult.tempPath);
+					exportSourcePath = flattenResult.tempPath;
+				};
+
 				const sourceWidth = video.videoWidth || DEFAULT_SOURCE_DIMENSIONS.width;
 				const sourceHeight = video.videoHeight || DEFAULT_SOURCE_DIMENSIONS.height;
 				const effectiveSourceDimensions = calculateEffectiveSourceDimensions(
@@ -2277,6 +2293,8 @@ export default function VideoEditor() {
 				const previewHeight = containerElement?.clientHeight || DEFAULT_SOURCE_DIMENSIONS.height;
 
 				if (settings.format === "gif" && settings.gifConfig) {
+					await ensureFlattenedSource();
+
 					// Video-only fast path: convert the raw recording straight to GIF
 					// with FFmpeg, skipping the wallpaper/zoom/cursor compositor.
 					// Trim regions and crop still apply. Produces much smaller files
@@ -2443,6 +2461,227 @@ export default function VideoEditor() {
 						cropRegion.y === 0 &&
 						cropRegion.width === 1 &&
 						cropRegion.height === 1;
+
+					const quality = settings.quality || exportQuality;
+					const exportFps = settings.mp4FrameRate || mp4FrameRate;
+					const {
+						width: exportWidth,
+						height: exportHeight,
+						bitrate,
+					} = calculateMp4ExportSettings({
+						quality,
+						sourceWidth: effectiveSourceDimensions.width,
+						sourceHeight: effectiveSourceDimensions.height,
+						frameRate: exportFps,
+						encodingMode,
+					});
+
+					// ── Smart render ──
+					// When no setting touches every frame (cursor, padding, shadow,
+					// radius, crop, webcam, intro), frames outside effect regions are
+					// identical to the source. Only effect spans go through the heavy
+					// renderer; the rest is cut straight from the source(s) with FFmpeg
+					// and joined. Any failure falls back to the full render below.
+					const smartEligible =
+						Boolean(window.electronAPI?.assembleSmartExport) &&
+						!effectiveShowCursor &&
+						!webcamVideoPath &&
+						!editorState.introClip?.introConfig?.config &&
+						isDefaultCrop &&
+						shadowIntensity === 0 &&
+						borderRadius === 0 &&
+						(padding === 0 || padding === undefined) &&
+						exportSpeedRegions.length === 0 &&
+						(exportZoomRegions.length > 0 || exportAnnotationRegions.length > 0) &&
+						(fullClipPlan !== null || exportSourcePath !== null);
+
+					const smartPlan = smartEligible
+						? buildSmartRenderPlan({
+								durationMs: exportDurationMs,
+								effectSpans: buildEffectSpans({
+									durationMs: exportDurationMs,
+									zoomRegions: exportZoomRegions,
+									annotationRegions: exportAnnotationRegions,
+								}),
+								trimRegions: exportTrimRegions,
+							})
+						: null;
+
+					if (smartPlan) {
+						let miniFlattenTempPath: string | null = null;
+						try {
+							console.log(
+								`[VideoEditor] Smart render: ${Math.round(smartPlan.renderCoverage * 100)}% of the timeline rendered, the rest copied from source`,
+							);
+							const renderSpans = smartPlan.segments.filter((segment) => segment.kind === "render");
+
+							// Frame-aligned boundaries shared by the renderer (forced
+							// keyframes) and the assembler (stream-copy cut points).
+							const frameDurationUs = 1_000_000 / exportFps;
+							const alignToFrameUs = (ms: number) =>
+								Math.ceil((ms * 1000) / frameDurationUs - 1e-6) * frameDurationUs;
+							const renderedCuts = smartPlan.renderOutputSpans.map((span) => ({
+								kind: "rendered" as const,
+								startMs: alignToFrameUs(span.startMs) / 1000,
+								endMs: alignToFrameUs(span.endMs) / 1000,
+							}));
+
+							// What the render pass consumes: for a single source, the source
+							// itself with everything but the render spans trimmed away; for
+							// multi-clip, a mini-flatten containing only the render spans.
+							let renderVideoUrl = exportVideoUrl;
+							let renderTrimRegions: TrimRegion[] = smartPlan.renderTrimRegions.map(
+								(span, index) => ({ id: `smart-trim-${index}`, ...span }),
+							);
+							let renderZoomRegions = exportZoomRegions;
+							let renderAnnotationRegions = exportAnnotationRegions;
+							if (fullClipPlan) {
+								const miniPlan = sliceFlattenPlanFlat(fullClipPlan, renderSpans);
+								const miniResult = await window.electronAPI.flattenVideoClips(
+									toFlattenIpcSegments(miniPlan),
+								);
+								if (!miniResult.success || !miniResult.tempPath) {
+									throw new Error(miniResult.error || "Failed to prepare effect spans");
+								}
+								miniFlattenTempPath = miniResult.tempPath;
+								renderVideoUrl = toFileUrl(miniResult.tempPath);
+								renderTrimRegions = [];
+								renderZoomRegions = remapSpanRegions(exportZoomRegions, miniPlan);
+								renderAnnotationRegions = remapSpanRegions(exportAnnotationRegions, miniPlan);
+							}
+
+							const smartExporter = new VideoExporter({
+								videoUrl: renderVideoUrl,
+								width: exportWidth,
+								height: exportHeight,
+								frameRate: exportFps,
+								bitrate,
+								codec: "avc1.640033",
+								encodingMode,
+								wallpaper,
+								zoomRegions: renderZoomRegions,
+								trimRegions: renderTrimRegions,
+								speedRegions: [],
+								showShadow: false,
+								shadowIntensity: 0,
+								backgroundBlur: 0,
+								borderRadius: 0,
+								padding: 0,
+								cropRegion,
+								showCursor: false,
+								cursorSize: 0,
+								annotationRegions: renderAnnotationRegions,
+								previewWidth,
+								previewHeight,
+								forceKeyframeTimestampsUs: smartPlan.renderOutputSpans.map((span) =>
+									alignToFrameUs(span.startMs),
+								),
+								onProgress: (progress: ExportProgress) => {
+									setExportProgress(progress);
+								},
+							});
+
+							exporterRef.current = smartExporter;
+							const renderResult = await smartExporter.export();
+							if (!renderResult.success) {
+								throw new Error(renderResult.error || "Smart render pass failed");
+							}
+
+							// Stage the rendered spans on disk for the assembler.
+							let renderedPath: string;
+							if (renderResult.tempFilePath) {
+								renderedPath = renderResult.tempFilePath;
+							} else if (renderResult.blob) {
+								const arrayBuffer = await renderResult.blob.arrayBuffer();
+								const stagePath = `${targetPath}.rendered.tmp.mp4`;
+								const stageResult = await window.electronAPI.writeExportToPath(
+									arrayBuffer,
+									stagePath,
+								);
+								if (!stageResult.success || !stageResult.path) {
+									throw new Error(stageResult.message || "Failed to stage rendered spans");
+								}
+								renderedPath = stagePath;
+							} else {
+								throw new Error("Smart render pass produced no output");
+							}
+
+							let renderedCutIndex = 0;
+							const assembleSegments: Array<
+								| { kind: "copy"; sourcePath: string; startMs: number; endMs: number }
+								| { kind: "rendered"; startMs: number; endMs: number }
+							> = [];
+							for (const segment of smartPlan.segments) {
+								if (segment.kind === "render") {
+									assembleSegments.push(renderedCuts[renderedCutIndex++]);
+									continue;
+								}
+								if (fullClipPlan) {
+									for (const slice of sliceFlattenPlanFlat(fullClipPlan, [segment]).segments) {
+										assembleSegments.push({
+											kind: "copy",
+											sourcePath: slice.sourcePath,
+											startMs: slice.sourceStartMs,
+											endMs: slice.sourceEndMs,
+										});
+									}
+								} else {
+									assembleSegments.push({
+										kind: "copy",
+										sourcePath: exportSourcePath as string,
+										startMs: segment.startMs,
+										endMs: segment.endMs,
+									});
+								}
+							}
+
+							setExportProgress({
+								currentFrame: 1,
+								totalFrames: 1,
+								percentage: 97,
+								estimatedTimeRemaining: 0,
+							});
+							const assembleResult = await window.electronAPI.assembleSmartExport({
+								outputPath: targetPath,
+								renderedPath,
+								cleanupRenderedFile: true,
+								width: exportWidth,
+								height: exportHeight,
+								fps: exportFps,
+								bitrate,
+								segments: assembleSegments,
+							});
+							if (!assembleResult.success) {
+								throw new Error(assembleResult.error || "Smart export assembly failed");
+							}
+
+							setExportProgress({
+								currentFrame: 1,
+								totalFrames: 1,
+								percentage: 100,
+								estimatedTimeRemaining: 0,
+							});
+							handleExportSaved("Video", targetPath);
+							return;
+						} catch (smartError) {
+							if (smartError instanceof Error && /cancelled/i.test(smartError.message)) {
+								throw smartError;
+							}
+							console.warn(
+								"[VideoEditor] Smart render failed, falling back to full render:",
+								smartError,
+							);
+						} finally {
+							exporterRef.current = null;
+							if (miniFlattenTempPath) {
+								void window.electronAPI.deleteTempFile(miniFlattenTempPath).catch(() => {
+									/* best-effort temp cleanup */
+								});
+							}
+						}
+					}
+
+					await ensureFlattenedSource();
 					// The flattened multi-clip intermediate is itself a clean H.264 MP4,
 					// so the FFmpeg fast paths below stay valid when clips are present —
 					// they just run on the flattened file instead of the raw recording.
@@ -2546,24 +2785,11 @@ export default function VideoEditor() {
 						// Fall through to full export below
 					}
 
-					const quality = settings.quality || exportQuality;
-					const {
-						width: exportWidth,
-						height: exportHeight,
-						bitrate,
-					} = calculateMp4ExportSettings({
-						quality,
-						sourceWidth: effectiveSourceDimensions.width,
-						sourceHeight: effectiveSourceDimensions.height,
-						frameRate: settings.mp4FrameRate || mp4FrameRate,
-						encodingMode,
-					});
-
 					const exporter = new VideoExporter({
 						videoUrl: exportVideoUrl,
 						width: exportWidth,
 						height: exportHeight,
-						frameRate: settings.mp4FrameRate || mp4FrameRate,
+						frameRate: exportFps,
 						bitrate,
 						codec: "avc1.640033",
 						encodingMode,

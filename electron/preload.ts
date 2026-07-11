@@ -383,6 +383,21 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	flattenVideoClips: (segments: Array<{ sourcePath: string; startMs: number; endMs: number }>) => {
 		return ipcRenderer.invoke("flatten-video-clips", segments);
 	},
+	assembleSmartExport: (options: {
+		outputPath: string;
+		renderedPath: string;
+		cleanupRenderedFile?: boolean;
+		width: number;
+		height: number;
+		fps: number;
+		bitrate?: number;
+		segments: Array<
+			| { kind: "copy"; sourcePath: string; startMs: number; endMs: number }
+			| { kind: "rendered"; startMs: number; endMs: number }
+		>;
+	}) => {
+		return ipcRenderer.invoke("assemble-smart-export", options);
+	},
 	remuxExport: (inputPath: string, outputPath: string) => {
 		return ipcRenderer.invoke("remux-export", inputPath, outputPath);
 	},

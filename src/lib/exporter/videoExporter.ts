@@ -109,6 +109,11 @@ interface VideoExporterConfig extends ExportConfig {
 	onProgress?: (progress: ExportProgress) => void;
 	preferredEncoderPath?: SupportedMp4EncoderPath | null;
 	introConfig?: IntroConfig;
+	/**
+	 * Output timestamps (µs, ascending) that must start on a keyframe so the
+	 * file can later be split there with stream copy (smart render).
+	 */
+	forceKeyframeTimestampsUs?: number[];
 }
 
 type NativeAudioPlan =
@@ -174,6 +179,7 @@ export class VideoExporter {
 	private finalizationTimeMs = 0;
 	private finalizationStageMs: ExportFinalizationStageMetrics = {};
 	private processedFrameCount = 0;
+	private nextForcedKeyframeIndex = 0;
 
 	constructor(config: VideoExporterConfig) {
 		this.config = config;
@@ -215,6 +221,7 @@ export class VideoExporter {
 			this.exportStartTimeMs = this.getNowMs();
 			this.progressSampleStartTimeMs = this.exportStartTimeMs;
 			this.progressSampleStartFrame = 0;
+			this.nextForcedKeyframeIndex = 0;
 
 			// Initialize streaming decoder and load video metadata
 			this.streamingDecoder = new StreamingVideoDecoder({
@@ -912,7 +919,9 @@ export class VideoExporter {
 				fullRange: true,
 			},
 		});
-		this.nativeH264Encoder.encode(frame, { keyFrame: frameIndex % 300 === 0 });
+		this.nativeH264Encoder.encode(frame, {
+			keyFrame: frameIndex % 300 === 0 || this.shouldForceKeyframe(timestamp),
+		});
 		frame.close();
 	}
 
@@ -1161,7 +1170,9 @@ export class VideoExporter {
 
 		if (this.encoder && this.encoder.state === "configured") {
 			this.encodeQueue++;
-			this.encoder.encode(exportFrame, { keyFrame: frameIndex % 150 === 0 });
+			this.encoder.encode(exportFrame, {
+				keyFrame: frameIndex % 150 === 0 || this.shouldForceKeyframe(timestamp),
+			});
 		} else {
 			console.warn(`[Frame ${frameIndex}] Encoder not ready! State: ${this.encoder?.state}`);
 		}
@@ -1267,6 +1278,22 @@ export class VideoExporter {
 
 	private getNowMs(): number {
 		return typeof performance !== "undefined" ? performance.now() : Date.now();
+	}
+
+	// Consumes the ascending forceKeyframeTimestampsUs list: returns true the
+	// first time the output timestamp reaches each requested boundary.
+	private shouldForceKeyframe(timestampUs: number): boolean {
+		const targets = this.config.forceKeyframeTimestampsUs;
+		if (!targets) return false;
+		let forced = false;
+		while (
+			this.nextForcedKeyframeIndex < targets.length &&
+			timestampUs >= targets[this.nextForcedKeyframeIndex] - 1
+		) {
+			this.nextForcedKeyframeIndex++;
+			forced = true;
+		}
+		return forced;
 	}
 
 	private async measureFinalizationStage<T>(

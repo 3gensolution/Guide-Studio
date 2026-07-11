@@ -240,6 +240,19 @@ interface Window {
 		flattenVideoClips: (
 			segments: Array<{ sourcePath: string; startMs: number; endMs: number }>,
 		) => Promise<{ success: boolean; tempPath?: string; error?: string }>;
+		assembleSmartExport: (options: {
+			outputPath: string;
+			renderedPath: string;
+			cleanupRenderedFile?: boolean;
+			width: number;
+			height: number;
+			fps: number;
+			bitrate?: number;
+			segments: Array<
+				| { kind: "copy"; sourcePath: string; startMs: number; endMs: number }
+				| { kind: "rendered"; startMs: number; endMs: number }
+			>;
+		}) => Promise<{ success: boolean; error?: string }>;
 		remuxExport: (
 			inputPath: string,
 			outputPath: string,

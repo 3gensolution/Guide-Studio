@@ -1,5 +1,6 @@
 import { ipcMain } from "electron";
 import {
+	assembleSmartExport,
 	type ConvertVideoToGifOptions,
 	concatenateVideos,
 	convertVideoToGif,
@@ -9,6 +10,7 @@ import {
 	optimizeGif,
 	quickTrimExport,
 	remuxExport,
+	type SmartAssembleOptions,
 } from "../ffmpeg";
 
 export function registerFfmpegHandlers() {
@@ -74,6 +76,15 @@ export function registerFfmpegHandlers() {
 			return await flattenVideoClips(segments);
 		} catch (error) {
 			console.error("Failed to flatten video clips:", error);
+			return { success: false, error: String(error) };
+		}
+	});
+
+	ipcMain.handle("assemble-smart-export", async (_event, options: SmartAssembleOptions) => {
+		try {
+			return await assembleSmartExport(options);
+		} catch (error) {
+			console.error("Failed to assemble smart export:", error);
 			return { success: false, error: String(error) };
 		}
 	});
