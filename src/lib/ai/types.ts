@@ -174,6 +174,50 @@ export interface ExtractedClip {
 	title: string;
 }
 
+// ── Guide doc types (recording → written step-by-step guide) ──
+
+/** One documented interaction step detected from cursor telemetry */
+export interface GuideStep {
+	id: string;
+	/** 1-based step number */
+	index: number;
+	/** When the interaction happened */
+	timeMs: number;
+	/** Normalized click position (0-1) */
+	cx: number;
+	cy: number;
+	action: "click" | "double-click" | "right-click";
+	title: string;
+	description: string;
+	/** Words spoken around this step (from the caption track), for AI titling */
+	transcript: string;
+	/** Data-URL screenshot captured at the step timestamp */
+	screenshotDataUrl?: string;
+}
+
+/** A complete generated guide document */
+export interface GuideDoc {
+	title: string;
+	intro: string;
+	steps: GuideStep[];
+	createdAt: number;
+	durationMs: number;
+}
+
+// ── Publish kit types (chapters + YouTube metadata) ──
+
+export interface VideoChapter {
+	timeMs: number;
+	title: string;
+}
+
+export interface PublishKit {
+	titles: string[];
+	description: string;
+	tags: string[];
+	chapters: VideoChapter[];
+}
+
 // ── AI service types ──
 
 export type AIProvider = "ollama" | "openai" | "anthropic" | "groq" | "minimax" | "kimi";

@@ -1,8 +1,10 @@
 /**
  * AIPanelSidebar — collapsible sidebar panel for AI features.
- * Contains: Smart Trim, Magic Polish, Auto-Narrate, Extract Clips, AI Settings.
+ * Contains: Step Guide, Smart Trim, Magic Polish, Auto-Narrate, Extract Clips,
+ * Publish Kit, AI Settings.
  */
 import {
+	BookOpenText,
 	Captions,
 	Check,
 	ChevronDown,
@@ -11,10 +13,12 @@ import {
 	Film,
 	LogIn,
 	LogOut,
+	Megaphone,
 	ScanEye,
 	Scissors,
 	Settings2,
 	Sparkles,
+	TextCursorInput,
 	Wand2,
 	WandSparkles,
 	X,
@@ -28,9 +32,12 @@ import type { EditorState } from "@/hooks/useEditorHistory";
 import { extractClips } from "@/lib/ai/clipExtractor";
 import { generatePolishEdits } from "@/lib/ai/oneClickPolish";
 import { analyzeRecording } from "@/lib/ai/recordingAnalyzer";
-import type { ExtractedClip, PolishPreview } from "@/lib/ai/types";
+import type { CaptionTrack, ExtractedClip, PolishPreview } from "@/lib/ai/types";
+import { GuideDocSection } from "./GuideDocSection";
 import { IntroBuilderSection } from "./IntroBuilderSection";
+import { PublishKitSection } from "./PublishKitSection";
 import { SmartTrimSuggestions } from "./SmartTrimSuggestions";
+import { TranscriptEditSection } from "./TranscriptEditSection";
 import type { CursorTelemetryPoint, TrimRegion, VideoClip } from "./types";
 
 // ── Section collapse component ──
@@ -80,6 +87,8 @@ interface AIPanelSidebarProps {
 	onToggleAutoFocusAll?: (on: boolean) => void;
 	onGenerateCaptions?: () => void;
 	isGeneratingCaptions?: boolean;
+	captionTrack?: CaptionTrack | null;
+	videoPath?: string | null;
 }
 
 export function AIPanelSidebar({
@@ -96,6 +105,8 @@ export function AIPanelSidebar({
 	onToggleAutoFocusAll,
 	onGenerateCaptions,
 	isGeneratingCaptions = false,
+	captionTrack = null,
+	videoPath = null,
 }: AIPanelSidebarProps) {
 	// ── Backend + AI service ──
 	const { isBackendAvailable, isAuthenticated, user, showLogin, logout } = useBackend();
@@ -214,6 +225,17 @@ export function AIPanelSidebar({
 
 			{/* Scrollable sections */}
 			<div className="flex-1 overflow-y-auto">
+				{/* Step Guide — recording → written step-by-step doc */}
+				<Section title="Step Guide" icon={BookOpenText} defaultOpen>
+					<GuideDocSection
+						cursorTelemetry={cursorTelemetry}
+						videoDurationMs={videoDurationMs}
+						captionTrack={captionTrack}
+						videoPath={videoPath}
+						onSeek={onSeek}
+					/>
+				</Section>
+
 				{/* Auto-Zoom */}
 				<Section title="Auto-Zoom" icon={WandSparkles} defaultOpen>
 					<div className="flex flex-col gap-2">
@@ -266,6 +288,16 @@ export function AIPanelSidebar({
 						</div>
 					</Section>
 				)}
+
+				{/* Transcript Edit — cut the video by cutting words */}
+				<Section title="Transcript Edit" icon={TextCursorInput}>
+					<TranscriptEditSection
+						captionTrack={captionTrack}
+						videoDurationMs={videoDurationMs}
+						onAcceptTrimSuggestions={onAcceptTrimSuggestions}
+						onSeek={onSeek}
+					/>
+				</Section>
 
 				{/* Smart Trim */}
 				<Section title="Smart Trim" icon={Scissors} defaultOpen>
@@ -362,6 +394,15 @@ export function AIPanelSidebar({
 							</div>
 						)}
 					</div>
+				</Section>
+
+				{/* Publish Kit — chapters + YouTube metadata */}
+				<Section title="Publish Kit" icon={Megaphone}>
+					<PublishKitSection
+						cursorTelemetry={cursorTelemetry}
+						videoDurationMs={videoDurationMs}
+						captionTrack={captionTrack}
+					/>
 				</Section>
 
 				{/* Intro Builder */}

@@ -2932,6 +2932,34 @@ export function registerIpcHandlers(
 		},
 	);
 
+	ipcMain.handle(
+		"save-guide-doc",
+		async (_, content: string, defaultFileName: string, format: "html" | "md") => {
+			const extension = format === "md" ? "md" : "html";
+			const safeName = defaultFileName.replace(/[^a-zA-Z0-9-_ ]/g, "_").trim() || "guide";
+			const { filePath, canceled } = await dialog.showSaveDialog({
+				title: "Save Guide Document",
+				defaultPath: path.join(app.getPath("downloads"), `${safeName}.${extension}`),
+				filters: [
+					format === "md"
+						? { name: "Markdown", extensions: ["md"] }
+						: { name: "HTML Document", extensions: ["html"] },
+				],
+				properties: ["createDirectory", "showOverwriteConfirmation"],
+			});
+
+			if (canceled || !filePath) return { success: false, canceled: true };
+
+			try {
+				await fs.writeFile(filePath, content, "utf-8");
+				return { success: true, path: filePath };
+			} catch (error) {
+				console.error("Failed to write guide doc:", error);
+				return { success: false, error: String(error) };
+			}
+		},
+	);
+
 	registerNativeBridgeHandlers({
 		getPlatform: () => process.platform,
 		getCurrentProjectPath: () => currentProjectPath,
