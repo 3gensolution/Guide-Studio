@@ -63,11 +63,19 @@ if (process.platform === "linux") {
 	}
 }
 
+// E2E runs set an isolated userData dir so a test instance can launch while a
+// dev instance is open (otherwise they fight over the profile lock and the
+// fixed :9222 debug port below).
+const e2eUserDataDir = process.env["GUIDE_STUDIO_E2E_USER_DATA"];
+if (e2eUserDataDir) {
+	app.setPath("userData", e2eUserDataDir);
+}
+
 // Dev-mode only: expose Chrome DevTools Protocol on :9222 so an external CLI
 // driver can trigger the bench harness via Runtime.evaluate without needing a
 // human at devtools. Safe to leave enabled in dev because localhost only;
 // absolutely must not run in packaged builds.
-if (!app.isPackaged) {
+if (!app.isPackaged && !e2eUserDataDir) {
 	app.commandLine.appendSwitch("remote-debugging-port", "9222");
 }
 
