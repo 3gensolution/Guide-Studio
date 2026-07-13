@@ -10,6 +10,7 @@ import {
 	Wand2,
 } from "lucide-react";
 import type { ComponentType } from "react";
+import { Tooltip, TooltipProvider } from "@/components/ui/tooltip";
 import { useScopedT } from "@/contexts/I18nContext";
 import { cn } from "@/lib/utils";
 import type { SettingsPanelMode } from "./SettingsPanel";
@@ -63,39 +64,41 @@ export function ToolRail({
 		const Icon = item.icon;
 		const isActive = activeTool === item.id;
 		return (
-			<button
-				key={item.id}
-				type="button"
-				title={item.label}
-				disabled={item.disabled}
-				onClick={() => {
-					if (item.disabled) return;
-					onToolClick(item.id);
-				}}
-				className={cn(
-					"flex h-9 w-9 items-center justify-center rounded-lg border transition-all",
-					item.disabled
-						? "cursor-not-allowed border-transparent text-white/15"
-						: isActive
-							? "border-[#6E6BFF]/50 bg-[#6E6BFF]/15 text-[#8B89FF]"
-							: cn(
-									"border-transparent hover:border-white/10 hover:bg-white/[0.06]",
-									item.accent
-										? "text-[#8B89FF]/70 hover:text-[#8B89FF]"
-										: "text-white/45 hover:text-white/85",
-								),
-				)}
-			>
-				<Icon className="h-4 w-4" />
-			</button>
+			<Tooltip key={item.id} content={item.label} side="right">
+				<button
+					type="button"
+					disabled={item.disabled}
+					onClick={() => {
+						if (item.disabled) return;
+						onToolClick(item.id);
+					}}
+					className={cn(
+						"flex h-9 w-9 items-center justify-center rounded-lg border transition-all",
+						item.disabled
+							? "cursor-not-allowed border-transparent text-white/15"
+							: isActive
+								? "border-[#6E6BFF]/50 bg-[#6E6BFF]/15 text-[#8B89FF]"
+								: cn(
+										"border-transparent hover:border-white/10 hover:bg-white/[0.06]",
+										item.accent
+											? "text-[#8B89FF]/70 hover:text-[#8B89FF]"
+											: "text-white/45 hover:text-white/85",
+									),
+					)}
+				>
+					<Icon className="h-4 w-4" />
+				</button>
+			</Tooltip>
 		);
 	};
 
 	return (
-		<div className="editor-tool-rail flex h-full w-12 flex-shrink-0 flex-col items-center gap-1.5 py-3">
-			{settingsItems.map(renderItem)}
-			<div className="my-1.5 h-px w-6 bg-white/[0.08]" />
-			{aiItems.map(renderItem)}
-		</div>
+		<TooltipProvider delayDuration={150}>
+			<div className="editor-tool-rail flex h-full w-12 flex-shrink-0 flex-col items-center gap-1.5 py-3">
+				{settingsItems.map(renderItem)}
+				<div className="my-1.5 h-px w-6 bg-white/[0.08]" />
+				{aiItems.map(renderItem)}
+			</div>
+		</TooltipProvider>
 	);
 }

@@ -2,7 +2,6 @@ import * as SliderPrimitive from "@radix-ui/react-slider";
 import {
 	Crop,
 	Download,
-	FileDown,
 	Film,
 	Image,
 	Info,
@@ -369,7 +368,6 @@ interface SettingsPanelProps {
 	webcamSizePreset?: WebcamSizePreset;
 	onWebcamSizePresetChange?: (size: WebcamSizePreset) => void;
 	onWebcamSizePresetCommit?: () => void;
-	onSaveDiagnostic?: () => Promise<void>;
 	showCursor?: boolean;
 	onShowCursorChange?: (show: boolean) => void;
 	cursorSize?: number;
@@ -532,7 +530,6 @@ export function SettingsPanel({
 	webcamSizePreset = DEFAULT_WEBCAM_SETTINGS.sizePreset,
 	onWebcamSizePresetChange,
 	onWebcamSizePresetCommit,
-	onSaveDiagnostic,
 	showCursor = DEFAULT_CURSOR_SETTINGS.show,
 	onShowCursorChange,
 	cursorSize = DEFAULT_CURSOR_SETTINGS.size,
@@ -853,21 +850,6 @@ export function SettingsPanel({
 	const selectedBlur = selectedBlurId
 		? blurRegions.find((region) => region.id === selectedBlurId)
 		: null;
-	const commonFooterLinks = (
-		<div className="flex gap-2 mt-3">
-			{onSaveDiagnostic && (
-				<button
-					type="button"
-					onClick={onSaveDiagnostic}
-					className="flex-1 flex items-center justify-center gap-1.5 text-[10px] text-slate-500 hover:text-slate-300 py-1.5 transition-colors"
-				>
-					<FileDown className="w-3 h-3 text-slate-400" />
-					{t("support.saveDiagnostics")}
-				</button>
-			)}
-		</div>
-	);
-
 	// Annotation selected: show its settings panel instead.
 	if (
 		selectedAnnotation &&
@@ -895,9 +877,6 @@ export function SettingsPanel({
 						onDelete={() => onAnnotationDelete(selectedAnnotation.id)}
 					/>
 				</div>
-				<div className="flex-shrink-0 p-3 border-t border-white/[0.07] bg-black/25">
-					{commonFooterLinks}
-				</div>
 			</div>
 		);
 	}
@@ -913,12 +892,11 @@ export function SettingsPanel({
 						onDelete={() => onBlurDelete(selectedBlur.id)}
 					/>
 				</div>
-				<div className="flex-shrink-0 p-3 border-t border-white/[0.07] bg-black/25">
-					{commonFooterLinks}
-				</div>
 			</div>
 		);
 	}
+
+	const isExportPanel = activePanelMode === "export" && !hasTimelineSelection;
 
 	return (
 		<div className="editor-inspector-shell flex min-w-0 flex-col h-full overflow-hidden">
@@ -961,674 +939,1060 @@ export function SettingsPanel({
 						</button>
 					</div>
 				)}
-				<div className="flex-1 overflow-y-auto custom-scrollbar p-3.5 pb-0">
-					<div className="mb-3.5 flex items-center justify-between px-0.5">
-						<span className="text-sm font-semibold text-slate-100">{activeModeLabel}</span>
-						<KeyboardShortcutsHelp />
-					</div>
-					{zoomEnabled && (
-						<div className="editor-panel-section mb-3 space-y-3 px-1">
-							<div className="flex items-center justify-between">
-								<span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-									{t("zoom.level")}
-								</span>
-								<span className="rounded-full border border-[#6E6BFF]/25 bg-[#6E6BFF]/10 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-[#6E6BFF]">
-									{(
-										selectedZoomCustomScale ??
-										(selectedZoomDepth != null
-											? ZOOM_DEPTH_SCALES[selectedZoomDepth]
-											: MIN_ZOOM_SCALE)
-									).toFixed(2)}
-									×
-								</span>
-							</div>
-							<div className="grid grid-cols-6 gap-1">
-								{ZOOM_DEPTH_OPTIONS.map((option) => {
-									const effectiveScale =
-										selectedZoomCustomScale ??
-										(selectedZoomDepth != null ? ZOOM_DEPTH_SCALES[selectedZoomDepth] : null);
-									const isActive = effectiveScale === ZOOM_DEPTH_SCALES[option.depth];
-									return (
-										<Button
-											key={option.depth}
-											type="button"
-											disabled={!zoomEnabled}
-											onClick={() => onZoomDepthChange?.(option.depth)}
-											className={cn(
-												"h-8 w-full rounded-lg border px-1 text-center transition-all duration-150 ease-out",
-												zoomEnabled
-													? "opacity-100 cursor-pointer"
-													: "opacity-40 cursor-not-allowed",
-												isActive
-													? "border-[#6E6BFF]/70 bg-[#6E6BFF] text-white shadow-[0_8px_20px_rgba(168,85,247,0.18)]"
-													: "border-white/[0.06] bg-white/[0.035] text-slate-400 hover:bg-white/[0.075] hover:border-white/15 hover:text-slate-200",
-											)}
-										>
-											<span className="text-[11px] font-semibold">{option.label}</span>
-										</Button>
-									);
-								})}
-							</div>
-							{zoomEnabled && (
-								<div>
-									<SliderPrimitive.Root
-										min={MIN_ZOOM_SCALE}
-										max={MAX_ZOOM_SCALE}
-										step={0.01}
-										value={[
+				<div className="flex min-w-0 flex-1 flex-col">
+					<div
+						className={cn(
+							"flex-1 overflow-y-auto custom-scrollbar p-3.5 pb-0",
+							isExportPanel && "hidden",
+						)}
+					>
+						<div className="mb-3.5 flex items-center justify-between px-0.5">
+							<span className="text-sm font-semibold text-slate-100">{activeModeLabel}</span>
+							<KeyboardShortcutsHelp />
+						</div>
+						{zoomEnabled && (
+							<div className="editor-panel-section mb-3 space-y-3 px-1">
+								<div className="flex items-center justify-between">
+									<span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+										{t("zoom.level")}
+									</span>
+									<span className="rounded-full border border-[#6E6BFF]/25 bg-[#6E6BFF]/10 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-[#6E6BFF]">
+										{(
 											selectedZoomCustomScale ??
-												(selectedZoomDepth != null
-													? ZOOM_DEPTH_SCALES[selectedZoomDepth]
-													: MIN_ZOOM_SCALE),
-										]}
-										onValueChange={(values) => onZoomCustomScaleChange?.(values[0])}
-										onValueCommit={() => onZoomCustomScaleCommit?.()}
-										disabled={!zoomEnabled}
-										className="relative flex w-full touch-none select-none items-center py-1"
-									>
-										<SliderPrimitive.Track className="relative h-1.5 w-full grow overflow-hidden rounded-full border border-white/10 bg-white/5">
-											<SliderPrimitive.Range
+											(selectedZoomDepth != null
+												? ZOOM_DEPTH_SCALES[selectedZoomDepth]
+												: MIN_ZOOM_SCALE)
+										).toFixed(2)}
+										×
+									</span>
+								</div>
+								<div className="grid grid-cols-6 gap-1">
+									{ZOOM_DEPTH_OPTIONS.map((option) => {
+										const effectiveScale =
+											selectedZoomCustomScale ??
+											(selectedZoomDepth != null ? ZOOM_DEPTH_SCALES[selectedZoomDepth] : null);
+										const isActive = effectiveScale === ZOOM_DEPTH_SCALES[option.depth];
+										return (
+											<Button
+												key={option.depth}
+												type="button"
+												disabled={!zoomEnabled}
+												onClick={() => onZoomDepthChange?.(option.depth)}
 												className={cn(
-													"absolute h-full transition-colors duration-150",
-													selectedZoomCustomScale != null ? "bg-[#6E6BFF]" : "bg-white/20",
+													"h-8 w-full rounded-lg border px-1 text-center transition-all duration-150 ease-out",
+													zoomEnabled
+														? "opacity-100 cursor-pointer"
+														: "opacity-40 cursor-not-allowed",
+													isActive
+														? "border-[#6E6BFF]/70 bg-[#6E6BFF] text-white shadow-[0_8px_20px_rgba(168,85,247,0.18)]"
+														: "border-white/[0.06] bg-white/[0.035] text-slate-400 hover:bg-white/[0.075] hover:border-white/15 hover:text-slate-200",
+												)}
+											>
+												<span className="text-[11px] font-semibold">{option.label}</span>
+											</Button>
+										);
+									})}
+								</div>
+								{zoomEnabled && (
+									<div>
+										<SliderPrimitive.Root
+											min={MIN_ZOOM_SCALE}
+											max={MAX_ZOOM_SCALE}
+											step={0.01}
+											value={[
+												selectedZoomCustomScale ??
+													(selectedZoomDepth != null
+														? ZOOM_DEPTH_SCALES[selectedZoomDepth]
+														: MIN_ZOOM_SCALE),
+											]}
+											onValueChange={(values) => onZoomCustomScaleChange?.(values[0])}
+											onValueCommit={() => onZoomCustomScaleCommit?.()}
+											disabled={!zoomEnabled}
+											className="relative flex w-full touch-none select-none items-center py-1"
+										>
+											<SliderPrimitive.Track className="relative h-1.5 w-full grow overflow-hidden rounded-full border border-white/10 bg-white/5">
+												<SliderPrimitive.Range
+													className={cn(
+														"absolute h-full transition-colors duration-150",
+														selectedZoomCustomScale != null ? "bg-[#6E6BFF]" : "bg-white/20",
+													)}
+												/>
+											</SliderPrimitive.Track>
+											<SliderPrimitive.Thumb
+												className={cn(
+													"block h-3.5 w-3.5 rounded-full border-2 shadow transition-all duration-150",
+													"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6E6BFF]/50",
+													"disabled:pointer-events-none disabled:opacity-50 cursor-grab active:cursor-grabbing",
+													selectedZoomCustomScale != null
+														? "border-[#6E6BFF] bg-[#6E6BFF] shadow-[0_0_6px_rgba(168,85,247,0.4)]"
+														: "border-white/20 bg-[#2a2a30] hover:border-white/40",
 												)}
 											/>
-										</SliderPrimitive.Track>
-										<SliderPrimitive.Thumb
-											className={cn(
-												"block h-3.5 w-3.5 rounded-full border-2 shadow transition-all duration-150",
-												"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6E6BFF]/50",
-												"disabled:pointer-events-none disabled:opacity-50 cursor-grab active:cursor-grabbing",
-												selectedZoomCustomScale != null
-													? "border-[#6E6BFF] bg-[#6E6BFF] shadow-[0_0_6px_rgba(168,85,247,0.4)]"
-													: "border-white/20 bg-[#2a2a30] hover:border-white/40",
-											)}
-										/>
-									</SliderPrimitive.Root>
-									<div className="flex justify-between text-[10px] text-slate-600 mt-1">
-										<span>{MIN_ZOOM_SCALE.toFixed(1)}×</span>
-										<span>{MAX_ZOOM_SCALE.toFixed(1)}×</span>
+										</SliderPrimitive.Root>
+										<div className="flex justify-between text-[10px] text-slate-600 mt-1">
+											<span>{MIN_ZOOM_SCALE.toFixed(1)}×</span>
+											<span>{MAX_ZOOM_SCALE.toFixed(1)}×</span>
+										</div>
 									</div>
-								</div>
-							)}
-							{zoomEnabled && hasCursorTelemetry && (
-								<div className="space-y-1.5">
-									<div className="flex items-center justify-between gap-3">
-										<span className="text-[11px] font-medium text-slate-400">
-											{t("zoom.focusMode.title")}
+								)}
+								{zoomEnabled && hasCursorTelemetry && (
+									<div className="space-y-1.5">
+										<div className="flex items-center justify-between gap-3">
+											<span className="text-[11px] font-medium text-slate-400">
+												{t("zoom.focusMode.title")}
+											</span>
+											<div className="grid w-32 grid-cols-2 gap-0.5 rounded-lg border border-white/[0.06] bg-white/[0.035] p-0.5">
+												{(["manual", "auto"] as const).map((mode) => {
+													const isActive = selectedZoomFocusMode === mode;
+													return (
+														<Button
+															key={mode}
+															type="button"
+															disabled={focusModeLocked}
+															onClick={() => !focusModeLocked && onZoomFocusModeChange?.(mode)}
+															className={cn(
+																"h-6 w-full rounded-md border px-1 text-center transition-all duration-150 ease-out",
+																isActive
+																	? "border-[#6E6BFF]/50 bg-[#6E6BFF] text-white"
+																	: "border-transparent bg-transparent text-slate-400 hover:bg-white/[0.06] hover:text-slate-200",
+																focusModeLocked
+																	? "cursor-not-allowed opacity-50"
+																	: "cursor-pointer",
+															)}
+														>
+															<span className="text-[10px] font-semibold capitalize">
+																{t(`zoom.focusMode.${mode}`)}
+															</span>
+														</Button>
+													);
+												})}
+											</div>
+										</div>
+										{focusModeLocked && (
+											<div className="flex items-start gap-1 text-[10px] leading-snug text-slate-500">
+												<Info size={11} className="mt-px shrink-0" />
+												<span>{t("zoom.focusMode.lockedDisclaimer")}</span>
+											</div>
+										)}
+									</div>
+								)}
+								{zoomEnabled && onZoomPreviewStart && onZoomPreviewEnd && (
+									<Button
+										type="button"
+										onPointerDown={() => onZoomPreviewStart()}
+										onPointerUp={() => onZoomPreviewEnd()}
+										onPointerLeave={() => onZoomPreviewEnd()}
+										onPointerCancel={() => onZoomPreviewEnd()}
+										onKeyDown={(e) => {
+											if ((e.key === " " || e.key === "Enter") && !e.repeat) {
+												e.preventDefault();
+												onZoomPreviewStart();
+											}
+										}}
+										onKeyUp={(e) => {
+											if (e.key === " " || e.key === "Enter") {
+												e.preventDefault();
+												onZoomPreviewEnd();
+											}
+										}}
+										onBlur={() => onZoomPreviewEnd()}
+										className="h-7 w-full select-none rounded-md border border-white/[0.08] bg-white/[0.04] text-[10px] font-semibold text-slate-300 transition-all duration-150 ease-out hover:bg-white/[0.08] hover:text-slate-100 active:border-[#6E6BFF]/50 active:bg-[#6E6BFF] active:text-white cursor-pointer"
+									>
+										{t("zoom.previewHold")}
+									</Button>
+								)}
+								{zoomEnabled &&
+									selectedZoomFocusMode !== "auto" &&
+									selectedZoomFocus &&
+									onZoomFocusCoordinateChange &&
+									(() => {
+										const effectiveZoomScale =
+											selectedZoomCustomScale ??
+											(selectedZoomDepth != null
+												? ZOOM_DEPTH_SCALES[selectedZoomDepth]
+												: MIN_ZOOM_SCALE);
+										const bounds = getFocusBoundsForScale(effectiveZoomScale);
+										const xRange = bounds.maxX - bounds.minX;
+										const yRange = bounds.maxY - bounds.minY;
+										const focusToPercentX = (cx: number) =>
+											xRange <= 0
+												? 50
+												: Math.max(0, Math.min(100, ((cx - bounds.minX) / xRange) * 100));
+										const focusToPercentY = (cy: number) =>
+											yRange <= 0
+												? 50
+												: Math.max(0, Math.min(100, ((cy - bounds.minY) / yRange) * 100));
+										const percentToFocusX = (p: number) =>
+											xRange <= 0 ? bounds.minX : bounds.minX + (p / 100) * xRange;
+										const percentToFocusY = (p: number) =>
+											yRange <= 0 ? bounds.minY : bounds.minY + (p / 100) * yRange;
+										return (
+											<div>
+												<span className="text-[11px] font-medium text-slate-400 mb-1.5 block">
+													{t("zoom.position.title")}
+												</span>
+												<div className="grid grid-cols-2 gap-2">
+													<div className="flex flex-col gap-1">
+														<label className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
+															{t("zoom.position.x")}
+														</label>
+														<ZoomFocusCoordInput
+															ariaLabel={t("zoom.position.x")}
+															percent={focusToPercentX(selectedZoomFocus.cx)}
+															onChange={(p) =>
+																onZoomFocusCoordinateChange({
+																	cx: percentToFocusX(p),
+																	cy: selectedZoomFocus.cy,
+																})
+															}
+															onCommit={onZoomFocusCoordinateCommit}
+														/>
+													</div>
+													<div className="flex flex-col gap-1">
+														<label className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
+															{t("zoom.position.y")}
+														</label>
+														<ZoomFocusCoordInput
+															ariaLabel={t("zoom.position.y")}
+															percent={focusToPercentY(selectedZoomFocus.cy)}
+															onChange={(p) =>
+																onZoomFocusCoordinateChange({
+																	cx: selectedZoomFocus.cx,
+																	cy: percentToFocusY(p),
+																})
+															}
+															onCommit={onZoomFocusCoordinateCommit}
+														/>
+													</div>
+												</div>
+											</div>
+										);
+									})()}
+								{zoomEnabled && (
+									<div>
+										<span className="text-[11px] font-medium text-slate-400 mb-1.5 block">
+											{t("zoom.threeD.title")}
 										</span>
-										<div className="grid w-32 grid-cols-2 gap-0.5 rounded-lg border border-white/[0.06] bg-white/[0.035] p-0.5">
-											{(["manual", "auto"] as const).map((mode) => {
-												const isActive = selectedZoomFocusMode === mode;
+										<div className="grid grid-cols-3 gap-1.5">
+											{ROTATION_3D_PRESET_ORDER.map((preset) => {
+												const isActive = selectedZoomRotationPreset === preset;
 												return (
 													<Button
-														key={mode}
+														key={preset}
 														type="button"
-														disabled={focusModeLocked}
-														onClick={() => !focusModeLocked && onZoomFocusModeChange?.(mode)}
+														onClick={() => onZoomRotationPresetChange?.(isActive ? null : preset)}
 														className={cn(
-															"h-6 w-full rounded-md border px-1 text-center transition-all duration-150 ease-out",
+															"h-8 w-full rounded-lg border px-1 text-center transition-all duration-150 ease-out cursor-pointer",
 															isActive
-																? "border-[#6E6BFF]/50 bg-[#6E6BFF] text-white"
-																: "border-transparent bg-transparent text-slate-400 hover:bg-white/[0.06] hover:text-slate-200",
-															focusModeLocked ? "cursor-not-allowed opacity-50" : "cursor-pointer",
+																? "border-[#6E6BFF]/60 bg-[#6E6BFF] text-white"
+																: "border-white/[0.06] bg-white/[0.035] text-slate-400 hover:bg-white/[0.075] hover:border-white/15 hover:text-slate-200",
 														)}
 													>
-														<span className="text-[10px] font-semibold capitalize">
-															{t(`zoom.focusMode.${mode}`)}
+														<span className="text-xs font-semibold capitalize">
+															{t(`zoom.threeD.preset.${preset}`)}
 														</span>
 													</Button>
 												);
 											})}
 										</div>
 									</div>
-									{focusModeLocked && (
-										<div className="flex items-start gap-1 text-[10px] leading-snug text-slate-500">
-											<Info size={11} className="mt-px shrink-0" />
-											<span>{t("zoom.focusMode.lockedDisclaimer")}</span>
-										</div>
-									)}
-								</div>
-							)}
-							{zoomEnabled && onZoomPreviewStart && onZoomPreviewEnd && (
-								<Button
-									type="button"
-									onPointerDown={() => onZoomPreviewStart()}
-									onPointerUp={() => onZoomPreviewEnd()}
-									onPointerLeave={() => onZoomPreviewEnd()}
-									onPointerCancel={() => onZoomPreviewEnd()}
-									onKeyDown={(e) => {
-										if ((e.key === " " || e.key === "Enter") && !e.repeat) {
-											e.preventDefault();
-											onZoomPreviewStart();
-										}
-									}}
-									onKeyUp={(e) => {
-										if (e.key === " " || e.key === "Enter") {
-											e.preventDefault();
-											onZoomPreviewEnd();
-										}
-									}}
-									onBlur={() => onZoomPreviewEnd()}
-									className="h-7 w-full select-none rounded-md border border-white/[0.08] bg-white/[0.04] text-[10px] font-semibold text-slate-300 transition-all duration-150 ease-out hover:bg-white/[0.08] hover:text-slate-100 active:border-[#6E6BFF]/50 active:bg-[#6E6BFF] active:text-white cursor-pointer"
-								>
-									{t("zoom.previewHold")}
-								</Button>
-							)}
-							{zoomEnabled &&
-								selectedZoomFocusMode !== "auto" &&
-								selectedZoomFocus &&
-								onZoomFocusCoordinateChange &&
-								(() => {
-									const effectiveZoomScale =
-										selectedZoomCustomScale ??
-										(selectedZoomDepth != null
-											? ZOOM_DEPTH_SCALES[selectedZoomDepth]
-											: MIN_ZOOM_SCALE);
-									const bounds = getFocusBoundsForScale(effectiveZoomScale);
-									const xRange = bounds.maxX - bounds.minX;
-									const yRange = bounds.maxY - bounds.minY;
-									const focusToPercentX = (cx: number) =>
-										xRange <= 0
-											? 50
-											: Math.max(0, Math.min(100, ((cx - bounds.minX) / xRange) * 100));
-									const focusToPercentY = (cy: number) =>
-										yRange <= 0
-											? 50
-											: Math.max(0, Math.min(100, ((cy - bounds.minY) / yRange) * 100));
-									const percentToFocusX = (p: number) =>
-										xRange <= 0 ? bounds.minX : bounds.minX + (p / 100) * xRange;
-									const percentToFocusY = (p: number) =>
-										yRange <= 0 ? bounds.minY : bounds.minY + (p / 100) * yRange;
-									return (
-										<div>
-											<span className="text-[11px] font-medium text-slate-400 mb-1.5 block">
-												{t("zoom.position.title")}
-											</span>
-											<div className="grid grid-cols-2 gap-2">
-												<div className="flex flex-col gap-1">
-													<label className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
-														{t("zoom.position.x")}
-													</label>
-													<ZoomFocusCoordInput
-														ariaLabel={t("zoom.position.x")}
-														percent={focusToPercentX(selectedZoomFocus.cx)}
-														onChange={(p) =>
-															onZoomFocusCoordinateChange({
-																cx: percentToFocusX(p),
-																cy: selectedZoomFocus.cy,
-															})
-														}
-														onCommit={onZoomFocusCoordinateCommit}
-													/>
-												</div>
-												<div className="flex flex-col gap-1">
-													<label className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
-														{t("zoom.position.y")}
-													</label>
-													<ZoomFocusCoordInput
-														ariaLabel={t("zoom.position.y")}
-														percent={focusToPercentY(selectedZoomFocus.cy)}
-														onChange={(p) =>
-															onZoomFocusCoordinateChange({
-																cx: selectedZoomFocus.cx,
-																cy: percentToFocusY(p),
-															})
-														}
-														onCommit={onZoomFocusCoordinateCommit}
-													/>
-												</div>
-											</div>
-										</div>
-									);
-								})()}
-							{zoomEnabled && (
-								<div>
-									<span className="text-[11px] font-medium text-slate-400 mb-1.5 block">
-										{t("zoom.threeD.title")}
-									</span>
-									<div className="grid grid-cols-3 gap-1.5">
-										{ROTATION_3D_PRESET_ORDER.map((preset) => {
-											const isActive = selectedZoomRotationPreset === preset;
-											return (
-												<Button
-													key={preset}
-													type="button"
-													onClick={() => onZoomRotationPresetChange?.(isActive ? null : preset)}
-													className={cn(
-														"h-8 w-full rounded-lg border px-1 text-center transition-all duration-150 ease-out cursor-pointer",
-														isActive
-															? "border-[#6E6BFF]/60 bg-[#6E6BFF] text-white"
-															: "border-white/[0.06] bg-white/[0.035] text-slate-400 hover:bg-white/[0.075] hover:border-white/15 hover:text-slate-200",
-													)}
-												>
-													<span className="text-xs font-semibold capitalize">
-														{t(`zoom.threeD.preset.${preset}`)}
-													</span>
-												</Button>
-											);
-										})}
-									</div>
-								</div>
-							)}
+								)}
 
-							{zoomEnabled && (
-								<Button
-									onClick={handleDeleteClick}
-									variant="destructive"
-									size="sm"
-									className="mt-1 w-full gap-2 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-all h-8 text-xs"
-								>
-									<Trash2 className="w-3 h-3" />
-									{t("zoom.deleteZoom")}
-								</Button>
-							)}
-						</div>
-					)}
-
-					{trimEnabled && (
-						<div className="mb-4">
-							<Button
-								onClick={handleTrimDeleteClick}
-								variant="destructive"
-								size="sm"
-								className="w-full gap-2 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-all h-8 text-xs"
-							>
-								<Trash2 className="w-3 h-3" />
-								{t("trim.deleteRegion")}
-							</Button>
-						</div>
-					)}
-
-					{selectedSpeedId && (
-						<div className="editor-panel-section mb-3 space-y-3 px-1">
-							<div className="flex items-center justify-between">
-								<span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-									{t("speed.playbackSpeed")}
-								</span>
-								{selectedSpeedId && selectedSpeedValue && (
-									<span className="rounded-full border border-[#d97706]/25 bg-[#d97706]/10 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-[#d97706]">
-										{SPEED_OPTIONS.find((o) => o.speed === selectedSpeedValue)?.label ??
-											`${selectedSpeedValue}×`}
-									</span>
+								{zoomEnabled && (
+									<Button
+										onClick={handleDeleteClick}
+										variant="destructive"
+										size="sm"
+										className="mt-1 w-full gap-2 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-all h-8 text-xs"
+									>
+										<Trash2 className="w-3 h-3" />
+										{t("zoom.deleteZoom")}
+									</Button>
 								)}
 							</div>
-							<div className="grid grid-cols-5 gap-1">
-								{SPEED_OPTIONS.map((option) => {
-									const isActive = selectedSpeedValue === option.speed;
-									return (
-										<Button
-											key={option.speed}
-											type="button"
-											disabled={!selectedSpeedId}
-											onClick={() => onSpeedChange?.(option.speed)}
-											className={cn(
-												"h-8 w-full rounded-lg border px-1 text-center transition-all duration-150 ease-out",
-												selectedSpeedId
-													? "opacity-100 cursor-pointer"
-													: "opacity-40 cursor-not-allowed",
-												isActive
-													? "border-[#d97706]/70 bg-[#d97706] text-white shadow-[0_8px_20px_rgba(217,119,6,0.16)]"
-													: "border-white/[0.06] bg-white/[0.035] text-slate-400 hover:bg-white/[0.075] hover:border-white/15 hover:text-slate-200",
-											)}
-										>
-											<span className="text-[11px] font-semibold">{option.label}</span>
-										</Button>
-									);
-								})}
-							</div>
-							<div className="flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.03] px-2 py-1.5">
-								<span
-									className={cn(
-										"text-[11px]",
-										selectedSpeedId ? "text-slate-500" : "text-slate-600",
-									)}
-								>
-									{t("speed.customPlaybackSpeed")}
-								</span>
-								{selectedSpeedId ? (
-									<CustomSpeedInput
-										value={selectedSpeedValue ?? 1}
-										onChange={(val) => onSpeedChange?.(val)}
-										onError={() => toast.error(t("speed.maxSpeedError"))}
-									/>
-								) : (
-									<div className="flex items-center gap-1 opacity-40">
-										<div className="w-12 bg-white/5 border border-white/10 rounded-md px-1 py-0.5 text-[11px] font-semibold text-slate-600 text-center">
-											--
-										</div>
-										<span className="text-[11px] font-semibold text-slate-600">×</span>
-									</div>
-								)}
-							</div>
-							{selectedSpeedId && (
+						)}
+
+						{trimEnabled && (
+							<div className="mb-4">
 								<Button
-									onClick={() => selectedSpeedId && onSpeedDelete?.(selectedSpeedId)}
+									onClick={handleTrimDeleteClick}
 									variant="destructive"
 									size="sm"
 									className="w-full gap-2 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-all h-8 text-xs"
 								>
 									<Trash2 className="w-3 h-3" />
-									{t("speed.deleteRegion")}
+									{t("trim.deleteRegion")}
 								</Button>
-							)}
-						</div>
-					)}
-
-					{selectedClipId && selectedClip && (
-						<div className="editor-panel-section mb-3 space-y-3 px-1">
-							<div className="flex items-center justify-between">
-								<span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-									Video Clip
-								</span>
 							</div>
+						)}
 
-							{/* Clip info */}
-							<div className="rounded-lg border border-white/[0.06] bg-white/[0.03] p-2.5 space-y-2">
-								<div className="flex items-center gap-2">
-									<Film className="w-3.5 h-3.5 text-[#14b8a6] flex-shrink-0" />
-									<span className="text-[11px] font-medium text-slate-300 truncate">
-										{selectedClip.label || "Untitled Clip"}
+						{selectedSpeedId && (
+							<div className="editor-panel-section mb-3 space-y-3 px-1">
+								<div className="flex items-center justify-between">
+									<span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+										{t("speed.playbackSpeed")}
+									</span>
+									{selectedSpeedId && selectedSpeedValue && (
+										<span className="rounded-full border border-[#d97706]/25 bg-[#d97706]/10 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-[#d97706]">
+											{SPEED_OPTIONS.find((o) => o.speed === selectedSpeedValue)?.label ??
+												`${selectedSpeedValue}×`}
+										</span>
+									)}
+								</div>
+								<div className="grid grid-cols-5 gap-1">
+									{SPEED_OPTIONS.map((option) => {
+										const isActive = selectedSpeedValue === option.speed;
+										return (
+											<Button
+												key={option.speed}
+												type="button"
+												disabled={!selectedSpeedId}
+												onClick={() => onSpeedChange?.(option.speed)}
+												className={cn(
+													"h-8 w-full rounded-lg border px-1 text-center transition-all duration-150 ease-out",
+													selectedSpeedId
+														? "opacity-100 cursor-pointer"
+														: "opacity-40 cursor-not-allowed",
+													isActive
+														? "border-[#d97706]/70 bg-[#d97706] text-white shadow-[0_8px_20px_rgba(217,119,6,0.16)]"
+														: "border-white/[0.06] bg-white/[0.035] text-slate-400 hover:bg-white/[0.075] hover:border-white/15 hover:text-slate-200",
+												)}
+											>
+												<span className="text-[11px] font-semibold">{option.label}</span>
+											</Button>
+										);
+									})}
+								</div>
+								<div className="flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.03] px-2 py-1.5">
+									<span
+										className={cn(
+											"text-[11px]",
+											selectedSpeedId ? "text-slate-500" : "text-slate-600",
+										)}
+									>
+										{t("speed.customPlaybackSpeed")}
+									</span>
+									{selectedSpeedId ? (
+										<CustomSpeedInput
+											value={selectedSpeedValue ?? 1}
+											onChange={(val) => onSpeedChange?.(val)}
+											onError={() => toast.error(t("speed.maxSpeedError"))}
+										/>
+									) : (
+										<div className="flex items-center gap-1 opacity-40">
+											<div className="w-12 bg-white/5 border border-white/10 rounded-md px-1 py-0.5 text-[11px] font-semibold text-slate-600 text-center">
+												--
+											</div>
+											<span className="text-[11px] font-semibold text-slate-600">×</span>
+										</div>
+									)}
+								</div>
+								{selectedSpeedId && (
+									<Button
+										onClick={() => selectedSpeedId && onSpeedDelete?.(selectedSpeedId)}
+										variant="destructive"
+										size="sm"
+										className="w-full gap-2 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-all h-8 text-xs"
+									>
+										<Trash2 className="w-3 h-3" />
+										{t("speed.deleteRegion")}
+									</Button>
+								)}
+							</div>
+						)}
+
+						{selectedClipId && selectedClip && (
+							<div className="editor-panel-section mb-3 space-y-3 px-1">
+								<div className="flex items-center justify-between">
+									<span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+										Video Clip
 									</span>
 								</div>
-								<div className="grid grid-cols-2 gap-2 text-[10px]">
-									<div className="flex flex-col gap-0.5">
-										<span className="text-slate-500">Trim Start</span>
-										<span className="text-slate-300 font-mono tabular-nums">
-											{(selectedClip.startMs / 1000).toFixed(1)}s
+
+								{/* Clip info */}
+								<div className="rounded-lg border border-white/[0.06] bg-white/[0.03] p-2.5 space-y-2">
+									<div className="flex items-center gap-2">
+										<Film className="w-3.5 h-3.5 text-[#14b8a6] flex-shrink-0" />
+										<span className="text-[11px] font-medium text-slate-300 truncate">
+											{selectedClip.label || "Untitled Clip"}
 										</span>
 									</div>
-									<div className="flex flex-col gap-0.5">
-										<span className="text-slate-500">Trim End</span>
-										<span className="text-slate-300 font-mono tabular-nums">
-											{(selectedClip.endMs / 1000).toFixed(1)}s
-										</span>
-									</div>
-									<div className="flex flex-col gap-0.5">
-										<span className="text-slate-500">Duration</span>
-										<span className="text-slate-300 font-mono tabular-nums">
-											{(selectedClip.durationMs / 1000).toFixed(1)}s
-										</span>
-									</div>
-									<div className="flex flex-col gap-0.5">
-										<span className="text-slate-500">Position</span>
-										<span className="text-slate-300 font-mono tabular-nums">
-											{(selectedClip.offsetMs / 1000).toFixed(1)}s
-										</span>
+									<div className="grid grid-cols-2 gap-2 text-[10px]">
+										<div className="flex flex-col gap-0.5">
+											<span className="text-slate-500">Trim Start</span>
+											<span className="text-slate-300 font-mono tabular-nums">
+												{(selectedClip.startMs / 1000).toFixed(1)}s
+											</span>
+										</div>
+										<div className="flex flex-col gap-0.5">
+											<span className="text-slate-500">Trim End</span>
+											<span className="text-slate-300 font-mono tabular-nums">
+												{(selectedClip.endMs / 1000).toFixed(1)}s
+											</span>
+										</div>
+										<div className="flex flex-col gap-0.5">
+											<span className="text-slate-500">Duration</span>
+											<span className="text-slate-300 font-mono tabular-nums">
+												{(selectedClip.durationMs / 1000).toFixed(1)}s
+											</span>
+										</div>
+										<div className="flex flex-col gap-0.5">
+											<span className="text-slate-500">Position</span>
+											<span className="text-slate-300 font-mono tabular-nums">
+												{(selectedClip.offsetMs / 1000).toFixed(1)}s
+											</span>
+										</div>
 									</div>
 								</div>
+
+								<p className="text-[10px] text-slate-600 leading-relaxed">
+									Drag clip edges on the timeline to trim. Drag the clip body to reposition.
+								</p>
+
+								<Button
+									onClick={() => selectedClipId && onClipDelete?.(selectedClipId)}
+									variant="destructive"
+									size="sm"
+									className="w-full gap-2 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-all h-8 text-xs"
+								>
+									<Trash2 className="w-3 h-3" />
+									Remove Clip
+								</Button>
 							</div>
+						)}
 
-							<p className="text-[10px] text-slate-600 leading-relaxed">
-								Drag clip edges on the timeline to trim. Drag the clip body to reposition.
-							</p>
-
-							<Button
-								onClick={() => selectedClipId && onClipDelete?.(selectedClipId)}
-								variant="destructive"
-								size="sm"
-								className="w-full gap-2 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-all h-8 text-xs"
-							>
-								<Trash2 className="w-3 h-3" />
-								Remove Clip
-							</Button>
-						</div>
-					)}
-
-					{!hasTimelineSelection && (
-						<Accordion type="multiple" value={[activePanelMode]} className="space-y-2">
-							{hasWebcam && activePanelMode === "layout" && (
-								<AccordionItem value="layout" className="editor-panel-section px-3">
-									<AccordionTrigger className="py-2.5 hover:no-underline">
-										<div className="flex items-center gap-2">
-											<Sparkles className="w-4 h-4 text-[#6E6BFF]" />
-											<span className="text-xs font-medium">{t("layout.title")}</span>
-										</div>
-									</AccordionTrigger>
-									<AccordionContent className="pb-3">
-										<div className="p-2 rounded-lg editor-control-surface">
-											<div className="text-[10px] font-medium text-slate-300 mb-1.5">
-												{t("layout.preset")}
+						{!hasTimelineSelection && (
+							<Accordion type="multiple" value={[activePanelMode]} className="space-y-2">
+								{hasWebcam && activePanelMode === "layout" && (
+									<AccordionItem value="layout" className="editor-panel-section px-3">
+										<AccordionTrigger className="py-2.5 hover:no-underline">
+											<div className="flex items-center gap-2">
+												<Sparkles className="w-4 h-4 text-[#6E6BFF]" />
+												<span className="text-xs font-medium">{t("layout.title")}</span>
 											</div>
-											<Select
-												value={webcamLayoutPreset}
-												onValueChange={(value: WebcamLayoutPreset) =>
-													onWebcamLayoutPresetChange?.(value)
-												}
-											>
-												<SelectTrigger className="h-8 bg-black/20 border-white/10 text-xs">
-													<SelectValue placeholder={t("layout.selectPreset")} />
-												</SelectTrigger>
-												<SelectContent>
-													{WEBCAM_LAYOUT_PRESETS.filter((preset) => {
-														if (preset.value === "picture-in-picture") return true;
-														if (preset.value === "no-webcam") return true;
-														if (preset.value === "vertical-stack") return isPortraitCanvas;
-														return !isPortraitCanvas;
-													}).map((preset) => (
-														<SelectItem key={preset.value} value={preset.value} className="text-xs">
-															{preset.value === "picture-in-picture"
-																? t("layout.pictureInPicture")
-																: preset.value === "vertical-stack"
-																	? t("layout.verticalStack")
-																	: preset.value === "no-webcam"
-																		? t("layout.noWebcam")
-																		: t("layout.dualFrame")}
-														</SelectItem>
-													))}
-												</SelectContent>
-											</Select>
-										</div>
-										{webcamLayoutPreset !== "no-webcam" && (
-											<div className="mt-2 flex items-center justify-between p-2 rounded-lg editor-control-surface">
-												<div className="text-[10px] font-medium text-slate-300">
-													{t("layout.mirrorWebcam")}
-												</div>
-												<Switch
-													checked={webcamMirrored}
-													onCheckedChange={onWebcamMirroredChange}
-													className="data-[state=checked]:bg-[#6E6BFF] scale-90"
-													aria-label={t("layout.mirrorWebcam")}
-												/>
-											</div>
-										)}
-										{webcamLayoutPreset === "picture-in-picture" && (
-											<div className="mt-2 flex items-center justify-between p-2 rounded-lg editor-control-surface">
-												<div className="flex items-center gap-1 text-[10px] font-medium text-slate-300">
-													<span>{t("layout.reactiveWebcam")}</span>
-													<Tooltip
-														content={t("layout.reactiveWebcamDescription")}
-														className="max-w-[220px] leading-snug whitespace-normal"
-													>
-														<button
-															type="button"
-															className="text-slate-400 transition-colors hover:text-slate-200"
-															aria-label={t("layout.reactiveWebcamDescription")}
-														>
-															<Info size={11} />
-														</button>
-													</Tooltip>
-												</div>
-												<Switch
-													checked={webcamReactiveZoom}
-													onCheckedChange={onWebcamReactiveZoomChange}
-													className="data-[state=checked]:bg-[#6E6BFF] scale-90"
-													aria-label={t("layout.reactiveWebcam")}
-												/>
-											</div>
-										)}
-										{webcamLayoutPreset === "picture-in-picture" && (
-											<div className="mt-2 p-2 rounded-lg editor-control-surface">
+										</AccordionTrigger>
+										<AccordionContent className="pb-3">
+											<div className="p-2 rounded-lg editor-control-surface">
 												<div className="text-[10px] font-medium text-slate-300 mb-1.5">
-													{t("layout.webcamShape")}
+													{t("layout.preset")}
 												</div>
-												<div className="grid grid-cols-4 gap-1.5">
-													{(
-														[
-															{ value: "rectangle", label: "Rect" },
-															{ value: "circle", label: "Circle" },
-															{ value: "square", label: "Square" },
-															{ value: "rounded", label: "Rounded" },
-														] as Array<{ value: WebcamMaskShape; label: string }>
-													).map((shape) => (
-														<button
-															key={shape.value}
-															type="button"
-															onClick={() => onWebcamMaskShapeChange?.(shape.value)}
-															className={cn(
-																"h-10 rounded-lg border flex flex-col items-center justify-center gap-0.5 transition-all",
-																webcamMaskShape === shape.value
-																	? "bg-[#6E6BFF] border-[#6E6BFF] text-white"
-																	: "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20 text-slate-400",
-															)}
-														>
-															<svg
-																width="16"
-																height="16"
-																viewBox="0 0 16 16"
-																fill="none"
-																xmlns="http://www.w3.org/2000/svg"
+												<Select
+													value={webcamLayoutPreset}
+													onValueChange={(value: WebcamLayoutPreset) =>
+														onWebcamLayoutPresetChange?.(value)
+													}
+												>
+													<SelectTrigger className="h-8 bg-black/20 border-white/10 text-xs">
+														<SelectValue placeholder={t("layout.selectPreset")} />
+													</SelectTrigger>
+													<SelectContent>
+														{WEBCAM_LAYOUT_PRESETS.filter((preset) => {
+															if (preset.value === "picture-in-picture") return true;
+															if (preset.value === "no-webcam") return true;
+															if (preset.value === "vertical-stack") return isPortraitCanvas;
+															return !isPortraitCanvas;
+														}).map((preset) => (
+															<SelectItem
+																key={preset.value}
+																value={preset.value}
+																className="text-xs"
 															>
-																{shape.value === "rectangle" && (
-																	<rect
-																		x="1"
-																		y="3"
-																		width="14"
-																		height="10"
-																		rx="2"
-																		stroke="currentColor"
-																		strokeWidth="1.5"
-																	/>
-																)}
-																{shape.value === "circle" && (
-																	<circle
-																		cx="8"
-																		cy="8"
-																		r="6.5"
-																		stroke="currentColor"
-																		strokeWidth="1.5"
-																	/>
-																)}
-																{shape.value === "square" && (
-																	<rect
-																		x="2"
-																		y="2"
-																		width="12"
-																		height="12"
-																		rx="1"
-																		stroke="currentColor"
-																		strokeWidth="1.5"
-																	/>
-																)}
-																{shape.value === "rounded" && (
-																	<rect
-																		x="1"
-																		y="3"
-																		width="14"
-																		height="10"
-																		rx="5"
-																		stroke="currentColor"
-																		strokeWidth="1.5"
-																	/>
-																)}
-															</svg>
-															<span className="text-[8px] leading-none">{shape.label}</span>
-														</button>
-													))}
-												</div>
+																{preset.value === "picture-in-picture"
+																	? t("layout.pictureInPicture")
+																	: preset.value === "vertical-stack"
+																		? t("layout.verticalStack")
+																		: preset.value === "no-webcam"
+																			? t("layout.noWebcam")
+																			: t("layout.dualFrame")}
+															</SelectItem>
+														))}
+													</SelectContent>
+												</Select>
 											</div>
-										)}
-										{webcamLayoutPreset === "picture-in-picture" && (
-											<div className="p-2 rounded-lg editor-control-surface mt-2">
-												<div className="flex items-center justify-between mb-1.5">
+											{webcamLayoutPreset !== "no-webcam" && (
+												<div className="mt-2 flex items-center justify-between p-2 rounded-lg editor-control-surface">
 													<div className="text-[10px] font-medium text-slate-300">
-														{t("layout.webcamSize")}
+														{t("layout.mirrorWebcam")}
 													</div>
-													<div className="text-[10px] font-medium text-slate-400">
-														{webcamSizePreset}%
+													<Switch
+														checked={webcamMirrored}
+														onCheckedChange={onWebcamMirroredChange}
+														className="data-[state=checked]:bg-[#6E6BFF] scale-90"
+														aria-label={t("layout.mirrorWebcam")}
+													/>
+												</div>
+											)}
+											{webcamLayoutPreset === "picture-in-picture" && (
+												<div className="mt-2 flex items-center justify-between p-2 rounded-lg editor-control-surface">
+													<div className="flex items-center gap-1 text-[10px] font-medium text-slate-300">
+														<span>{t("layout.reactiveWebcam")}</span>
+														<Tooltip
+															content={t("layout.reactiveWebcamDescription")}
+															className="max-w-[220px] leading-snug whitespace-normal"
+														>
+															<button
+																type="button"
+																className="text-slate-400 transition-colors hover:text-slate-200"
+																aria-label={t("layout.reactiveWebcamDescription")}
+															>
+																<Info size={11} />
+															</button>
+														</Tooltip>
+													</div>
+													<Switch
+														checked={webcamReactiveZoom}
+														onCheckedChange={onWebcamReactiveZoomChange}
+														className="data-[state=checked]:bg-[#6E6BFF] scale-90"
+														aria-label={t("layout.reactiveWebcam")}
+													/>
+												</div>
+											)}
+											{webcamLayoutPreset === "picture-in-picture" && (
+												<div className="mt-2 p-2 rounded-lg editor-control-surface">
+													<div className="text-[10px] font-medium text-slate-300 mb-1.5">
+														{t("layout.webcamShape")}
+													</div>
+													<div className="grid grid-cols-4 gap-1.5">
+														{(
+															[
+																{ value: "rectangle", label: "Rect" },
+																{ value: "circle", label: "Circle" },
+																{ value: "square", label: "Square" },
+																{ value: "rounded", label: "Rounded" },
+															] as Array<{ value: WebcamMaskShape; label: string }>
+														).map((shape) => (
+															<button
+																key={shape.value}
+																type="button"
+																onClick={() => onWebcamMaskShapeChange?.(shape.value)}
+																className={cn(
+																	"h-10 rounded-lg border flex flex-col items-center justify-center gap-0.5 transition-all",
+																	webcamMaskShape === shape.value
+																		? "bg-[#6E6BFF] border-[#6E6BFF] text-white"
+																		: "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20 text-slate-400",
+																)}
+															>
+																<svg
+																	width="16"
+																	height="16"
+																	viewBox="0 0 16 16"
+																	fill="none"
+																	xmlns="http://www.w3.org/2000/svg"
+																>
+																	{shape.value === "rectangle" && (
+																		<rect
+																			x="1"
+																			y="3"
+																			width="14"
+																			height="10"
+																			rx="2"
+																			stroke="currentColor"
+																			strokeWidth="1.5"
+																		/>
+																	)}
+																	{shape.value === "circle" && (
+																		<circle
+																			cx="8"
+																			cy="8"
+																			r="6.5"
+																			stroke="currentColor"
+																			strokeWidth="1.5"
+																		/>
+																	)}
+																	{shape.value === "square" && (
+																		<rect
+																			x="2"
+																			y="2"
+																			width="12"
+																			height="12"
+																			rx="1"
+																			stroke="currentColor"
+																			strokeWidth="1.5"
+																		/>
+																	)}
+																	{shape.value === "rounded" && (
+																		<rect
+																			x="1"
+																			y="3"
+																			width="14"
+																			height="10"
+																			rx="5"
+																			stroke="currentColor"
+																			strokeWidth="1.5"
+																		/>
+																	)}
+																</svg>
+																<span className="text-[8px] leading-none">{shape.label}</span>
+															</button>
+														))}
 													</div>
 												</div>
-												<Slider
-													value={[webcamSizePreset]}
-													onValueChange={(values) => onWebcamSizePresetChange?.(values[0])}
-													onValueCommit={() => onWebcamSizePresetCommit?.()}
-													min={10}
-													max={50}
-													step={1}
-													className="w-full"
-												/>
-											</div>
-										)}
-									</AccordionContent>
-								</AccordionItem>
-							)}
-
-							{(activePanelMode === "effects" || activePanelMode === "cursor") && (
-								<AccordionItem value={activePanelMode} className="editor-panel-section px-3">
-									<AccordionTrigger className="py-2.5 hover:no-underline">
-										<div className="flex items-center gap-2">
-											{activePanelMode === "cursor" ? (
-												<MousePointerClick className="w-4 h-4 text-[#6E6BFF]" />
-											) : (
-												<Settings2 className="w-4 h-4 text-[#6E6BFF]" />
 											)}
-											<span className="text-xs font-medium">{t("effects.title")}</span>
-										</div>
-									</AccordionTrigger>
-									<AccordionContent className="pb-3">
-										{activePanelMode === "effects" && (
-											<>
-												<div className="grid grid-cols-2 gap-2 mb-3">
-													<div className="flex items-center justify-between p-2 rounded-lg editor-control-surface">
+											{webcamLayoutPreset === "picture-in-picture" && (
+												<div className="p-2 rounded-lg editor-control-surface mt-2">
+													<div className="flex items-center justify-between mb-1.5">
 														<div className="text-[10px] font-medium text-slate-300">
-															{t("effects.blurBg")}
+															{t("layout.webcamSize")}
+														</div>
+														<div className="text-[10px] font-medium text-slate-400">
+															{webcamSizePreset}%
+														</div>
+													</div>
+													<Slider
+														value={[webcamSizePreset]}
+														onValueChange={(values) => onWebcamSizePresetChange?.(values[0])}
+														onValueCommit={() => onWebcamSizePresetCommit?.()}
+														min={10}
+														max={50}
+														step={1}
+														className="w-full"
+													/>
+												</div>
+											)}
+										</AccordionContent>
+									</AccordionItem>
+								)}
+
+								{(activePanelMode === "effects" || activePanelMode === "cursor") && (
+									<AccordionItem value={activePanelMode} className="editor-panel-section px-3">
+										<AccordionTrigger className="py-2.5 hover:no-underline">
+											<div className="flex items-center gap-2">
+												{activePanelMode === "cursor" ? (
+													<MousePointerClick className="w-4 h-4 text-[#6E6BFF]" />
+												) : (
+													<Settings2 className="w-4 h-4 text-[#6E6BFF]" />
+												)}
+												<span className="text-xs font-medium">{t("effects.title")}</span>
+											</div>
+										</AccordionTrigger>
+										<AccordionContent className="pb-3">
+											{activePanelMode === "effects" && (
+												<>
+													<div className="grid grid-cols-2 gap-2 mb-3">
+														<div className="flex items-center justify-between p-2 rounded-lg editor-control-surface">
+															<div className="text-[10px] font-medium text-slate-300">
+																{t("effects.blurBg")}
+															</div>
+															<Switch
+																checked={showBlur}
+																onCheckedChange={onBlurChange}
+																className="data-[state=checked]:bg-[#6E6BFF] scale-90"
+															/>
+														</div>
+													</div>
+
+													<div className="grid grid-cols-2 gap-2">
+														<div className="p-2 rounded-lg editor-control-surface">
+															<div className="flex items-center justify-between mb-1">
+																<div className="text-[10px] font-medium text-slate-300">
+																	{t("effects.motionBlur")}
+																</div>
+																<span className="text-[10px] text-slate-500 font-mono">
+																	{motionBlurAmount === 0
+																		? t("effects.off")
+																		: motionBlurAmount.toFixed(2)}
+																</span>
+															</div>
+															<Slider
+																value={[motionBlurAmount]}
+																onValueChange={(values) => onMotionBlurChange?.(values[0])}
+																onValueCommit={() => onMotionBlurCommit?.()}
+																min={0}
+																max={1}
+																step={0.01}
+																className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+															/>
+														</div>
+														<div className="p-2 rounded-lg editor-control-surface">
+															<div className="flex items-center justify-between mb-1">
+																<div className="text-[10px] font-medium text-slate-300">
+																	{t("effects.shadow")}
+																</div>
+																<span className="text-[10px] text-slate-500 font-mono">
+																	{Math.round(shadowIntensity * 100)}%
+																</span>
+															</div>
+															<Slider
+																value={[shadowIntensity]}
+																onValueChange={(values) => onShadowChange?.(values[0])}
+																onValueCommit={() => onShadowCommit?.()}
+																min={0}
+																max={1}
+																step={0.01}
+																className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+															/>
+														</div>
+														<div className="p-2 rounded-lg editor-control-surface">
+															<div className="flex items-center justify-between mb-1">
+																<div className="text-[10px] font-medium text-slate-300">
+																	{t("effects.roundness")}
+																</div>
+																<span className="text-[10px] text-slate-500 font-mono">
+																	{borderRadius}px
+																</span>
+															</div>
+															<Slider
+																value={[borderRadius]}
+																onValueChange={(values) => onBorderRadiusChange?.(values[0])}
+																onValueCommit={() => onBorderRadiusCommit?.()}
+																min={0}
+																max={64}
+																step={0.5}
+																className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+															/>
+														</div>
+														<div
+															className={`p-2 rounded-lg editor-control-surface ${webcamLayoutPreset === "vertical-stack" ? "opacity-40 pointer-events-none" : ""}`}
+														>
+															<div className="flex items-center justify-between mb-1">
+																<div className="text-[10px] font-medium text-slate-300">
+																	{t("effects.padding")}
+																</div>
+																<span className="text-[10px] text-slate-500 font-mono">
+																	{webcamLayoutPreset === "vertical-stack" ? "—" : `${padding}%`}
+																</span>
+															</div>
+															<Slider
+																value={[webcamLayoutPreset === "vertical-stack" ? 0 : padding]}
+																onValueChange={(values) => onPaddingChange?.(values[0])}
+																onValueCommit={() => onPaddingCommit?.()}
+																min={0}
+																max={100}
+																step={1}
+																disabled={webcamLayoutPreset === "vertical-stack"}
+																className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+															/>
+														</div>
+													</div>
+												</>
+											)}
+
+											{activePanelMode === "cursor" && showCursorSettings && hasCursorData && (
+												<div className="p-2 rounded-lg editor-control-surface mt-2 space-y-3">
+													<div className="flex items-center justify-between">
+														<div className="text-[10px] font-medium text-slate-300">
+															{t("cursor.show")}
 														</div>
 														<Switch
-															checked={showBlur}
-															onCheckedChange={onBlurChange}
+															checked={showCursor}
+															onCheckedChange={onShowCursorChange}
 															className="data-[state=checked]:bg-[#6E6BFF] scale-90"
 														/>
 													</div>
+													{showCursor && (
+														<>
+															<div className="flex items-center justify-between">
+																<div className="flex items-center gap-1 text-[10px] font-medium text-slate-300">
+																	<span>{t("cursor.clipToBounds")}</span>
+																	<Tooltip
+																		content={t("cursor.clipToBoundsDescription")}
+																		className="max-w-[220px] leading-snug whitespace-normal"
+																	>
+																		<button
+																			type="button"
+																			className="text-slate-400 transition-colors hover:text-slate-200"
+																			aria-label={t("cursor.clipToBoundsDescription")}
+																		>
+																			<Info size={11} />
+																		</button>
+																	</Tooltip>
+																</div>
+																<Switch
+																	checked={cursorClipToBounds}
+																	onCheckedChange={onCursorClipToBoundsChange}
+																	className="data-[state=checked]:bg-[#6E6BFF] scale-90"
+																	aria-label={t("cursor.clipToBounds")}
+																/>
+															</div>
+															{cursorThemeOptions.length > 1 && (
+																<div className="space-y-1.5">
+																	<div className="text-[10px] font-medium text-slate-300">
+																		{t("cursor.theme")}
+																	</div>
+																	<div className="flex flex-wrap gap-1.5">
+																		{cursorThemeOptions.map((option) => {
+																			const isSelected = cursorTheme === option.id;
+																			return (
+																				<button
+																					type="button"
+																					key={option.id}
+																					title={option.name}
+																					aria-label={option.name}
+																					aria-pressed={isSelected}
+																					onClick={() => onCursorThemeChange?.(option.id)}
+																					className={cn(
+																						"flex items-center justify-center w-8 h-8 rounded-lg border overflow-hidden transition-all duration-150 shadow-sm bg-white/5",
+																						isSelected
+																							? "border-[#6E6BFF] ring-1 ring-[#6E6BFF]/30"
+																							: "border-white/10 hover:border-[#6E6BFF]/40 opacity-80 hover:opacity-100",
+																					)}
+																				>
+																					<img
+																						src={option.previewUrl}
+																						alt=""
+																						className="w-5 h-5 object-contain"
+																						draggable={false}
+																					/>
+																				</button>
+																			);
+																		})}
+																	</div>
+																</div>
+															)}
+															<div className="grid grid-cols-2 gap-2">
+																<div className="p-2 rounded-lg bg-white/5 border border-white/5">
+																	<div className="flex items-center justify-between mb-1">
+																		<div className="text-[10px] font-medium text-slate-300">
+																			{t("cursor.size")}
+																		</div>
+																		<span className="text-[10px] text-slate-500 font-mono">
+																			{cursorSize.toFixed(1)}
+																		</span>
+																	</div>
+																	<Slider
+																		value={[cursorSize]}
+																		onValueChange={(values) => onCursorSizeChange?.(values[0])}
+																		min={0.5}
+																		max={10}
+																		step={0.1}
+																		className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+																	/>
+																</div>
+																<div className="p-2 rounded-lg bg-white/5 border border-white/5">
+																	<div className="flex items-center justify-between mb-1">
+																		<div className="text-[10px] font-medium text-slate-300">
+																			{t("cursor.smoothing")}
+																		</div>
+																		<span className="text-[10px] text-slate-500 font-mono">
+																			{Math.round(cursorSmoothing * 100)}%
+																		</span>
+																	</div>
+																	<Slider
+																		value={[cursorSmoothing]}
+																		onValueChange={(values) => onCursorSmoothingChange?.(values[0])}
+																		min={0}
+																		max={1}
+																		step={0.01}
+																		className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+																	/>
+																</div>
+																<div className="p-2 rounded-lg bg-white/5 border border-white/5">
+																	<div className="flex items-center justify-between mb-1">
+																		<div className="text-[10px] font-medium text-slate-300">
+																			{t("cursor.motionBlur")}
+																		</div>
+																		<span className="text-[10px] text-slate-500 font-mono">
+																			{Math.round(cursorMotionBlur * 100)}%
+																		</span>
+																	</div>
+																	<Slider
+																		value={[cursorMotionBlur]}
+																		onValueChange={(values) =>
+																			onCursorMotionBlurChange?.(values[0])
+																		}
+																		min={0}
+																		max={1}
+																		step={0.01}
+																		className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+																	/>
+																</div>
+																<div className="p-2 rounded-lg bg-white/5 border border-white/5">
+																	<div className="flex items-center justify-between mb-1">
+																		<div className="text-[10px] font-medium text-slate-300">
+																			{t("cursor.clickBounce")}
+																		</div>
+																		<span className="text-[10px] text-slate-500 font-mono">
+																			{cursorClickBounce.toFixed(1)}
+																		</span>
+																	</div>
+																	<Slider
+																		value={[cursorClickBounce]}
+																		onValueChange={(values) =>
+																			onCursorClickBounceChange?.(values[0])
+																		}
+																		min={0}
+																		max={5}
+																		step={0.1}
+																		className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+																	/>
+																</div>
+															</div>
+														</>
+													)}
 												</div>
+											)}
+										</AccordionContent>
+									</AccordionItem>
+								)}
 
+								{activePanelMode === "background" && (
+									<AccordionItem value="background" className="editor-panel-section px-3">
+										<AccordionTrigger className="py-2.5 hover:no-underline">
+											<div className="flex items-center gap-2">
+												<Paintbrush className="w-4 h-4 text-[#6E6BFF]" />
+												<span className="text-xs font-medium">{t("background.title")}</span>
+											</div>
+										</AccordionTrigger>
+										<AccordionContent className="pb-3">
+											<Tabs defaultValue="image" className="w-full">
+												<TabsList className="mb-2 bg-white/5 border border-white/5 p-0.5 w-full grid grid-cols-3 h-7 rounded-lg">
+													<TabsTrigger
+														value="image"
+														className="data-[state=active]:bg-[#6E6BFF] data-[state=active]:text-white text-slate-400 text-[10px] py-1 rounded-md transition-all"
+													>
+														{t("background.image")}
+													</TabsTrigger>
+													<TabsTrigger
+														value="color"
+														className="data-[state=active]:bg-[#6E6BFF] data-[state=active]:text-white text-slate-400 text-[10px] py-1 rounded-md transition-all"
+													>
+														{t("background.color")}
+													</TabsTrigger>
+													<TabsTrigger
+														value="gradient"
+														className="data-[state=active]:bg-[#6E6BFF] data-[state=active]:text-white text-slate-400 text-[10px] py-1 rounded-md transition-all"
+													>
+														{t("background.gradient")}
+													</TabsTrigger>
+												</TabsList>
+
+												<div className="overflow-y-auto custom-scrollbar">
+													<TabsContent value="image" className="mt-0 space-y-2">
+														<input
+															type="file"
+															ref={fileInputRef}
+															onChange={handleImageUpload}
+															accept={BACKGROUND_IMAGE_ACCEPT}
+															className="hidden"
+														/>
+														<Button
+															onClick={() => fileInputRef.current?.click()}
+															variant="outline"
+															className="w-full gap-2 bg-white/5 text-slate-200 border-white/10 hover:bg-[#6E6BFF] hover:text-white hover:border-[#6E6BFF] transition-all h-7 text-[10px]"
+														>
+															<Upload className="w-3 h-3" />
+															{t("background.uploadCustom")}
+														</Button>
+
+														<div className="grid grid-cols-6 gap-2">
+															{customImages.map((imageUrl, idx) => {
+																const isSelected = selected === imageUrl;
+																return (
+																	<div
+																		key={`custom-${idx}`}
+																		className={cn(
+																			"aspect-square w-8 h-8 rounded-lg border overflow-hidden cursor-pointer transition-all duration-150 relative group shadow-sm",
+																			isSelected
+																				? "border-[#6E6BFF] ring-1 ring-[#6E6BFF]/30"
+																				: "border-white/10 hover:border-[#6E6BFF]/40 opacity-80 hover:opacity-100 bg-white/5",
+																		)}
+																		style={{
+																			backgroundImage: `url(${imageUrl})`,
+																			backgroundSize: "cover",
+																			backgroundPosition: "center",
+																		}}
+																		onClick={() => onWallpaperChange(imageUrl)}
+																		role="button"
+																	>
+																		<button
+																			onClick={(e) => handleRemoveCustomImage(imageUrl, e)}
+																			className="absolute top-0.5 right-0.5 w-3 h-3 bg-red-500/90 hover:bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"
+																		>
+																			<X className="w-2 h-2 text-white" />
+																		</button>
+																	</div>
+																);
+															})}
+
+															{WALLPAPER_PATHS.map((canonicalPath, i) => {
+																const previewUrl = wallpaperPreviewUrls[i] ?? canonicalPath;
+																const isSelected = selected === canonicalPath;
+																return (
+																	<div
+																		key={canonicalPath}
+																		className={cn(
+																			"aspect-square w-8 h-8 rounded-lg border overflow-hidden cursor-pointer transition-all duration-150 shadow-sm",
+																			isSelected
+																				? "border-[#6E6BFF] ring-1 ring-[#6E6BFF]/30"
+																				: "border-white/10 hover:border-[#6E6BFF]/40 opacity-80 hover:opacity-100 bg-white/5",
+																		)}
+																		style={{
+																			backgroundImage: `url(${previewUrl})`,
+																			backgroundSize: "cover",
+																			backgroundPosition: "center",
+																		}}
+																		onClick={() => onWallpaperChange(canonicalPath)}
+																		role="button"
+																	/>
+																);
+															})}
+														</div>
+													</TabsContent>
+
+													<TabsContent value="color" className="mt-0">
+														<ColorPicker
+															selectedColor={selectedColor}
+															colorPalette={colorPalette}
+															translations={{
+																colorWheel: t("background.colorWheel"),
+																colorPalette: t("background.colorPalette"),
+															}}
+															onUpdateColor={(color) => {
+																setSelectedColor(color);
+																onWallpaperChange(color);
+															}}
+														/>
+													</TabsContent>
+
+													<TabsContent value="gradient" className="mt-0">
+														<div className="grid grid-cols-6 gap-2">
+															{GRADIENTS.map((g, idx) => (
+																<div
+																	key={g}
+																	className={cn(
+																		"aspect-square w-8 h-8 rounded-lg border overflow-hidden cursor-pointer transition-all duration-150 shadow-sm",
+																		gradient === g
+																			? "border-[#6E6BFF] ring-1 ring-[#6E6BFF]/30"
+																			: "border-white/10 hover:border-[#6E6BFF]/40 opacity-80 hover:opacity-100 bg-white/5",
+																	)}
+																	style={{ background: g }}
+																	aria-label={t("background.gradientLabel", {
+																		index: idx + 1,
+																	})}
+																	onClick={() => {
+																		setGradient(g);
+																		onWallpaperChange(g);
+																	}}
+																	role="button"
+																/>
+															))}
+														</div>
+													</TabsContent>
+												</div>
+											</Tabs>
+
+											{/* Video Frame controls */}
+											<div className="mt-3 pt-3 border-t border-white/[0.06]">
+												<div className="text-[10px] font-medium text-slate-400 mb-2 uppercase tracking-wider">
+													{t("effects.videoFrame") || "Video Frame"}
+												</div>
 												<div className="grid grid-cols-2 gap-2">
 													<div className="p-2 rounded-lg editor-control-surface">
 														<div className="flex items-center justify-between mb-1">
 															<div className="text-[10px] font-medium text-slate-300">
-																{t("effects.motionBlur")}
+																{t("effects.padding")}
 															</div>
 															<span className="text-[10px] text-slate-500 font-mono">
-																{motionBlurAmount === 0
-																	? t("effects.off")
-																	: motionBlurAmount.toFixed(2)}
+																{padding}%
 															</span>
 														</div>
 														<Slider
-															value={[motionBlurAmount]}
-															onValueChange={(values) => onMotionBlurChange?.(values[0])}
-															onValueCommit={() => onMotionBlurCommit?.()}
+															value={[padding]}
+															onValueChange={(values) => onPaddingChange?.(values[0])}
+															onValueCommit={() => onPaddingCommit?.()}
 															min={0}
-															max={1}
-															step={0.01}
-															className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
-														/>
-													</div>
-													<div className="p-2 rounded-lg editor-control-surface">
-														<div className="flex items-center justify-between mb-1">
-															<div className="text-[10px] font-medium text-slate-300">
-																{t("effects.shadow")}
-															</div>
-															<span className="text-[10px] text-slate-500 font-mono">
-																{Math.round(shadowIntensity * 100)}%
-															</span>
-														</div>
-														<Slider
-															value={[shadowIntensity]}
-															onValueChange={(values) => onShadowChange?.(values[0])}
-															onValueCommit={() => onShadowCommit?.()}
-															min={0}
-															max={1}
-															step={0.01}
+															max={100}
+															step={1}
 															className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
 														/>
 													</div>
@@ -1651,820 +2015,455 @@ export function SettingsPanel({
 															className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
 														/>
 													</div>
-													<div
-														className={`p-2 rounded-lg editor-control-surface ${webcamLayoutPreset === "vertical-stack" ? "opacity-40 pointer-events-none" : ""}`}
-													>
-														<div className="flex items-center justify-between mb-1">
-															<div className="text-[10px] font-medium text-slate-300">
-																{t("effects.padding")}
-															</div>
-															<span className="text-[10px] text-slate-500 font-mono">
-																{webcamLayoutPreset === "vertical-stack" ? "—" : `${padding}%`}
-															</span>
-														</div>
-														<Slider
-															value={[webcamLayoutPreset === "vertical-stack" ? 0 : padding]}
-															onValueChange={(values) => onPaddingChange?.(values[0])}
-															onValueCommit={() => onPaddingCommit?.()}
-															min={0}
-															max={100}
-															step={1}
-															disabled={webcamLayoutPreset === "vertical-stack"}
-															className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
-														/>
-													</div>
-												</div>
-											</>
-										)}
-
-										{activePanelMode === "cursor" && showCursorSettings && hasCursorData && (
-											<div className="p-2 rounded-lg editor-control-surface mt-2 space-y-3">
-												<div className="flex items-center justify-between">
-													<div className="text-[10px] font-medium text-slate-300">
-														{t("cursor.show")}
-													</div>
-													<Switch
-														checked={showCursor}
-														onCheckedChange={onShowCursorChange}
-														className="data-[state=checked]:bg-[#6E6BFF] scale-90"
-													/>
-												</div>
-												{showCursor && (
-													<>
-														<div className="flex items-center justify-between">
-															<div className="flex items-center gap-1 text-[10px] font-medium text-slate-300">
-																<span>{t("cursor.clipToBounds")}</span>
-																<Tooltip
-																	content={t("cursor.clipToBoundsDescription")}
-																	className="max-w-[220px] leading-snug whitespace-normal"
-																>
-																	<button
-																		type="button"
-																		className="text-slate-400 transition-colors hover:text-slate-200"
-																		aria-label={t("cursor.clipToBoundsDescription")}
-																	>
-																		<Info size={11} />
-																	</button>
-																</Tooltip>
-															</div>
-															<Switch
-																checked={cursorClipToBounds}
-																onCheckedChange={onCursorClipToBoundsChange}
-																className="data-[state=checked]:bg-[#6E6BFF] scale-90"
-																aria-label={t("cursor.clipToBounds")}
-															/>
-														</div>
-														{cursorThemeOptions.length > 1 && (
-															<div className="space-y-1.5">
-																<div className="text-[10px] font-medium text-slate-300">
-																	{t("cursor.theme")}
-																</div>
-																<div className="flex flex-wrap gap-1.5">
-																	{cursorThemeOptions.map((option) => {
-																		const isSelected = cursorTheme === option.id;
-																		return (
-																			<button
-																				type="button"
-																				key={option.id}
-																				title={option.name}
-																				aria-label={option.name}
-																				aria-pressed={isSelected}
-																				onClick={() => onCursorThemeChange?.(option.id)}
-																				className={cn(
-																					"flex items-center justify-center w-8 h-8 rounded-lg border overflow-hidden transition-all duration-150 shadow-sm bg-white/5",
-																					isSelected
-																						? "border-[#6E6BFF] ring-1 ring-[#6E6BFF]/30"
-																						: "border-white/10 hover:border-[#6E6BFF]/40 opacity-80 hover:opacity-100",
-																				)}
-																			>
-																				<img
-																					src={option.previewUrl}
-																					alt=""
-																					className="w-5 h-5 object-contain"
-																					draggable={false}
-																				/>
-																			</button>
-																		);
-																	})}
-																</div>
-															</div>
-														)}
-														<div className="grid grid-cols-2 gap-2">
-															<div className="p-2 rounded-lg bg-white/5 border border-white/5">
-																<div className="flex items-center justify-between mb-1">
-																	<div className="text-[10px] font-medium text-slate-300">
-																		{t("cursor.size")}
-																	</div>
-																	<span className="text-[10px] text-slate-500 font-mono">
-																		{cursorSize.toFixed(1)}
-																	</span>
-																</div>
-																<Slider
-																	value={[cursorSize]}
-																	onValueChange={(values) => onCursorSizeChange?.(values[0])}
-																	min={0.5}
-																	max={10}
-																	step={0.1}
-																	className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
-																/>
-															</div>
-															<div className="p-2 rounded-lg bg-white/5 border border-white/5">
-																<div className="flex items-center justify-between mb-1">
-																	<div className="text-[10px] font-medium text-slate-300">
-																		{t("cursor.smoothing")}
-																	</div>
-																	<span className="text-[10px] text-slate-500 font-mono">
-																		{Math.round(cursorSmoothing * 100)}%
-																	</span>
-																</div>
-																<Slider
-																	value={[cursorSmoothing]}
-																	onValueChange={(values) => onCursorSmoothingChange?.(values[0])}
-																	min={0}
-																	max={1}
-																	step={0.01}
-																	className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
-																/>
-															</div>
-															<div className="p-2 rounded-lg bg-white/5 border border-white/5">
-																<div className="flex items-center justify-between mb-1">
-																	<div className="text-[10px] font-medium text-slate-300">
-																		{t("cursor.motionBlur")}
-																	</div>
-																	<span className="text-[10px] text-slate-500 font-mono">
-																		{Math.round(cursorMotionBlur * 100)}%
-																	</span>
-																</div>
-																<Slider
-																	value={[cursorMotionBlur]}
-																	onValueChange={(values) => onCursorMotionBlurChange?.(values[0])}
-																	min={0}
-																	max={1}
-																	step={0.01}
-																	className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
-																/>
-															</div>
-															<div className="p-2 rounded-lg bg-white/5 border border-white/5">
-																<div className="flex items-center justify-between mb-1">
-																	<div className="text-[10px] font-medium text-slate-300">
-																		{t("cursor.clickBounce")}
-																	</div>
-																	<span className="text-[10px] text-slate-500 font-mono">
-																		{cursorClickBounce.toFixed(1)}
-																	</span>
-																</div>
-																<Slider
-																	value={[cursorClickBounce]}
-																	onValueChange={(values) => onCursorClickBounceChange?.(values[0])}
-																	min={0}
-																	max={5}
-																	step={0.1}
-																	className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
-																/>
-															</div>
-														</div>
-													</>
-												)}
-											</div>
-										)}
-									</AccordionContent>
-								</AccordionItem>
-							)}
-
-							{activePanelMode === "background" && (
-								<AccordionItem value="background" className="editor-panel-section px-3">
-									<AccordionTrigger className="py-2.5 hover:no-underline">
-										<div className="flex items-center gap-2">
-											<Paintbrush className="w-4 h-4 text-[#6E6BFF]" />
-											<span className="text-xs font-medium">{t("background.title")}</span>
-										</div>
-									</AccordionTrigger>
-									<AccordionContent className="pb-3">
-										<Tabs defaultValue="image" className="w-full">
-											<TabsList className="mb-2 bg-white/5 border border-white/5 p-0.5 w-full grid grid-cols-3 h-7 rounded-lg">
-												<TabsTrigger
-													value="image"
-													className="data-[state=active]:bg-[#6E6BFF] data-[state=active]:text-white text-slate-400 text-[10px] py-1 rounded-md transition-all"
-												>
-													{t("background.image")}
-												</TabsTrigger>
-												<TabsTrigger
-													value="color"
-													className="data-[state=active]:bg-[#6E6BFF] data-[state=active]:text-white text-slate-400 text-[10px] py-1 rounded-md transition-all"
-												>
-													{t("background.color")}
-												</TabsTrigger>
-												<TabsTrigger
-													value="gradient"
-													className="data-[state=active]:bg-[#6E6BFF] data-[state=active]:text-white text-slate-400 text-[10px] py-1 rounded-md transition-all"
-												>
-													{t("background.gradient")}
-												</TabsTrigger>
-											</TabsList>
-
-											<div className="overflow-y-auto custom-scrollbar">
-												<TabsContent value="image" className="mt-0 space-y-2">
-													<input
-														type="file"
-														ref={fileInputRef}
-														onChange={handleImageUpload}
-														accept={BACKGROUND_IMAGE_ACCEPT}
-														className="hidden"
-													/>
-													<Button
-														onClick={() => fileInputRef.current?.click()}
-														variant="outline"
-														className="w-full gap-2 bg-white/5 text-slate-200 border-white/10 hover:bg-[#6E6BFF] hover:text-white hover:border-[#6E6BFF] transition-all h-7 text-[10px]"
-													>
-														<Upload className="w-3 h-3" />
-														{t("background.uploadCustom")}
-													</Button>
-
-													<div className="grid grid-cols-6 gap-2">
-														{customImages.map((imageUrl, idx) => {
-															const isSelected = selected === imageUrl;
-															return (
-																<div
-																	key={`custom-${idx}`}
-																	className={cn(
-																		"aspect-square w-8 h-8 rounded-lg border overflow-hidden cursor-pointer transition-all duration-150 relative group shadow-sm",
-																		isSelected
-																			? "border-[#6E6BFF] ring-1 ring-[#6E6BFF]/30"
-																			: "border-white/10 hover:border-[#6E6BFF]/40 opacity-80 hover:opacity-100 bg-white/5",
-																	)}
-																	style={{
-																		backgroundImage: `url(${imageUrl})`,
-																		backgroundSize: "cover",
-																		backgroundPosition: "center",
-																	}}
-																	onClick={() => onWallpaperChange(imageUrl)}
-																	role="button"
-																>
-																	<button
-																		onClick={(e) => handleRemoveCustomImage(imageUrl, e)}
-																		className="absolute top-0.5 right-0.5 w-3 h-3 bg-red-500/90 hover:bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"
-																	>
-																		<X className="w-2 h-2 text-white" />
-																	</button>
-																</div>
-															);
-														})}
-
-														{WALLPAPER_PATHS.map((canonicalPath, i) => {
-															const previewUrl = wallpaperPreviewUrls[i] ?? canonicalPath;
-															const isSelected = selected === canonicalPath;
-															return (
-																<div
-																	key={canonicalPath}
-																	className={cn(
-																		"aspect-square w-8 h-8 rounded-lg border overflow-hidden cursor-pointer transition-all duration-150 shadow-sm",
-																		isSelected
-																			? "border-[#6E6BFF] ring-1 ring-[#6E6BFF]/30"
-																			: "border-white/10 hover:border-[#6E6BFF]/40 opacity-80 hover:opacity-100 bg-white/5",
-																	)}
-																	style={{
-																		backgroundImage: `url(${previewUrl})`,
-																		backgroundSize: "cover",
-																		backgroundPosition: "center",
-																	}}
-																	onClick={() => onWallpaperChange(canonicalPath)}
-																	role="button"
-																/>
-															);
-														})}
-													</div>
-												</TabsContent>
-
-												<TabsContent value="color" className="mt-0">
-													<ColorPicker
-														selectedColor={selectedColor}
-														colorPalette={colorPalette}
-														translations={{
-															colorWheel: t("background.colorWheel"),
-															colorPalette: t("background.colorPalette"),
-														}}
-														onUpdateColor={(color) => {
-															setSelectedColor(color);
-															onWallpaperChange(color);
-														}}
-													/>
-												</TabsContent>
-
-												<TabsContent value="gradient" className="mt-0">
-													<div className="grid grid-cols-6 gap-2">
-														{GRADIENTS.map((g, idx) => (
-															<div
-																key={g}
-																className={cn(
-																	"aspect-square w-8 h-8 rounded-lg border overflow-hidden cursor-pointer transition-all duration-150 shadow-sm",
-																	gradient === g
-																		? "border-[#6E6BFF] ring-1 ring-[#6E6BFF]/30"
-																		: "border-white/10 hover:border-[#6E6BFF]/40 opacity-80 hover:opacity-100 bg-white/5",
-																)}
-																style={{ background: g }}
-																aria-label={t("background.gradientLabel", {
-																	index: idx + 1,
-																})}
-																onClick={() => {
-																	setGradient(g);
-																	onWallpaperChange(g);
-																}}
-																role="button"
-															/>
-														))}
-													</div>
-												</TabsContent>
-											</div>
-										</Tabs>
-
-										{/* Video Frame controls */}
-										<div className="mt-3 pt-3 border-t border-white/[0.06]">
-											<div className="text-[10px] font-medium text-slate-400 mb-2 uppercase tracking-wider">
-												{t("effects.videoFrame") || "Video Frame"}
-											</div>
-											<div className="grid grid-cols-2 gap-2">
-												<div className="p-2 rounded-lg editor-control-surface">
-													<div className="flex items-center justify-between mb-1">
-														<div className="text-[10px] font-medium text-slate-300">
-															{t("effects.padding")}
-														</div>
-														<span className="text-[10px] text-slate-500 font-mono">{padding}%</span>
-													</div>
-													<Slider
-														value={[padding]}
-														onValueChange={(values) => onPaddingChange?.(values[0])}
-														onValueCommit={() => onPaddingCommit?.()}
-														min={0}
-														max={100}
-														step={1}
-														className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
-													/>
-												</div>
-												<div className="p-2 rounded-lg editor-control-surface">
-													<div className="flex items-center justify-between mb-1">
-														<div className="text-[10px] font-medium text-slate-300">
-															{t("effects.roundness")}
-														</div>
-														<span className="text-[10px] text-slate-500 font-mono">
-															{borderRadius}px
-														</span>
-													</div>
-													<Slider
-														value={[borderRadius]}
-														onValueChange={(values) => onBorderRadiusChange?.(values[0])}
-														onValueCommit={() => onBorderRadiusCommit?.()}
-														min={0}
-														max={64}
-														step={0.5}
-														className="w-full [&_[role=slider]]:bg-[#6E6BFF] [&_[role=slider]]:border-[#6E6BFF] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
-													/>
 												</div>
 											</div>
-										</div>
-									</AccordionContent>
-								</AccordionItem>
-							)}
-							{activePanelMode === "timeline" && (
-								<AccordionItem value="timeline" className="editor-panel-section px-3">
-									<AccordionTrigger className="py-2.5 hover:no-underline">
-										<div className="flex items-center gap-2">
-											<Timer className="w-4 h-4 text-[#6E6BFF]" />
-											<span className="text-xs font-medium">{t("timeline.title")}</span>
-										</div>
-									</AccordionTrigger>
-									<AccordionContent className="pb-3">
-										<div className="flex items-center justify-between p-2 rounded-lg editor-control-surface">
-											<div className="text-[10px] font-medium text-slate-300">
-												{t("timeline.waveform")}
-											</div>
-											<Switch
-												checked={showTrimWaveform}
-												onCheckedChange={onTrimWaveformChange}
-												className="data-[state=checked]:bg-[#6E6BFF] scale-90 ml-2 shrink-0"
-											/>
-										</div>
-									</AccordionContent>
-								</AccordionItem>
-							)}
-						</Accordion>
-					)}
-				</div>
-			</div>
-
-			{showCropDropdown && cropRegion && onCropChange && (
-				<>
-					<div
-						className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 animate-in fade-in duration-200"
-						onClick={() => setShowCropDropdown(false)}
-					/>
-					<div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[60] bg-[#1C1917] rounded-2xl shadow-2xl border border-white/10 p-8 w-[90vw] max-w-5xl max-h-[90vh] overflow-auto animate-in zoom-in-95 duration-200">
-						<div className="flex items-center justify-between mb-6">
-							<div>
-								<span className="text-xl font-bold text-slate-200">{t("crop.cropVideo")}</span>
-								<p className="text-sm text-slate-400 mt-2">{t("crop.dragInstruction")}</p>
-							</div>
-							<Button
-								variant="ghost"
-								size="icon"
-								onClick={() => setShowCropDropdown(false)}
-								className="hover:bg-white/10 text-slate-400 hover:text-white"
-							>
-								<X className="w-5 h-5" />
-							</Button>
-						</div>
-						<CropControl
-							videoElement={videoElement || null}
-							cropRegion={cropRegion}
-							onCropChange={onCropChange}
-							aspectRatio={aspectRatio}
-						/>
-						<div className="mt-6 space-y-4">
-							<div className="flex flex-wrap items-end gap-3">
-								{[
-									{ label: "X", field: "x" as const, max: videoWidth },
-									{ label: "Y", field: "y" as const, max: videoHeight },
-									{ label: "W", field: "width" as const, max: videoWidth },
-									{ label: "H", field: "height" as const, max: videoHeight },
-								].map(({ label, field, max }) => (
-									<div key={field} className="flex flex-col gap-1">
-										<label className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
-											{label}
-										</label>
-										<input
-											type="number"
-											min={0}
-											max={max}
-											value={getCropPixelValue(field)}
-											onChange={(e) => handleCropNumericChange(field, Number(e.target.value))}
-											className="w-[90px] h-8 rounded-md border border-white/10 bg-white/5 px-2 text-xs text-slate-200 outline-none focus:border-[#6E6BFF]/50 focus:ring-1 focus:ring-[#6E6BFF]/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-										/>
-									</div>
-								))}
-
-								<div className="flex flex-col gap-1">
-									<label className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
-										{t("crop.ratio")}
-									</label>
-									<div className="flex items-center gap-1.5">
-										<select
-											value={cropAspectRatio}
-											onChange={(e) => applyCropAspectPreset(e.target.value)}
-											className="h-8 rounded-md border border-white/10 bg-[#1a1a1f] px-2 text-xs text-slate-200 outline-none focus:border-[#6E6BFF]/50 cursor-pointer"
-										>
-											<option value="" className="bg-[#1a1a1f] text-slate-200">
-												{t("crop.free")}
-											</option>
-											<option value="16:9" className="bg-[#1a1a1f] text-slate-200">
-												16:9
-											</option>
-											<option value="9:16" className="bg-[#1a1a1f] text-slate-200">
-												9:16
-											</option>
-											<option value="4:3" className="bg-[#1a1a1f] text-slate-200">
-												4:3
-											</option>
-											<option value="3:4" className="bg-[#1a1a1f] text-slate-200">
-												3:4
-											</option>
-											<option value="1:1" className="bg-[#1a1a1f] text-slate-200">
-												1:1
-											</option>
-											<option value="21:9" className="bg-[#1a1a1f] text-slate-200">
-												21:9
-											</option>
-										</select>
-										<button
-											type="button"
-											onClick={() => setCropAspectLocked((prev) => !prev)}
-											className={cn(
-												"h-8 w-8 flex items-center justify-center rounded-md border transition-all",
-												cropAspectLocked
-													? "border-[#6E6BFF]/50 bg-[#6E6BFF]/10 text-[#6E6BFF]"
-													: "border-white/10 bg-white/5 text-slate-400 hover:text-slate-200",
-											)}
-											title={
-												cropAspectLocked ? t("crop.unlockAspectRatio") : t("crop.lockAspectRatio")
-											}
-										>
-											{cropAspectLocked ? (
-												<Lock className="w-3.5 h-3.5" />
-											) : (
-												<Unlock className="w-3.5 h-3.5" />
-											)}
-										</button>
-									</div>
-								</div>
-
-								<p className="text-[10px] text-slate-500 self-center ml-2">
-									{videoWidth} × {videoHeight}px
-								</p>
-							</div>
-
-							<div className="flex justify-end">
-								<Button
-									onClick={() => setShowCropDropdown(false)}
-									size="lg"
-									className="bg-[#6E6BFF] hover:bg-[#6E6BFF]/90 text-white"
-								>
-									{t("crop.done")}
-								</Button>
-							</div>
-						</div>
-					</div>
-				</>
-			)}
-
-			<div className="flex-shrink-0 p-3 border-t border-white/[0.07] bg-black/25 ml-12">
-				{activePanelMode === "export" && !hasTimelineSelection && (
-					<>
-						<div className="flex items-center gap-2 mb-3">
-							<button
-								data-testid={getTestId("mp4-format-button")}
-								onClick={() => onExportFormatChange?.("mp4")}
-								className={cn(
-									"flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border transition-all text-xs font-medium",
-									exportFormat === "mp4"
-										? "bg-[#6E6BFF]/10 border-[#6E6BFF]/50 text-white"
-										: "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-slate-200",
+										</AccordionContent>
+									</AccordionItem>
 								)}
-							>
-								<Film className="w-3.5 h-3.5" />
-								{t("exportFormat.mp4")}
-							</button>
-							<button
-								data-testid={getTestId("gif-format-button")}
-								onClick={() => onExportFormatChange?.("gif")}
-								className={cn(
-									"flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border transition-all text-xs font-medium",
-									exportFormat === "gif"
-										? "bg-[#6E6BFF]/10 border-[#6E6BFF]/50 text-white"
-										: "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-slate-200",
+								{activePanelMode === "timeline" && (
+									<AccordionItem value="timeline" className="editor-panel-section px-3">
+										<AccordionTrigger className="py-2.5 hover:no-underline">
+											<div className="flex items-center gap-2">
+												<Timer className="w-4 h-4 text-[#6E6BFF]" />
+												<span className="text-xs font-medium">{t("timeline.title")}</span>
+											</div>
+										</AccordionTrigger>
+										<AccordionContent className="pb-3">
+											<div className="flex items-center justify-between p-2 rounded-lg editor-control-surface">
+												<div className="text-[10px] font-medium text-slate-300">
+													{t("timeline.waveform")}
+												</div>
+												<Switch
+													checked={showTrimWaveform}
+													onCheckedChange={onTrimWaveformChange}
+													className="data-[state=checked]:bg-[#6E6BFF] scale-90 ml-2 shrink-0"
+												/>
+											</div>
+										</AccordionContent>
+									</AccordionItem>
 								)}
-							>
-								<Image className="w-3.5 h-3.5" />
-								{t("exportFormat.gif")}
-							</button>
-						</div>
-
-						{LIGHTNING_PIPELINE_ENABLED && exportFormat === "mp4" && (
-							<div className="mb-3 flex items-center justify-between px-0.5">
-								<div className="flex items-center gap-1.5">
-									<div className="w-1.5 h-1.5 rounded-full bg-[#6E6BFF] animate-pulse" />
-									<span className="text-[10px] font-medium text-slate-300">Lightning</span>
-									<span className="text-[8px] font-medium text-amber-300/80 bg-amber-300/10 px-1 py-0.5 rounded">
-										Beta
-									</span>
-								</div>
-								<span className="text-[9px] text-slate-500">Fastest backend with fallback</span>
-							</div>
+							</Accordion>
 						)}
+					</div>
 
-						{exportFormat === "mp4" && (
-							<>
-								<div className="mb-3 space-y-1.5">
-									{sourceDimensions && (
-										<div className="flex items-center justify-between px-0.5 text-[10px] leading-none text-slate-500">
-											<span>{t("exportQuality.title")}</span>
-											<span>
-												Source {sourceDimensions.width}x{sourceDimensions.height}
-											</span>
+					{showCropDropdown && cropRegion && onCropChange && (
+						<>
+							<div
+								className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 animate-in fade-in duration-200"
+								onClick={() => setShowCropDropdown(false)}
+							/>
+							<div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[60] bg-[#1C1917] rounded-2xl shadow-2xl border border-white/10 p-8 w-[90vw] max-w-5xl max-h-[90vh] overflow-auto animate-in zoom-in-95 duration-200">
+								<div className="flex items-center justify-between mb-6">
+									<div>
+										<span className="text-xl font-bold text-slate-200">{t("crop.cropVideo")}</span>
+										<p className="text-sm text-slate-400 mt-2">{t("crop.dragInstruction")}</p>
+									</div>
+									<Button
+										variant="ghost"
+										size="icon"
+										onClick={() => setShowCropDropdown(false)}
+										className="hover:bg-white/10 text-slate-400 hover:text-white"
+									>
+										<X className="w-5 h-5" />
+									</Button>
+								</div>
+								<CropControl
+									videoElement={videoElement || null}
+									cropRegion={cropRegion}
+									onCropChange={onCropChange}
+									aspectRatio={aspectRatio}
+								/>
+								<div className="mt-6 space-y-4">
+									<div className="flex flex-wrap items-end gap-3">
+										{[
+											{ label: "X", field: "x" as const, max: videoWidth },
+											{ label: "Y", field: "y" as const, max: videoHeight },
+											{ label: "W", field: "width" as const, max: videoWidth },
+											{ label: "H", field: "height" as const, max: videoHeight },
+										].map(({ label, field, max }) => (
+											<div key={field} className="flex flex-col gap-1">
+												<label className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
+													{label}
+												</label>
+												<input
+													type="number"
+													min={0}
+													max={max}
+													value={getCropPixelValue(field)}
+													onChange={(e) => handleCropNumericChange(field, Number(e.target.value))}
+													className="w-[90px] h-8 rounded-md border border-white/10 bg-white/5 px-2 text-xs text-slate-200 outline-none focus:border-[#6E6BFF]/50 focus:ring-1 focus:ring-[#6E6BFF]/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+												/>
+											</div>
+										))}
+
+										<div className="flex flex-col gap-1">
+											<label className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
+												{t("crop.ratio")}
+											</label>
+											<div className="flex items-center gap-1.5">
+												<select
+													value={cropAspectRatio}
+													onChange={(e) => applyCropAspectPreset(e.target.value)}
+													className="h-8 rounded-md border border-white/10 bg-[#1a1a1f] px-2 text-xs text-slate-200 outline-none focus:border-[#6E6BFF]/50 cursor-pointer"
+												>
+													<option value="" className="bg-[#1a1a1f] text-slate-200">
+														{t("crop.free")}
+													</option>
+													<option value="16:9" className="bg-[#1a1a1f] text-slate-200">
+														16:9
+													</option>
+													<option value="9:16" className="bg-[#1a1a1f] text-slate-200">
+														9:16
+													</option>
+													<option value="4:3" className="bg-[#1a1a1f] text-slate-200">
+														4:3
+													</option>
+													<option value="3:4" className="bg-[#1a1a1f] text-slate-200">
+														3:4
+													</option>
+													<option value="1:1" className="bg-[#1a1a1f] text-slate-200">
+														1:1
+													</option>
+													<option value="21:9" className="bg-[#1a1a1f] text-slate-200">
+														21:9
+													</option>
+												</select>
+												<button
+													type="button"
+													onClick={() => setCropAspectLocked((prev) => !prev)}
+													className={cn(
+														"h-8 w-8 flex items-center justify-center rounded-md border transition-all",
+														cropAspectLocked
+															? "border-[#6E6BFF]/50 bg-[#6E6BFF]/10 text-[#6E6BFF]"
+															: "border-white/10 bg-white/5 text-slate-400 hover:text-slate-200",
+													)}
+													title={
+														cropAspectLocked
+															? t("crop.unlockAspectRatio")
+															: t("crop.lockAspectRatio")
+													}
+												>
+													{cropAspectLocked ? (
+														<Lock className="w-3.5 h-3.5" />
+													) : (
+														<Unlock className="w-3.5 h-3.5" />
+													)}
+												</button>
+											</div>
 										</div>
-									)}
-									<div className="bg-white/5 border border-white/5 p-0.5 w-full grid grid-cols-3 h-9 rounded-lg">
-										<button
-											onClick={() => onExportQualityChange?.("medium")}
-											title={estimateSizeLabel("medium") ?? undefined}
-											className={cn(
-												"rounded-md transition-all text-[10px] font-medium flex flex-col items-center justify-center leading-none gap-0.5",
-												exportQuality === "medium"
-													? "bg-white text-black"
-													: "text-slate-400 hover:text-slate-200",
-											)}
+
+										<p className="text-[10px] text-slate-500 self-center ml-2">
+											{videoWidth} × {videoHeight}px
+										</p>
+									</div>
+
+									<div className="flex justify-end">
+										<Button
+											onClick={() => setShowCropDropdown(false)}
+											size="lg"
+											className="bg-[#6E6BFF] hover:bg-[#6E6BFF]/90 text-white"
 										>
-											<span>{t("exportQuality.low")}</span>
-											<span
+											{t("crop.done")}
+										</Button>
+									</div>
+								</div>
+							</div>
+						</>
+					)}
+
+					{isExportPanel && (
+						<div className="flex min-h-0 flex-1 flex-col overflow-y-auto custom-scrollbar p-3 bg-black/25">
+							<div className="mb-3.5 flex items-center justify-between px-0.5">
+								<span className="text-sm font-semibold text-slate-100">{activeModeLabel}</span>
+								<KeyboardShortcutsHelp />
+							</div>
+							<div className="flex items-center gap-2 mb-3">
+								<button
+									data-testid={getTestId("mp4-format-button")}
+									onClick={() => onExportFormatChange?.("mp4")}
+									className={cn(
+										"flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border transition-all text-xs font-medium",
+										exportFormat === "mp4"
+											? "bg-[#6E6BFF]/10 border-[#6E6BFF]/50 text-white"
+											: "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-slate-200",
+									)}
+								>
+									<Film className="w-3.5 h-3.5" />
+									{t("exportFormat.mp4")}
+								</button>
+								<button
+									data-testid={getTestId("gif-format-button")}
+									onClick={() => onExportFormatChange?.("gif")}
+									className={cn(
+										"flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border transition-all text-xs font-medium",
+										exportFormat === "gif"
+											? "bg-[#6E6BFF]/10 border-[#6E6BFF]/50 text-white"
+											: "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-slate-200",
+									)}
+								>
+									<Image className="w-3.5 h-3.5" />
+									{t("exportFormat.gif")}
+								</button>
+							</div>
+
+							{LIGHTNING_PIPELINE_ENABLED && exportFormat === "mp4" && (
+								<div className="mb-3 flex items-center justify-between px-0.5">
+									<div className="flex items-center gap-1.5">
+										<div className="w-1.5 h-1.5 rounded-full bg-[#6E6BFF] animate-pulse" />
+										<span className="text-[10px] font-medium text-slate-300">Lightning</span>
+										<span className="text-[8px] font-medium text-amber-300/80 bg-amber-300/10 px-1 py-0.5 rounded">
+											Beta
+										</span>
+									</div>
+									<span className="text-[9px] text-slate-500">Fastest backend with fallback</span>
+								</div>
+							)}
+
+							{exportFormat === "mp4" && (
+								<>
+									<div className="mb-3 space-y-1.5">
+										{sourceDimensions && (
+											<div className="flex items-center justify-between px-0.5 text-[10px] leading-none text-slate-500">
+												<span>{t("exportQuality.title")}</span>
+												<span>
+													Source {sourceDimensions.width}x{sourceDimensions.height}
+												</span>
+											</div>
+										)}
+										<div className="bg-white/5 border border-white/5 p-0.5 w-full grid grid-cols-3 h-9 rounded-lg">
+											<button
+												onClick={() => onExportQualityChange?.("medium")}
+												title={estimateSizeLabel("medium") ?? undefined}
 												className={cn(
-													"text-[8px] font-medium",
-													exportQuality === "medium" ? "text-black/55" : "text-slate-500",
+													"rounded-md transition-all text-[10px] font-medium flex flex-col items-center justify-center leading-none gap-0.5",
+													exportQuality === "medium"
+														? "bg-white text-black"
+														: "text-slate-400 hover:text-slate-200",
 												)}
 											>
-												Small
-											</span>
-										</button>
-										<button
-											onClick={() => onExportQualityChange?.("good")}
-											title={estimateSizeLabel("good") ?? undefined}
-											className={cn(
-												"rounded-md transition-all text-[10px] font-medium flex flex-col items-center justify-center leading-none gap-0.5",
-												exportQuality === "good"
-													? "bg-white text-black"
-													: "text-slate-400 hover:text-slate-200",
-											)}
-										>
-											<span>{t("exportQuality.medium")}</span>
-											{sourceDimensions &&
-												sourceDimensions.shortSide < MP4_EXPORT_SHORT_SIDES.good && (
-													<span
-														className={cn(
-															"text-[8px] font-medium",
-															exportQuality === "good" ? "text-black/55" : "text-amber-300/80",
-														)}
-													>
-														Upscale
-													</span>
-												)}
-										</button>
-										<button
-											onClick={() => onExportQualityChange?.("source")}
-											title={estimateSizeLabel("source") ?? undefined}
-											className={cn(
-												"rounded-md transition-all text-[10px] font-medium flex flex-col items-center justify-center leading-none gap-0.5",
-												exportQuality === "source"
-													? "bg-white text-black"
-													: "text-slate-400 hover:text-slate-200",
-											)}
-										>
-											<span>{t("exportQuality.high")}</span>
-											{sourceDimensions && (
+												<span>{t("exportQuality.low")}</span>
 												<span
 													className={cn(
 														"text-[8px] font-medium",
-														exportQuality === "source" ? "text-black/55" : "text-slate-500",
+														exportQuality === "medium" ? "text-black/55" : "text-slate-500",
 													)}
 												>
-													{sourceDimensions.shortSide}p
+													Small
 												</span>
-											)}
-										</button>
+											</button>
+											<button
+												onClick={() => onExportQualityChange?.("good")}
+												title={estimateSizeLabel("good") ?? undefined}
+												className={cn(
+													"rounded-md transition-all text-[10px] font-medium flex flex-col items-center justify-center leading-none gap-0.5",
+													exportQuality === "good"
+														? "bg-white text-black"
+														: "text-slate-400 hover:text-slate-200",
+												)}
+											>
+												<span>{t("exportQuality.medium")}</span>
+												{sourceDimensions &&
+													sourceDimensions.shortSide < MP4_EXPORT_SHORT_SIDES.good && (
+														<span
+															className={cn(
+																"text-[8px] font-medium",
+																exportQuality === "good" ? "text-black/55" : "text-amber-300/80",
+															)}
+														>
+															Upscale
+														</span>
+													)}
+											</button>
+											<button
+												onClick={() => onExportQualityChange?.("source")}
+												title={estimateSizeLabel("source") ?? undefined}
+												className={cn(
+													"rounded-md transition-all text-[10px] font-medium flex flex-col items-center justify-center leading-none gap-0.5",
+													exportQuality === "source"
+														? "bg-white text-black"
+														: "text-slate-400 hover:text-slate-200",
+												)}
+											>
+												<span>{t("exportQuality.high")}</span>
+												{sourceDimensions && (
+													<span
+														className={cn(
+															"text-[8px] font-medium",
+															exportQuality === "source" ? "text-black/55" : "text-slate-500",
+														)}
+													>
+														{sourceDimensions.shortSide}p
+													</span>
+												)}
+											</button>
+										</div>
 									</div>
-								</div>
 
-								{ENCODING_MODE_ENABLED && (
+									{ENCODING_MODE_ENABLED && (
+										<div className="mb-3 space-y-1.5">
+											<div className="flex items-center justify-between px-0.5 text-[10px] leading-none text-slate-500">
+												<span>Encoding Mode</span>
+											</div>
+											<div className="bg-white/5 border border-white/5 p-0.5 w-full grid grid-cols-3 h-9 rounded-lg">
+												{ENCODING_MODES.map((mode) => (
+													<button
+														key={mode.value}
+														onClick={() => onEncodingModeChange?.(mode.value)}
+														className={cn(
+															"rounded-md transition-all text-[10px] font-medium flex items-center justify-center leading-none",
+															encodingMode === mode.value
+																? "bg-white text-black"
+																: "text-slate-400 hover:text-slate-200",
+														)}
+														title={mode.description}
+													>
+														<span>{mode.label}</span>
+													</button>
+												))}
+											</div>
+										</div>
+									)}
+
 									<div className="mb-3 space-y-1.5">
 										<div className="flex items-center justify-between px-0.5 text-[10px] leading-none text-slate-500">
-											<span>Encoding Mode</span>
+											<span>Frame Rate</span>
 										</div>
 										<div className="bg-white/5 border border-white/5 p-0.5 w-full grid grid-cols-3 h-9 rounded-lg">
-											{ENCODING_MODES.map((mode) => (
+											{MP4_FRAME_RATES.map((rate) => (
 												<button
-													key={mode.value}
-													onClick={() => onEncodingModeChange?.(mode.value)}
+													key={rate}
+													onClick={() => onMp4FrameRateChange?.(rate)}
 													className={cn(
 														"rounded-md transition-all text-[10px] font-medium flex items-center justify-center leading-none",
-														encodingMode === mode.value
+														mp4FrameRate === rate
 															? "bg-white text-black"
 															: "text-slate-400 hover:text-slate-200",
 													)}
-													title={mode.description}
 												>
-													<span>{mode.label}</span>
+													<span>{rate} FPS</span>
 												</button>
 											))}
 										</div>
 									</div>
-								)}
 
-								<div className="mb-3 space-y-1.5">
-									<div className="flex items-center justify-between px-0.5 text-[10px] leading-none text-slate-500">
-										<span>Frame Rate</span>
-									</div>
-									<div className="bg-white/5 border border-white/5 p-0.5 w-full grid grid-cols-3 h-9 rounded-lg">
-										{MP4_FRAME_RATES.map((rate) => (
-											<button
-												key={rate}
-												onClick={() => onMp4FrameRateChange?.(rate)}
-												className={cn(
-													"rounded-md transition-all text-[10px] font-medium flex items-center justify-center leading-none",
-													mp4FrameRate === rate
-														? "bg-white text-black"
-														: "text-slate-400 hover:text-slate-200",
-												)}
-											>
-												<span>{rate} FPS</span>
-											</button>
-										))}
-									</div>
-								</div>
-
-								<div className="mb-3 flex items-center justify-between px-0.5 text-[9px] leading-none">
-									<span className="text-slate-500">
-										{hasExportEstimates ? `Est. size ≈ ${estimateSizeLabel(exportQuality)}` : ""}
-									</span>
-									{usingRecommendedExport ? (
-										<span className="flex items-center gap-1 text-slate-500">
-											<span className="w-1 h-1 rounded-full bg-emerald-400/80" />
-											Recommended settings
+									<div className="mb-3 flex items-center justify-between px-0.5 text-[9px] leading-none">
+										<span className="text-slate-500">
+											{hasExportEstimates ? `Est. size ≈ ${estimateSizeLabel(exportQuality)}` : ""}
 										</span>
-									) : (
-										<button
-											type="button"
-											onClick={applyRecommendedExport}
-											className="font-medium text-[#6E6BFF] hover:text-[#C084FC] transition-colors"
-											title="Best balance of quality, size, and export speed"
-										>
-											Use recommended
-										</button>
-									)}
-								</div>
-							</>
-						)}
+										{usingRecommendedExport ? (
+											<span className="flex items-center gap-1 text-slate-500">
+												<span className="w-1 h-1 rounded-full bg-emerald-400/80" />
+												Recommended settings
+											</span>
+										) : (
+											<button
+												type="button"
+												onClick={applyRecommendedExport}
+												className="font-medium text-[#6E6BFF] hover:text-[#C084FC] transition-colors"
+												title="Best balance of quality, size, and export speed"
+											>
+												Use recommended
+											</button>
+										)}
+									</div>
+								</>
+							)}
 
-						{exportFormat === "gif" && (
-							<div className="mb-3 space-y-2">
-								<div className="flex items-center gap-2">
-									<div className="flex-1 bg-white/5 border border-white/5 p-0.5 grid grid-cols-4 h-7 rounded-lg">
-										{GIF_FRAME_RATES.map((rate) => (
-											<button
-												key={rate.value}
-												onClick={() => onGifFrameRateChange?.(rate.value)}
-												className={cn(
-													"rounded-md transition-all text-[10px] font-medium",
-													gifFrameRate === rate.value
-														? "bg-white text-black"
-														: "text-slate-400 hover:text-slate-200",
-												)}
-											>
-												{rate.value}
-											</button>
-										))}
-									</div>
-									<div className="flex-1 bg-white/5 border border-white/5 p-0.5 grid grid-cols-3 h-7 rounded-lg">
-										{Object.entries(GIF_SIZE_PRESETS).map(([key, _preset]) => (
-											<button
-												key={key}
-												data-testid={getTestId(`gif-size-button-${key}`)}
-												onClick={() => onGifSizePresetChange?.(key as GifSizePreset)}
-												className={cn(
-													"rounded-md transition-all text-[10px] font-medium",
-													gifSizePreset === key
-														? "bg-white text-black"
-														: "text-slate-400 hover:text-slate-200",
-												)}
-											>
-												{key === "original"
-													? "Orig"
-													: key.charAt(0).toUpperCase() + key.slice(1, 3)}
-											</button>
-										))}
-									</div>
-								</div>
-								<div className="flex items-center justify-between">
-									<span className="text-[10px] text-slate-500">
-										{gifOutputDimensions.width} × {gifOutputDimensions.height}px
-									</span>
+							{exportFormat === "gif" && (
+								<div className="mb-3 space-y-2">
 									<div className="flex items-center gap-2">
-										<span className="text-[10px] text-slate-400">{t("gifSettings.loop")}</span>
+										<div className="flex-1 bg-white/5 border border-white/5 p-0.5 grid grid-cols-4 h-7 rounded-lg">
+											{GIF_FRAME_RATES.map((rate) => (
+												<button
+													key={rate.value}
+													onClick={() => onGifFrameRateChange?.(rate.value)}
+													className={cn(
+														"rounded-md transition-all text-[10px] font-medium",
+														gifFrameRate === rate.value
+															? "bg-white text-black"
+															: "text-slate-400 hover:text-slate-200",
+													)}
+												>
+													{rate.value}
+												</button>
+											))}
+										</div>
+										<div className="flex-1 bg-white/5 border border-white/5 p-0.5 grid grid-cols-3 h-7 rounded-lg">
+											{Object.entries(GIF_SIZE_PRESETS).map(([key, _preset]) => (
+												<button
+													key={key}
+													data-testid={getTestId(`gif-size-button-${key}`)}
+													onClick={() => onGifSizePresetChange?.(key as GifSizePreset)}
+													className={cn(
+														"rounded-md transition-all text-[10px] font-medium",
+														gifSizePreset === key
+															? "bg-white text-black"
+															: "text-slate-400 hover:text-slate-200",
+													)}
+												>
+													{key === "original"
+														? "Orig"
+														: key.charAt(0).toUpperCase() + key.slice(1, 3)}
+												</button>
+											))}
+										</div>
+									</div>
+									<div className="flex items-center justify-between">
+										<span className="text-[10px] text-slate-500">
+											{gifOutputDimensions.width} × {gifOutputDimensions.height}px
+										</span>
+										<div className="flex items-center gap-2">
+											<span className="text-[10px] text-slate-400">{t("gifSettings.loop")}</span>
+											<Switch
+												checked={gifLoop}
+												onCheckedChange={onGifLoopChange}
+												className="data-[state=checked]:bg-[#6E6BFF] scale-75"
+											/>
+										</div>
+									</div>
+									<div className="flex items-center justify-between">
+										<div className="min-w-0 pr-2">
+											<span className="block text-[10px] text-slate-400">
+												{t("gifSettings.videoOnly")}
+											</span>
+											<span className="block text-[9px] leading-tight text-slate-500">
+												{t("gifSettings.videoOnlyDescription")}
+											</span>
+										</div>
 										<Switch
-											checked={gifLoop}
-											onCheckedChange={onGifLoopChange}
+											data-testid={getTestId("gif-video-only-switch")}
+											checked={gifVideoOnly}
+											onCheckedChange={onGifVideoOnlyChange}
 											className="data-[state=checked]:bg-[#6E6BFF] scale-75"
 										/>
 									</div>
 								</div>
-								<div className="flex items-center justify-between">
-									<div className="min-w-0 pr-2">
-										<span className="block text-[10px] text-slate-400">
-											{t("gifSettings.videoOnly")}
-										</span>
-										<span className="block text-[9px] leading-tight text-slate-500">
-											{t("gifSettings.videoOnlyDescription")}
-										</span>
-									</div>
-									<Switch
-										data-testid={getTestId("gif-video-only-switch")}
-										checked={gifVideoOnly}
-										onCheckedChange={onGifVideoOnlyChange}
-										className="data-[state=checked]:bg-[#6E6BFF] scale-75"
-									/>
-								</div>
-							</div>
-						)}
+							)}
 
-						{unsavedExport && (
+							{unsavedExport && (
+								<Button
+									type="button"
+									size="lg"
+									onClick={onSaveUnsavedExport}
+									className="w-full mb-2 py-5 text-sm font-semibold flex items-center justify-center gap-2 bg-indigo-500 text-white rounded-xl shadow-lg shadow-indigo-500/20 hover:bg-indigo-500/90 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
+								>
+									<Download className="w-4 h-4" />
+									{t("export.chooseSaveLocation")}
+								</Button>
+							)}
 							<Button
+								data-testid={getTestId("export-button")}
 								type="button"
 								size="lg"
-								onClick={onSaveUnsavedExport}
-								className="w-full mb-2 py-5 text-sm font-semibold flex items-center justify-center gap-2 bg-indigo-500 text-white rounded-xl shadow-lg shadow-indigo-500/20 hover:bg-indigo-500/90 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
+								onClick={onExport}
+								className="w-full py-5 text-sm font-semibold flex items-center justify-center gap-2 bg-gradient-to-r from-[#6E6BFF] to-[#22D3EE] text-white rounded-xl shadow-lg shadow-[#6E6BFF]/30 hover:shadow-[#6E6BFF]/40 hover:scale-[1.01] active:scale-[0.99] transition-all duration-200"
 							>
 								<Download className="w-4 h-4" />
-								{t("export.chooseSaveLocation")}
+								{exportFormat === "gif" ? t("export.gifButton") : t("export.videoButton")}
 							</Button>
-						)}
-						<Button
-							data-testid={getTestId("export-button")}
-							type="button"
-							size="lg"
-							onClick={onExport}
-							className="w-full py-5 text-sm font-semibold flex items-center justify-center gap-2 bg-gradient-to-r from-[#6E6BFF] to-[#22D3EE] text-white rounded-xl shadow-lg shadow-[#6E6BFF]/30 hover:shadow-[#6E6BFF]/40 hover:scale-[1.01] active:scale-[0.99] transition-all duration-200"
-						>
-							<Download className="w-4 h-4" />
-							{exportFormat === "gif" ? t("export.gifButton") : t("export.videoButton")}
-						</Button>
-					</>
-				)}
-
-				{commonFooterLinks}
+						</div>
+					)}
+				</div>
 			</div>
 		</div>
 	);

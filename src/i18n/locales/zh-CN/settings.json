@@ -114,7 +114,6 @@
 	},
 	"support": {
 		"reportBug": "报告错误",
-		"saveDiagnostics": "保存诊断信息",
 		"starOnGithub": "在 GitHub 上加星"
 	},
 	"imageUpload": {

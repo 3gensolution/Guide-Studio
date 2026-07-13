@@ -114,7 +114,6 @@
 	},
 	"support": {
 		"reportBug": "Hata Bildir",
-		"saveDiagnostics": "Teşhis Verilerini Kaydet",
 		"starOnGithub": "GitHub'da Yıldızla"
 	},
 	"imageUpload": {

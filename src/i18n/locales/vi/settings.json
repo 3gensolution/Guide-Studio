@@ -114,7 +114,6 @@
 	},
 	"support": {
 		"reportBug": "Báo cáo lỗi",
-		"saveDiagnostics": "Lưu thông tin chẩn đoán",
 		"starOnGithub": "Đánh giá sao trên GitHub"
 	},
 	"imageUpload": {

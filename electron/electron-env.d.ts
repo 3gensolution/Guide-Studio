@@ -714,12 +714,6 @@ interface Window {
 		onRequestCloseConfirm: (callback: () => void) => () => void;
 		sendCloseConfirmResponse: (choice: "save" | "discard" | "cancel") => void;
 		setLocale: (locale: string) => Promise<void>;
-		saveDiagnostic: (payload: {
-			error: string;
-			stack?: string;
-			projectState: unknown;
-			logs: string[];
-		}) => Promise<{ success: boolean; path?: string; canceled?: boolean; error?: string }>;
 
 		// Recording bar
 		showRecordingBar: () => Promise<{ success: boolean }>;

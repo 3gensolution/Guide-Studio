@@ -114,7 +114,6 @@
 	},
 	"support": {
 		"reportBug": "Сообщить об ошибке",
-		"saveDiagnostics": "Сохранить диагностику",
 		"starOnGithub": "Звезда на GitHub"
 	},
 	"imageUpload": {

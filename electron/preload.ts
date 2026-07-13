@@ -343,16 +343,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return ipcRenderer.invoke("set-setting", key, value);
 	},
 
-	// ── Diagnostics (Guide Studio) ──
-	saveDiagnostic: (payload: {
-		error: string;
-		stack?: string;
-		projectState: unknown;
-		logs: string[];
-	}) => {
-		return ipcRenderer.invoke("save-diagnostic", payload);
-	},
-
 	// ── Guide doc export ──
 	saveGuideDoc: (content: string, defaultFileName: string, format: "html" | "md") => {
 		return ipcRenderer.invoke("save-guide-doc", content, defaultFileName, format);

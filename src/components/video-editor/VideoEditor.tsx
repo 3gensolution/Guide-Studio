@@ -3243,19 +3243,6 @@ export default function VideoEditor() {
 		[videoPath, trimRegions, pushState, t, editorState.videoClips],
 	);
 
-	const handleSaveDiagnostic = useCallback(async () => {
-		const result = await window.electronAPI.saveDiagnostic({
-			error: exportError ?? "Manual diagnostic export",
-			projectState: editorState,
-			logs: [],
-		});
-		if (result.success) {
-			toast.success("Diagnostic file saved");
-		} else if (!result.canceled) {
-			toast.error("Failed to save diagnostic file");
-		}
-	}, [exportError, editorState]);
-
 	// ── AI Feature handlers ──
 
 	const handleMagicPolish = useCallback(() => {
@@ -3934,7 +3921,6 @@ export default function VideoEditor() {
 													onClipDelete={handleClipDelete}
 													unsavedExport={unsavedExport}
 													onSaveUnsavedExport={handleSaveUnsavedExport}
-													onSaveDiagnostic={handleSaveDiagnostic}
 													showCursor={showCursor}
 													onShowCursorChange={setShowCursor}
 													cursorSize={cursorSize}

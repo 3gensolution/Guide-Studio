@@ -114,7 +114,6 @@
 	},
 	"support": {
 		"reportBug": "バグを報告",
-		"saveDiagnostics": "診断情報を保存",
 		"starOnGithub": "GitHub でスターを付ける"
 	},
 	"imageUpload": {
