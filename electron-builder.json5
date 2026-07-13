@@ -82,6 +82,7 @@
       "deb",
       "pacman"
     ],
+    "maintainer": "3guide <abiola@3guideai.com>",
     "icon": "icons/icons/png",
     "artifactName": "${productName}-Linux-${version}.${ext}",
     "category": "AudioVideo"

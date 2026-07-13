@@ -37,7 +37,9 @@ target_compile_definitions(wgc-capture PRIVATE
   _WIN32_WINNT=0x0A00
 )
 
-target_compile_options(wgc-capture PRIVATE /EHsc /W4 /utf-8 /await)
+# C++20 enables standard <coroutine> by default. The old /await flag pulls in
+# <experimental/coroutine>, which newer MSVC toolchains (14.51+) hard-error on.
+target_compile_options(wgc-capture PRIVATE /EHsc /W4 /utf-8)
 
 target_link_libraries(wgc-capture PRIVATE
   d3d11
