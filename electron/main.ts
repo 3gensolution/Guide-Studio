@@ -28,6 +28,7 @@ import { registerExportHandlers } from "./ipc/exportHandlers";
 import { registerFfmpegHandlers } from "./ipc/ffmpegHandlers";
 import { getSelectedDesktopSource, registerIpcHandlers } from "./ipc/handlers";
 import { registerProjectHandlers } from "./ipc/projectHandlers";
+import { registerSecureStorageHandlers } from "./ipc/secureStorageHandlers";
 import { registerSettingsHandlers } from "./ipc/settingsHandlers";
 import { registerShowcaseHandlers } from "./ipc/showcaseHandlers";
 import { registerStudioCacheHandlers } from "./ipc/studioCacheHandlers";
@@ -888,8 +889,9 @@ app.on("activate", () => {
 		}
 
 		const url = window.webContents.getURL();
-		const isCountdownOverlayWindow = url.includes("windowType=countdown-overlay");
-		return !isCountdownOverlayWindow;
+		const isPassiveOverlayWindow =
+			url.includes("windowType=countdown-overlay") || url.includes("windowType=webcam-preview");
+		return !isPassiveOverlayWindow;
 	});
 	if (!hasVisibleWindow) {
 		showMainWindow();
@@ -1169,6 +1171,9 @@ app.whenReady().then(async () => {
 
 	// Settings handlers
 	registerSettingsHandlers();
+
+	// Secure storage (keychain-backed) + pro token refresh
+	registerSecureStorageHandlers();
 
 	// Studio cache handlers
 	registerStudioCacheHandlers();

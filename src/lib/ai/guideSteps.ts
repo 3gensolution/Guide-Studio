@@ -5,6 +5,7 @@
  * click telemetry we fall back to click clusters from the recording profile.
  */
 import type { CursorTelemetryPoint } from "@/components/video-editor/types";
+import type { ChatContentPart, ChatMessage } from "@/lib/api/ai";
 import { analyzeRecording } from "./recordingAnalyzer";
 import type { CaptionTrack, GuideStep } from "./types";
 
@@ -149,13 +150,68 @@ export function buildStepTitlePrompt(steps: GuideStep[], guideTitle?: string): s
 	return (
 		"You are writing a step-by-step software guide from a screen recording. " +
 		"For each interaction below, write a short imperative step title (max 10 words) " +
-		'and a one-sentence description of what the user does, e.g. "Open the Settings menu".\n' +
+		"and a one-sentence description of what the user does.\n" +
 		(guideTitle ? `The guide is about: ${guideTitle}\n` : "") +
-		"Use the narrator's words when available; otherwise describe the interaction generically.\n" +
+		"Use the narrator's words when available to name the real buttons, menus, and pages " +
+		'— e.g. "Open the Settings menu", never "Click here" or screen positions.\n' +
 		"Respond ONLY with a JSON array, one object per step, in the same order: " +
-		'[{"title": "...", "description": "..."}]\n\n' +
+		'[{"title": "...", "description": "..."}]\n' +
+		'Example entry: {"title": "Invite new teammates", "description": "Select Invite from the team menu to send teammates an email invitation."}\n\n' +
 		`Interactions:\n${stepLines}`
 	);
+}
+
+/**
+ * Build multimodal messages asking a vision model to title each step from
+ * its actual screenshot — the LLM "understands the video" instead of
+ * guessing from click coordinates. Each screenshot already has the click
+ * marked with an indigo ring (drawn by captureStepScreenshots). Returns
+ * null when no step has a screenshot; the text-only prompt is the fallback.
+ */
+export function buildStepTitleVisionMessages(
+	steps: GuideStep[],
+	guideTitle?: string,
+): ChatMessage[] | null {
+	if (steps.length === 0 || !steps.some((s) => s.screenshotDataUrl)) return null;
+
+	const parts: ChatContentPart[] = [
+		{
+			type: "text",
+			text:
+				"You are writing a step-by-step software guide from a screen recording. " +
+				"Below is one screenshot per user interaction, in order. The indigo/purple ring " +
+				"marks exactly where the user clicked.\n" +
+				(guideTitle ? `The guide is about: ${guideTitle}\n` : "") +
+				"For EACH screenshot: look at what is inside and around the ring, read the actual " +
+				"on-screen text, and name the real element — the app, button, menu, tab, or field " +
+				'label you can see (e.g. "Open the GuideAI assistant", "Stop the screen recording").\n' +
+				"Write a short imperative title (max 10 words) and a one-sentence description per step.\n" +
+				"BANNED: generic titles that could apply to any app — never write things like " +
+				'"Proceed to next step", "Select desired option", "Confirm your selection", ' +
+				'"click here", or coordinates. Every title must contain a word visible in that screenshot, ' +
+				"and DIFFERENT screenshots must get DIFFERENT titles — describe each one independently.\n" +
+				"Respond ONLY with a JSON array, one object per step, in the same order: " +
+				'[{"title": "...", "description": "..."}]',
+		},
+	];
+
+	for (const step of steps) {
+		const spoken = step.transcript ? ` — narrator says: "${step.transcript.slice(0, 300)}"` : "";
+		parts.push({
+			type: "text",
+			text: `Step ${step.index} (${step.action} at ${Math.round(step.timeMs / 1000)}s)${spoken}:`,
+		});
+		if (step.screenshotDataUrl) {
+			parts.push({ type: "image_url", image_url: { url: step.screenshotDataUrl } });
+		} else {
+			parts.push({
+				type: "text",
+				text: `(no screenshot — the ${step.action} was at ${Math.round(step.cx * 100)}%, ${Math.round(step.cy * 100)}% of the screen)`,
+			});
+		}
+	}
+
+	return [{ role: "user", content: parts }];
 }
 
 /** Merge AI-generated titles back into the step list (tolerant of bad output) */

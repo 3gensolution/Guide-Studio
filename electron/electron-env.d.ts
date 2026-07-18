@@ -319,6 +319,19 @@ interface Window {
 			videoPath: string,
 			audioPath: string,
 		) => Promise<{ success: boolean; error?: string }>;
+		saveNarrationAudio: (
+			data: ArrayBuffer,
+		) => Promise<{ success: boolean; path?: string; error?: string }>;
+		muxNarrationAudio: (
+			videoPath: string,
+			segments: Array<{ audioPath: string; offsetMs: number }>,
+			music?: {
+				audioPath: string;
+				volume: number;
+				duckWindows: Array<{ startMs: number; endMs: number }>;
+			} | null,
+			muteOriginal?: boolean,
+		) => Promise<{ success: boolean; error?: string }>;
 		autoSaveProject: (
 			projectData: unknown,
 			fileName: string,
@@ -722,6 +735,11 @@ interface Window {
 		minimizeEditor: () => Promise<{ success: boolean }>;
 		restoreEditor: () => Promise<{ success: boolean }>;
 		onStopRecordingFromBar: (callback: () => void) => () => void;
+
+		// Webcam preview — floating self-view bubble while the webcam is enabled
+		showWebcamPreview: (deviceId?: string) => Promise<{ success: boolean }>;
+		hideWebcamPreview: () => Promise<{ success: boolean }>;
+		onWebcamPreviewDeviceChanged: (callback: (deviceId: string) => void) => () => void;
 
 		// Updater — electron-updater against GitHub Releases.
 		checkForUpdates: (manual?: boolean) => Promise<UpdateEvent>;

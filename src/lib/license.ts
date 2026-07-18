@@ -27,7 +27,8 @@ export type ProFeature =
 	| "animated-backgrounds"
 	| "ai-captions"
 	| "tts"
-	| "ai-polish";
+	| "ai-polish"
+	| "unlimited-publishing";
 
 const PRO_FEATURES: Set<ProFeature> = new Set([
 	"ai-chat",
@@ -38,6 +39,7 @@ const PRO_FEATURES: Set<ProFeature> = new Set([
 	"ai-captions",
 	"tts",
 	"ai-polish",
+	"unlimited-publishing",
 ]);
 
 const PRO_FEATURE_LABELS: Record<ProFeature, string> = {
@@ -49,6 +51,7 @@ const PRO_FEATURE_LABELS: Record<ProFeature, string> = {
 	"ai-captions": "AI Captions",
 	tts: "Text-to-Speech",
 	"ai-polish": "AI Polish",
+	"unlimited-publishing": "Unlimited Publishing",
 };
 
 let cachedTier: LicenseTier | null = null;

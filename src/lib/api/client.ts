@@ -69,9 +69,14 @@ class ApiClient {
 		return this.tokens?.accessToken || null;
 	}
 
+	getBaseUrl(): string {
+		return this.config.baseUrl;
+	}
+
 	async request<T = unknown>(
 		endpoint: string,
 		options: RequestInit = {},
+		timeoutMs?: number,
 	): Promise<{ success: true; data: T } | { success: false; error: string }> {
 		const url = `${this.config.baseUrl}${endpoint}`;
 		const headers: Record<string, string> = {
@@ -91,7 +96,7 @@ class ApiClient {
 
 		try {
 			const controller = new AbortController();
-			const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
+			const timeoutId = setTimeout(() => controller.abort(), timeoutMs ?? this.config.timeout);
 
 			const response = await fetch(url, {
 				...options,
@@ -107,7 +112,7 @@ class ApiClient {
 					const refreshed = await this.refreshAccessToken();
 					if (refreshed) {
 						// Retry with new token
-						return this.request(endpoint, options);
+						return this.request(endpoint, options, timeoutMs);
 					}
 				}
 
@@ -166,11 +171,15 @@ class ApiClient {
 		return this.request<T>(endpoint, { method: "GET" });
 	}
 
-	post<T>(endpoint: string, data: unknown) {
-		return this.request<T>(endpoint, {
-			method: "POST",
-			body: JSON.stringify(data),
-		});
+	post<T>(endpoint: string, data: unknown, timeoutMs?: number) {
+		return this.request<T>(
+			endpoint,
+			{
+				method: "POST",
+				body: JSON.stringify(data),
+			},
+			timeoutMs,
+		);
 	}
 
 	put<T>(endpoint: string, data: unknown) {

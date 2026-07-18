@@ -198,6 +198,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		});
 		webcamStream.current = null;
 		webcamReady.current = true;
+		// The preview window holds its own camera handle; close it too so native
+		// capture (Windows) can open the device exclusively.
+		void window.electronAPI?.hideWebcamPreview?.();
 	}, []);
 
 	const setWebcamEnabled = useCallback(
@@ -266,6 +269,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				});
 				webcamStream.current = stream;
 				webcamReady.current = true;
+				// Floating self-view bubble so the user can check their framing.
+				void window.electronAPI?.showWebcamPreview?.(webcamDeviceId);
 			} catch (cameraError) {
 				if (!cancelled) {
 					console.warn("Failed to get webcam access:", cameraError);
@@ -298,6 +303,19 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			}
 		};
 	}, [webcamEnabled, webcamDeviceId, t]);
+
+	// Close the preview bubble when the webcam is turned off (toggle, camera
+	// disconnect, or acquisition failure) and when the HUD unmounts.
+	useEffect(() => {
+		if (webcamEnabled) return;
+		void window.electronAPI?.hideWebcamPreview?.();
+	}, [webcamEnabled]);
+
+	useEffect(() => {
+		return () => {
+			void window.electronAPI?.hideWebcamPreview?.();
+		};
+	}, []);
 
 	const finalizeRecording = useCallback(
 		(

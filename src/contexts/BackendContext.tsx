@@ -45,24 +45,58 @@ export function BackendProvider({ children }: { children: ReactNode }) {
 	useEffect(() => {
 		let cancelled = false;
 
-		async function checkHealth() {
+		async function checkHealth(): Promise<boolean> {
+			let usable = false;
 			try {
 				const res = await fetch(HEALTH_URL, {
 					method: "GET",
 					signal: AbortSignal.timeout(5000),
 				});
-				if (!cancelled) setIsBackendAvailable(res.ok);
+				// The gateway answers 503 "degraded" when ANY upstream is down,
+				// including services the studio never calls (e.g. video-renderer).
+				// Treat the backend as available as long as the gateway answers
+				// and the services we actually use aren't reported unhealthy.
+				if (res.ok) {
+					usable = true;
+				} else if (res.status === 503) {
+					const body = await res.json().catch(() => null);
+					const services = body?.services as
+						| Record<string, { status?: string } | undefined>
+						| undefined;
+					const needed = ["core", "studio"];
+					usable =
+						body?.service === "gateway" &&
+						needed.every((name) => services?.[name]?.status === "healthy");
+				}
 			} catch {
-				if (!cancelled) setIsBackendAvailable(false);
+				usable = false;
+			}
+			if (!cancelled) setIsBackendAvailable(usable);
+			return usable;
+		}
+
+		// The first probe often races editor startup (video decode, PIXI init)
+		// and can miss its 5s timeout. Don't leave the UI "Offline" for the
+		// whole 30s interval — retry quickly a few times until the first
+		// success, then let the 30s cadence take over.
+		let quickRetry: ReturnType<typeof setTimeout> | null = null;
+		async function initialCheck(attemptsLeft: number) {
+			const usable = await checkHealth();
+			if (!cancelled && !usable && attemptsLeft > 0) {
+				quickRetry = setTimeout(() => {
+					quickRetry = null;
+					void initialCheck(attemptsLeft - 1);
+				}, 3_000);
 			}
 		}
 
-		checkHealth();
+		void initialCheck(5);
 		// Re-check every 30s
 		const interval = setInterval(checkHealth, 30_000);
 		return () => {
 			cancelled = true;
 			clearInterval(interval);
+			if (quickRetry) clearTimeout(quickRetry);
 		};
 	}, []);
 

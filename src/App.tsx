@@ -7,6 +7,7 @@ import { CountdownOverlay } from "./components/launch/CountdownOverlay.tsx";
 import { LaunchWindow } from "./components/launch/LaunchWindow";
 import { SourceSelector } from "./components/launch/SourceSelector";
 import { RecordingBar } from "./components/recording/RecordingBar";
+import { WebcamPreviewWindow } from "./components/recording/WebcamPreviewWindow";
 import { Toaster } from "./components/ui/sonner";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { UpdateToast } from "./components/ui/UpdateToast";
@@ -27,6 +28,7 @@ const TRANSPARENT_WINDOW_TYPES = new Set([
 	"source-selector",
 	"countdown-overlay",
 	"recording-bar",
+	"webcam-preview",
 ]);
 
 export default function App() {
@@ -98,6 +100,8 @@ export default function App() {
 				return <CountdownOverlay />;
 			case "recording-bar":
 				return <RecordingBar />;
+			case "webcam-preview":
+				return <WebcamPreviewWindow />;
 			case "bench-render":
 				return <BenchRenderPage />;
 			case "editor":
@@ -138,7 +142,7 @@ export default function App() {
 		<BackendProvider>
 			<TooltipProvider>
 				{content}
-				{windowType !== "recording-bar" && <UpdateToast />}
+				{windowType !== "recording-bar" && windowType !== "webcam-preview" && <UpdateToast />}
 				<Toaster theme="dark" className="pointer-events-auto" />
 			</TooltipProvider>
 		</BackendProvider>

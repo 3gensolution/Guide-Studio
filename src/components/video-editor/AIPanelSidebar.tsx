@@ -1,10 +1,9 @@
 /**
  * AIPanelSidebar — collapsible sidebar panel for AI features.
- * Contains: Step Guide, Smart Trim, Magic Polish, Auto-Narrate, Extract Clips,
+ * Contains: Video Guide, Smart Trim, Magic Polish, Auto-Narrate, Extract Clips,
  * Publish Kit, AI Settings.
  */
 import {
-	BookOpenText,
 	Captions,
 	Check,
 	ChevronDown,
@@ -14,6 +13,9 @@ import {
 	LogIn,
 	LogOut,
 	Megaphone,
+	Mic,
+	MonitorPlay,
+	Music2,
 	ScanEye,
 	Scissors,
 	Settings2,
@@ -32,7 +34,9 @@ import type { EditorState } from "@/hooks/useEditorHistory";
 import { extractClips } from "@/lib/ai/clipExtractor";
 import { generatePolishEdits } from "@/lib/ai/oneClickPolish";
 import { analyzeRecording } from "@/lib/ai/recordingAnalyzer";
-import type { CaptionTrack, ExtractedClip, PolishPreview } from "@/lib/ai/types";
+import type { CaptionTrack, ExtractedClip, GuideStep, PolishPreview } from "@/lib/ai/types";
+import { createVideoGuide, VideoGuideAuthError, type VideoGuideOptions } from "@/lib/ai/videoGuide";
+import { MusicSection, NarrationSection } from "./AudioAISections";
 import { GuideDocSection } from "./GuideDocSection";
 import { IntroBuilderSection } from "./IntroBuilderSection";
 import { PublishKitSection } from "./PublishKitSection";
@@ -114,6 +118,68 @@ export function AIPanelSidebar({
 
 	// ── AI preflight (backend auth check) ──
 	const { requireChatProvider } = useAIPreflight();
+
+	// ── Video Guide — apply detected steps to the timeline as a produced guide ──
+	const handleCreateVideoGuide = useCallback(
+		async (steps: GuideStep[], guideTitle: string, options: VideoGuideOptions) => {
+			// Voiceover is the only stage that needs the account
+			if (options.voiceover && !(isBackendAvailable && isAuthenticated)) {
+				toast.info("Sign in to add a voiceover, or turn the Voiceover option off.");
+				showLogin();
+				return;
+			}
+
+			const toastId = toast.loading("Creating video guide…");
+			try {
+				const { edits, summary, warnings } = await createVideoGuide({
+					steps,
+					guideTitle,
+					timelineDurationMs: videoDurationMs,
+					currentState: editorState,
+					captionTrack,
+					options,
+					onProgress: (message) => toast.loading(message, { id: toastId }),
+				});
+				if (summary.stepCount === 0) {
+					toast.error("No steps land inside the recording clip on the timeline", { id: toastId });
+					return;
+				}
+				onApplyEdits(edits);
+				const parts = [
+					summary.highlightCount ? `${summary.highlightCount} click highlights` : null,
+					summary.narrationLineCount ? `${summary.narrationLineCount} narration lines` : null,
+					summary.trimCount
+						? `${summary.trimCount} idle trims (−${Math.round(summary.trimmedMs / 1000)}s)`
+						: null,
+					summary.zoomCount ? `${summary.zoomCount} zooms` : null,
+				].filter(Boolean);
+				toast.success(
+					`Video guide created: ${summary.stepCount} clicks${parts.length ? ` — ${parts.join(", ")}` : ""}`,
+					{ id: toastId, description: "Undo (⌘Z) reverts the whole pass." },
+				);
+				if (warnings.length > 0) toast.warning(warnings[0]);
+			} catch (err) {
+				if (err instanceof VideoGuideAuthError) {
+					toast.dismiss(toastId);
+					toast.info("Sign in to add a voiceover, or turn the Voiceover option off.");
+					showLogin();
+				} else {
+					toast.error(err instanceof Error ? err.message : "Failed to create video guide", {
+						id: toastId,
+					});
+				}
+			}
+		},
+		[
+			videoDurationMs,
+			editorState,
+			captionTrack,
+			onApplyEdits,
+			isBackendAvailable,
+			isAuthenticated,
+			showLogin,
+		],
+	);
 
 	// ── Magic Polish ──
 	const [polishPreview, setPolishPreview] = useState<PolishPreview | null>(null);
@@ -225,15 +291,18 @@ export function AIPanelSidebar({
 
 			{/* Scrollable sections */}
 			<div className="flex-1 overflow-y-auto">
-				{/* Step Guide — recording → written step-by-step doc */}
-				<Section title="Step Guide" icon={BookOpenText} defaultOpen>
-					<GuideDocSection
-						cursorTelemetry={cursorTelemetry}
-						videoDurationMs={videoDurationMs}
-						captionTrack={captionTrack}
-						videoPath={videoPath}
-						onSeek={onSeek}
-					/>
+				{/* Video Guide — temporarily disabled (remove the wrapper div to restore) */}
+				<Section title="Video Guide" icon={MonitorPlay} defaultOpen>
+					<div className="pointer-events-none opacity-50" aria-disabled="true">
+						<GuideDocSection
+							cursorTelemetry={cursorTelemetry}
+							videoDurationMs={videoDurationMs}
+							captionTrack={captionTrack}
+							videoPath={videoPath}
+							onSeek={onSeek}
+							onCreateVideoGuide={handleCreateVideoGuide}
+						/>
+					</div>
 				</Section>
 
 				{/* Auto-Zoom */}
@@ -306,6 +375,30 @@ export function AIPanelSidebar({
 						videoDurationMs={videoDurationMs}
 						onAcceptSuggestions={onAcceptTrimSuggestions}
 					/>
+				</Section>
+
+				{/* AI Narration — standalone explainer voiceover with editable lines */}
+				<Section title="AI Narration" icon={Mic}>
+					<NarrationSection
+						editorState={editorState}
+						onApplyEdits={onApplyEdits}
+						isBackendReady={isBackendAvailable && isAuthenticated}
+						cursorTelemetry={cursorTelemetry}
+						videoDurationMs={videoDurationMs}
+						captionTrack={captionTrack}
+						videoPath={videoPath}
+					/>
+				</Section>
+
+				{/* Background Music — temporarily disabled (remove the wrapper div to restore) */}
+				<Section title="Background Music" icon={Music2}>
+					<div className="pointer-events-none opacity-50" aria-disabled="true">
+						<MusicSection
+							editorState={editorState}
+							onApplyEdits={onApplyEdits}
+							isBackendReady={isBackendAvailable && isAuthenticated}
+						/>
+					</div>
 				</Section>
 
 				{/* Magic Polish */}
@@ -407,7 +500,11 @@ export function AIPanelSidebar({
 
 				{/* Intro Builder */}
 				<Section title="Intro Builder" icon={Clapperboard}>
-					<IntroBuilderSection onInsertIntro={onInsertIntroClip} />
+					<IntroBuilderSection
+						onInsertIntro={onInsertIntroClip}
+						videoPath={videoPath}
+						videoDurationMs={videoDurationMs}
+					/>
 				</Section>
 
 				{/* Account */}

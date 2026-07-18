@@ -147,6 +147,8 @@ interface VideoPlaybackProps {
 	cursorClickBounce?: number;
 	cursorClipToBounds?: boolean;
 	cursorTheme?: string;
+	// Draw an expanding ring on clicks (Auto-Polish "smooth cursor" turns this on).
+	showClickRings?: boolean;
 	// Render the selected zoom at the playhead even while paused, so the editor can
 	// preview the effect without leaving the focus-edit view.
 	isPreviewingZoom?: boolean;
@@ -161,6 +163,21 @@ interface VideoPlaybackProps {
 	introClip?: VideoClip | null;
 	introDurationMs?: number;
 	isInIntroPhase?: boolean;
+	// AI voiceover narration (preview playback)
+	narrationTrack?: import("@/lib/ai/types").NarrationTrack | null;
+	// Background music bed (URL/path, or "none"/"" to disable) + volume 0–100
+	backgroundMusic?: string;
+	backgroundMusicVolume?: number;
+	/** Silence the recording's own audio (AI narration carries the video) */
+	muteOriginalAudio?: boolean;
+}
+
+/** Resolve an audio/video source that may be a remote URL (backend-generated
+ *  narration/music) or a local filesystem path. Absolute URLs are used as-is;
+ *  bare paths are converted to file:// URLs. */
+function toMediaSrc(src: string): string {
+	if (/^(https?|blob|data|file):/.test(src)) return src;
+	return toFileUrl(src);
 }
 
 /** Resolve which clip is active at a given master timeline position (ms). */
@@ -301,10 +318,16 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			cursorClickBounce = DEFAULT_CURSOR_SETTINGS.clickBounce,
 			cursorClipToBounds = DEFAULT_CURSOR_SETTINGS.clipToBounds,
 			cursorTheme = DEFAULT_CURSOR_SETTINGS.theme,
+			showClickRings = false,
 			isPreviewingZoom = false,
 			videoClips = [],
 			introClip,
+			introDurationMs,
 			isInIntroPhase = false,
+			narrationTrack = null,
+			backgroundMusic = "none",
+			backgroundMusicVolume = 50,
+			muteOriginalAudio = false,
 		},
 		ref,
 	) => {
@@ -317,6 +340,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		const isClipTransitioningRef = useRef(false);
 		const videoClipsRef = useRef<VideoClip[]>(videoClips);
 		const supplementalAudioRef = useRef<HTMLAudioElement | null>(null);
+		const musicAudioRef = useRef<HTMLAudioElement | null>(null);
+		// One <audio> per narration segment, keyed by segment id.
+		const narrationAudioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
 		const webcamVideoRef = useRef<HTMLVideoElement | null>(null);
 		const webcamWrapperRef = useRef<HTMLDivElement | null>(null);
 		const webcamReactiveZoomRef = useRef(webcamReactiveZoom);
@@ -336,6 +362,11 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		const overlayRef = useRef<HTMLDivElement | null>(null);
 
 		const focusIndicatorRef = useRef<HTMLDivElement | null>(null);
+		// Annotations live in this layer so the camera zoom can be mirrored
+		// onto them — the exporter transforms annotations with the scene
+		// (sceneTransform in renderAnnotations), so without this the preview
+		// shows rings/callouts at their unzoomed spot over zoomed content.
+		const annotationLayerRef = useRef<HTMLDivElement | null>(null);
 		const composite3DRef = useRef<HTMLDivElement | null>(null);
 		const outerWrapperRef = useRef<HTMLDivElement | null>(null);
 		const [webcamLayout, setWebcamLayout] = useState<StyledRenderRect | null>(null);
@@ -392,6 +423,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		const cursorClickBounceRef = useRef(cursorClickBounce);
 		const cursorClipToBoundsRef = useRef(cursorClipToBounds);
 		const cursorThemeRef = useRef(cursorTheme);
+		const showClickRingsRef = useRef(showClickRings);
 		const isPreviewingZoomRef = useRef(isPreviewingZoom);
 		const motionBlurStateRef = useRef<MotionBlurState>(createMotionBlurState());
 		const onTimeUpdateRef = useRef(onTimeUpdate);
@@ -625,11 +657,14 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				baseMaskRef.current = result.maskRect;
 				borderRadiusRef.current = result.maskBorderRadius ?? 0;
 				cropBoundsRef.current = result.cropBounds;
-				setWebcamLayout(result.webcamRect ? { ...result.webcamRect, borderRadius: 0 } : null);
+				setWebcamLayout(result.webcamRect ? { borderRadius: 0, ...result.webcamRect } : null);
 
 				// Reset camera container to identity
 				cameraContainer.scale.set(1);
 				cameraContainer.position.set(0, 0);
+				if (annotationLayerRef.current) {
+					annotationLayerRef.current.style.transform = "";
+				}
 
 				const selectedId = selectedZoomIdRef.current;
 				const activeRegion = selectedId
@@ -902,6 +937,10 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		}, [cursorTheme]);
 
 		useEffect(() => {
+			showClickRingsRef.current = showClickRings;
+		}, [showClickRings]);
+
+		useEffect(() => {
 			webcamReactiveZoomRef.current = webcamReactiveZoom;
 			webcamLayoutPresetRef.current = webcamLayoutPreset;
 			webcamPositionRef.current = webcamPosition;
@@ -999,8 +1038,11 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			overlay.setSmoothingFactor(cursorSmoothing);
 			overlay.setMotionBlur(cursorMotionBlur);
 			overlay.setClickBounce(cursorClickBounce);
+			// Map the boolean click-ring toggle onto the overlay's click effect: an
+			// expanding "ripple" ring when on, nothing when off.
+			overlay.setClickEffect(showClickRings ? "ripple" : "none");
 			overlay.reset();
-		}, [cursorSize, cursorSmoothing, cursorMotionBlur, cursorClickBounce]);
+		}, [cursorSize, cursorSmoothing, cursorMotionBlur, cursorClickBounce, showClickRings]);
 
 		useEffect(() => {
 			onTimeUpdateRef.current = onTimeUpdate;
@@ -1174,6 +1216,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 						smoothingFactor: cursorSmoothingRef.current,
 						motionBlur: cursorMotionBlurRef.current,
 						clickBounce: cursorClickBounceRef.current,
+						clickEffect: showClickRingsRef.current ? "ripple" : "none",
 					});
 					cursorOverlayRef.current = cursorOverlay;
 				}
@@ -1285,6 +1328,77 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				// Keep video playback running even if supplemental preview audio is unavailable.
 			});
 		}, [currentTime, isPlaying, speedRegions, supplementalAudioPath]);
+
+		// Offset (ms) of the main recording on the master timeline — the intro
+		// clip, when present, occupies the front of the timeline.
+		const contentOffsetMs = introClip ? (introDurationMs ?? 0) : 0;
+		const hasMusic = Boolean(backgroundMusic && backgroundMusic !== "none");
+
+		// ── Original-audio mute (preview) ──
+		// The audible sources are the main <video> and, when present, the
+		// supplemental audio element — silence both when requested.
+		// videoReady dependency: duration resolution toggles video.muted during
+		// load and restores its own snapshot — reapply once the video settles.
+		useEffect(() => {
+			const video = videoRef.current;
+			if (video) video.muted = muteOriginalAudio;
+			const supplemental = supplementalAudioRef.current;
+			if (supplemental) supplemental.muted = muteOriginalAudio;
+		}, [muteOriginalAudio, videoReady]);
+
+		// ── Background music bed (preview) ──
+		useEffect(() => {
+			const music = musicAudioRef.current;
+			if (!music || !hasMusic) return;
+
+			music.volume = Math.min(1, Math.max(0, backgroundMusicVolume / 100));
+			// Music plays under the main content, not during the intro card.
+			const active = isPlaying && currentTime * 1000 >= contentOffsetMs;
+			if (!active) {
+				music.pause();
+				return;
+			}
+			music.play().catch(() => {
+				// Preview music is best-effort; never block video playback.
+			});
+		}, [currentTime, isPlaying, hasMusic, backgroundMusicVolume, contentOffsetMs]);
+
+		// ── Narration segments (preview) ──
+		// Plays the <audio> whose [startMs,endMs) window (offset by the intro)
+		// contains the playhead; pauses all others.
+		useEffect(() => {
+			const segments = narrationTrack?.segments ?? [];
+			if (segments.length === 0) return;
+
+			const playheadMs = currentTime * 1000 - contentOffsetMs;
+			const activeSpeedRegion =
+				speedRegions.find(
+					(region) => currentTime * 1000 >= region.startMs && currentTime * 1000 < region.endMs,
+				) ?? null;
+			const rate = activeSpeedRegion ? activeSpeedRegion.speed : 1;
+
+			for (const segment of segments) {
+				if (!segment.id) continue;
+				const el = narrationAudioRefs.current.get(segment.id);
+				if (!el) continue;
+
+				const isActive = playheadMs >= segment.startMs && playheadMs < segment.endMs;
+				if (!isActive || !isPlaying) {
+					el.pause();
+					continue;
+				}
+
+				el.playbackRate = rate;
+				// Position within the segment's own audio timeline.
+				const localSec = Math.max(0, (playheadMs - segment.startMs) / 1000);
+				if (Math.abs(el.currentTime - localSec) > 0.2) {
+					el.currentTime = localSec;
+				}
+				el.play().catch(() => {
+					// Best-effort; narration audio may still be loading.
+				});
+			}
+		}, [currentTime, isPlaying, speedRegions, narrationTrack, contentOffsetMs]);
 
 		useEffect(() => {
 			if (!pixiReady || !videoReady) return;
@@ -1579,6 +1693,15 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				state.x = appliedTransform.x;
 				state.y = appliedTransform.y;
 				state.appliedScale = appliedTransform.scale;
+
+				// Keep HTML annotations glued to the zoomed content, matching the
+				// exporter (which passes sceneTransform to renderAnnotations).
+				const annotationLayer = annotationLayerRef.current;
+				if (annotationLayer) {
+					const { scale, x, y } = appliedTransform;
+					annotationLayer.style.transform =
+						scale === 1 && x === 0 && y === 0 ? "" : `translate(${x}px, ${y}px) scale(${scale})`;
+				}
 
 				// Scale the PiP webcam inversely with the (eased) zoom, anchored to the docked
 				// corner (bottom-right by default) so it stays flush instead of drifting to center.
@@ -2325,49 +2448,57 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 									}
 								};
 
-								return sorted.map((item) => (
-									<AnnotationOverlay
-										key={
-											item.kind === "blur"
-												? `${item.region.id}-${overlaySize.width}-${overlaySize.height}-${item.region.blurData?.type ?? "blur"}-${item.region.blurData?.shape ?? "rectangle"}-${item.region.blurData?.color ?? "white"}-${Math.round(item.region.blurData?.blockSize ?? 0)}-${Math.round(item.region.blurData?.intensity ?? 0)}-${(item.region.blurData?.freehandPoints ?? []).map((p) => `${Math.round(p.x)}_${Math.round(p.y)}`).join("-")}`
-												: `${item.region.id}-${overlaySize.width}-${overlaySize.height}`
-										}
-										annotation={item.region}
-										isSelected={
-											item.kind === "blur"
-												? item.region.id === selectedBlurId
-												: item.region.id === selectedAnnotationId
-										}
-										containerWidth={overlaySize.width}
-										containerHeight={overlaySize.height}
-										onPositionChange={(id, position) =>
-											item.kind === "blur"
-												? onBlurPositionChange?.(id, position)
-												: onAnnotationPositionChange?.(id, position)
-										}
-										onSizeChange={(id, size) =>
-											item.kind === "blur"
-												? onBlurSizeChange?.(id, size)
-												: onAnnotationSizeChange?.(id, size)
-										}
-										onBlurDataChange={
-											item.kind === "blur"
-												? (id, blurData) => onBlurDataChange?.(id, blurData)
-												: undefined
-										}
-										onBlurDataCommit={item.kind === "blur" ? onBlurDataCommit : undefined}
-										onClick={item.kind === "blur" ? handleBlurClick : handleAnnotationClick}
-										zIndex={item.region.zIndex}
-										isSelectedBoost={
-											item.kind === "blur"
-												? item.region.id === selectedBlurId
-												: item.region.id === selectedAnnotationId
-										}
-										previewSourceCanvas={previewSnapshotCanvas}
-										previewFrameVersion={Math.round(currentTime * 1000)}
-										currentTimeMs={Math.round(currentTime * 1000)}
-									/>
-								));
+								return (
+									<div
+										ref={annotationLayerRef}
+										className="absolute inset-0"
+										style={{ transformOrigin: "0 0" }}
+									>
+										{sorted.map((item) => (
+											<AnnotationOverlay
+												key={
+													item.kind === "blur"
+														? `${item.region.id}-${overlaySize.width}-${overlaySize.height}-${item.region.blurData?.type ?? "blur"}-${item.region.blurData?.shape ?? "rectangle"}-${item.region.blurData?.color ?? "white"}-${Math.round(item.region.blurData?.blockSize ?? 0)}-${Math.round(item.region.blurData?.intensity ?? 0)}-${(item.region.blurData?.freehandPoints ?? []).map((p) => `${Math.round(p.x)}_${Math.round(p.y)}`).join("-")}`
+														: `${item.region.id}-${overlaySize.width}-${overlaySize.height}`
+												}
+												annotation={item.region}
+												isSelected={
+													item.kind === "blur"
+														? item.region.id === selectedBlurId
+														: item.region.id === selectedAnnotationId
+												}
+												containerWidth={overlaySize.width}
+												containerHeight={overlaySize.height}
+												onPositionChange={(id, position) =>
+													item.kind === "blur"
+														? onBlurPositionChange?.(id, position)
+														: onAnnotationPositionChange?.(id, position)
+												}
+												onSizeChange={(id, size) =>
+													item.kind === "blur"
+														? onBlurSizeChange?.(id, size)
+														: onAnnotationSizeChange?.(id, size)
+												}
+												onBlurDataChange={
+													item.kind === "blur"
+														? (id, blurData) => onBlurDataChange?.(id, blurData)
+														: undefined
+												}
+												onBlurDataCommit={item.kind === "blur" ? onBlurDataCommit : undefined}
+												onClick={item.kind === "blur" ? handleBlurClick : handleAnnotationClick}
+												zIndex={item.region.zIndex}
+												isSelectedBoost={
+													item.kind === "blur"
+														? item.region.id === selectedBlurId
+														: item.region.id === selectedAnnotationId
+												}
+												previewSourceCanvas={previewSnapshotCanvas}
+												previewFrameVersion={Math.round(currentTime * 1000)}
+												currentTimeMs={Math.round(currentTime * 1000)}
+											/>
+										))}
+									</div>
+								);
 							})()}
 						</div>
 					)}
@@ -2420,6 +2551,22 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				/>
 				{supplementalAudioPath && (
 					<audio ref={supplementalAudioRef} src={supplementalAudioPath} preload="auto" />
+				)}
+				{hasMusic && (
+					<audio ref={musicAudioRef} src={toMediaSrc(backgroundMusic)} preload="auto" loop />
+				)}
+				{(narrationTrack?.segments ?? []).map((segment) =>
+					segment.id && segment.audioPath ? (
+						<audio
+							key={segment.id}
+							ref={(el) => {
+								if (el) narrationAudioRefs.current.set(segment.id as string, el);
+								else narrationAudioRefs.current.delete(segment.id as string);
+							}}
+							src={toMediaSrc(segment.audioPath)}
+							preload="auto"
+						/>
+					) : null,
 				)}
 				{introClip && (
 					<video

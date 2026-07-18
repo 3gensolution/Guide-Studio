@@ -1,6 +1,17 @@
 import { Application, Graphics, Sprite } from "pixi.js";
+import {
+	computeCompositeLayout,
+	getWebcamLayoutPresetDefinition,
+	type WebcamLayoutPreset,
+	type WebcamSizePreset,
+} from "@/lib/compositeLayout";
 import { drawSquircleOnGraphics } from "@/lib/geometry/squircle";
-import { ADVANCED_VERTICAL_PADDING_MAX, type CropRegion, type Padding } from "../types";
+import {
+	ADVANCED_VERTICAL_PADDING_MAX,
+	type CropRegion,
+	type Padding,
+	type WebcamMaskShape,
+} from "../types";
 
 export const PADDING_SCALE_FACTOR = 0.2;
 export const BASE_PREVIEW_WIDTH = 1920;
@@ -151,10 +162,10 @@ interface LayoutParams {
 	borderRadius?: number;
 	padding?: Padding | number;
 	webcamDimensions?: { width: number; height: number } | null;
-	webcamLayoutPreset?: string;
-	webcamSizePreset?: number;
+	webcamLayoutPreset?: WebcamLayoutPreset;
+	webcamSizePreset?: WebcamSizePreset;
 	webcamPosition?: { cx: number; cy: number } | null;
-	webcamMaskShape?: string;
+	webcamMaskShape?: WebcamMaskShape;
 	/** Screen insets from the active device frame, used to scale/center the full frame */
 	frameInsets?: { top: number; right: number; bottom: number; left: number } | null;
 }
@@ -172,7 +183,14 @@ interface LayoutResult {
 		sourceCrop?: CropRegion;
 	};
 	maskBorderRadius?: number;
-	webcamRect?: { x: number; y: number; width: number; height: number } | null;
+	webcamRect?: {
+		x: number;
+		y: number;
+		width: number;
+		height: number;
+		borderRadius?: number;
+		maskShape?: WebcamMaskShape;
+	} | null;
 	cropBounds: { startX: number; endX: number; startY: number; endY: number };
 }
 
@@ -188,6 +206,11 @@ export function layoutVideoContent(params: LayoutParams): LayoutResult | null {
 		borderRadius = 0,
 		padding = 0,
 		frameInsets,
+		webcamDimensions,
+		webcamLayoutPreset,
+		webcamSizePreset,
+		webcamPosition,
+		webcamMaskShape,
 	} = params;
 
 	const videoWidth = lockedVideoDimensions?.width || videoElement.videoWidth;
@@ -209,6 +232,37 @@ export function layoutVideoContent(params: LayoutParams): LayoutResult | null {
 	app.canvas.style.height = "100%";
 
 	const crop = cropRegion || { x: 0, y: 0, width: 1, height: 1 };
+
+	const hasWebcamFeed = Boolean(
+		webcamDimensions && webcamDimensions.width > 0 && webcamDimensions.height > 0,
+	);
+	const presetDefinition = getWebcamLayoutPresetDefinition(webcamLayoutPreset);
+	// Stack/split presets reposition the screen itself, so they take over the whole
+	// geometry; overlay presets (picture-in-picture) keep the padded screen layout
+	// and just add a floating webcam rect on top.
+	if (
+		hasWebcamFeed &&
+		webcamLayoutPreset &&
+		webcamLayoutPreset !== "no-webcam" &&
+		presetDefinition.transform.type !== "overlay"
+	) {
+		return layoutCompositeVideoContent({
+			videoSprite,
+			maskGraphics,
+			width,
+			height,
+			videoWidth,
+			videoHeight,
+			crop,
+			padding,
+			webcamDimensions: webcamDimensions as { width: number; height: number },
+			webcamLayoutPreset,
+			webcamSizePreset,
+			webcamPosition,
+			webcamMaskShape,
+		});
+	}
+
 	const layout = computePaddedLayout({
 		width,
 		height,
@@ -232,6 +286,22 @@ export function layoutVideoContent(params: LayoutParams): LayoutResult | null {
 	});
 	maskGraphics.fill({ color: 0xffffff });
 
+	// Floating webcam overlay (picture-in-picture) in canvas coordinates,
+	// independent of screen padding.
+	let webcamRect: LayoutResult["webcamRect"] = null;
+	if (hasWebcamFeed && webcamLayoutPreset !== "no-webcam") {
+		const composite = computeCompositeLayout({
+			canvasSize: { width, height },
+			screenSize: { width: videoWidth * crop.width, height: videoHeight * crop.height },
+			webcamSize: webcamDimensions,
+			layoutPreset: webcamLayoutPreset ?? "picture-in-picture",
+			webcamSizePreset,
+			webcamPosition,
+			webcamMaskShape,
+		});
+		webcamRect = composite?.webcamRect ?? null;
+	}
+
 	return {
 		stageSize: { width, height },
 		videoSize: { width: videoWidth * crop.width, height: videoHeight * crop.height },
@@ -244,11 +314,134 @@ export function layoutVideoContent(params: LayoutParams): LayoutResult | null {
 			height: layout.croppedDisplayHeight,
 			sourceCrop: crop,
 		},
+		webcamRect,
 		cropBounds: {
 			startX: layout.cropStartX,
 			endX: layout.cropStartX + videoWidth * crop.width,
 			startY: layout.cropStartY,
 			endY: layout.cropStartY + videoHeight * crop.height,
+		},
+	};
+}
+
+/**
+ * Layout for presets where the webcam reshapes the screen itself
+ * (vertical-stack, dual-frame). Mirrors the export compositor's
+ * computeCompositeLayout geometry so the preview matches the rendered output.
+ * Vertical stack is full-bleed and ignores padding, matching export.
+ */
+function layoutCompositeVideoContent(params: {
+	videoSprite: Sprite;
+	maskGraphics: Graphics;
+	width: number;
+	height: number;
+	videoWidth: number;
+	videoHeight: number;
+	crop: CropRegion;
+	padding: Padding | number;
+	webcamDimensions: { width: number; height: number };
+	webcamLayoutPreset: WebcamLayoutPreset;
+	webcamSizePreset?: WebcamSizePreset;
+	webcamPosition?: { cx: number; cy: number } | null;
+	webcamMaskShape?: WebcamMaskShape;
+}): LayoutResult | null {
+	const {
+		videoSprite,
+		maskGraphics,
+		width,
+		height,
+		videoWidth,
+		videoHeight,
+		crop,
+		padding,
+		webcamDimensions,
+		webcamLayoutPreset,
+		webcamSizePreset,
+		webcamPosition,
+		webcamMaskShape,
+	} = params;
+
+	const croppedVideoWidth = videoWidth * crop.width;
+	const croppedVideoHeight = videoHeight * crop.height;
+
+	const isStack = getWebcamLayoutPresetDefinition(webcamLayoutPreset).transform.type === "stack";
+	const p =
+		typeof padding === "number"
+			? { top: padding, bottom: padding, left: padding, right: padding }
+			: padding;
+	const clampPercent = (v: number) => Math.min(100, Math.max(0, v));
+	const padFrac = (percent: number) => (clampPercent(percent) / 100) * PADDING_SCALE_FACTOR;
+	const availableFracW = isStack ? 1 : Math.max(0, 1 - padFrac(p.left) - padFrac(p.right));
+	const availableFracH = isStack ? 1 : Math.max(0, 1 - padFrac(p.top) - padFrac(p.bottom));
+
+	const composite = computeCompositeLayout({
+		canvasSize: { width, height },
+		maxContentSize: { width: width * availableFracW, height: height * availableFracH },
+		screenSize: { width: croppedVideoWidth, height: croppedVideoHeight },
+		webcamSize: webcamDimensions,
+		layoutPreset: webcamLayoutPreset,
+		webcamSizePreset,
+		webcamPosition,
+		webcamMaskShape,
+	});
+
+	if (!composite) {
+		return null;
+	}
+
+	const screenRect = composite.screenRect;
+	// Cover mode scales to fill the rect (cropping overflow); fit mode letterboxes.
+	const scale = composite.screenCover
+		? Math.max(screenRect.width / croppedVideoWidth, screenRect.height / croppedVideoHeight)
+		: Math.min(screenRect.width / croppedVideoWidth, screenRect.height / croppedVideoHeight);
+
+	videoSprite.scale.set(scale);
+
+	const fullVideoDisplayWidth = videoWidth * scale;
+	const fullVideoDisplayHeight = videoHeight * scale;
+	const croppedDisplayWidth = croppedVideoWidth * scale;
+	const croppedDisplayHeight = croppedVideoHeight * scale;
+	// Center the cropped region within screenRect.
+	const offsetX = screenRect.x + (screenRect.width - croppedDisplayWidth) / 2;
+	const offsetY = screenRect.y + (screenRect.height - croppedDisplayHeight) / 2;
+	const spriteX = offsetX - crop.x * fullVideoDisplayWidth;
+	const spriteY = offsetY - crop.y * fullVideoDisplayHeight;
+
+	videoSprite.position.set(spriteX, spriteY);
+
+	const maskBorderRadius = composite.screenBorderRadius ?? 0;
+	maskGraphics.clear();
+	drawSquircleOnGraphics(maskGraphics, {
+		x: screenRect.x,
+		y: screenRect.y,
+		width: screenRect.width,
+		height: screenRect.height,
+		radius: maskBorderRadius,
+	});
+	maskGraphics.fill({ color: 0xffffff });
+
+	const cropStartX = crop.x * videoWidth;
+	const cropStartY = crop.y * videoHeight;
+
+	return {
+		stageSize: { width, height },
+		videoSize: { width: croppedVideoWidth, height: croppedVideoHeight },
+		baseScale: scale,
+		baseOffset: { x: spriteX, y: spriteY },
+		maskRect: {
+			x: screenRect.x,
+			y: screenRect.y,
+			width: screenRect.width,
+			height: screenRect.height,
+			sourceCrop: crop,
+		},
+		maskBorderRadius,
+		webcamRect: composite.webcamRect,
+		cropBounds: {
+			startX: cropStartX,
+			endX: cropStartX + croppedVideoWidth,
+			startY: cropStartY,
+			endY: cropStartY + croppedVideoHeight,
 		},
 	};
 }

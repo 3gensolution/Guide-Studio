@@ -539,10 +539,13 @@ async function readCursorTelemetryFile(targetVideoPath: string) {
 		const recordingData = await readCursorRecordingFile(targetVideoPath);
 		return {
 			success: true,
+			// interactionType must survive the round-trip: Step Guide / Video Guide
+			// detect steps from real click events, not just cursor positions.
 			samples: recordingData.samples.map((sample) => ({
 				timeMs: sample.timeMs,
 				cx: sample.cx,
 				cy: sample.cy,
+				interactionType: sample.interactionType,
 			})),
 		};
 	} catch (error) {

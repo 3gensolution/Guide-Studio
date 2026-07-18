@@ -114,11 +114,12 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 	}
 
 	const handlePlay = () => {
-		if (isSeekingRef.current) {
-			video.pause();
-			return;
-		}
-
+		// A play() that lands while a seek is still in flight must NOT be
+		// cancelled: replay-from-end (and edits that leave the playhead past
+		// the shortened timeline, e.g. Auto-Polish trims) reset currentTime
+		// right before playing. Pausing here rejected that play() with an
+		// AbortError and froze the player — UI stuck on ▶ at 0:03.
+		// allowPlaybackRef distinguishes sanctioned plays from stray ones.
 		if (!allowPlaybackRef.current) {
 			video.pause();
 			return;
@@ -171,7 +172,9 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 				emitTime(skipToTime);
 			}
 		} else {
-			if (!isPlayingRef.current && !video.paused) {
+			// Don't cancel a sanctioned play whose 'play' event hasn't landed
+			// yet (isPlayingRef lags video.play() by one event dispatch).
+			if (!isPlayingRef.current && !video.paused && !allowPlaybackRef.current) {
 				video.pause();
 			}
 			emitTime(video.currentTime);
@@ -189,7 +192,7 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 			}
 		}
 
-		if (!isPlayingRef.current && !video.paused) {
+		if (!isPlayingRef.current && !video.paused && !allowPlaybackRef.current) {
 			video.pause();
 		}
 		emitTime(video.currentTime);

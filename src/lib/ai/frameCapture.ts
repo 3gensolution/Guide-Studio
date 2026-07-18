@@ -79,6 +79,66 @@ function drawClickMarker(
 }
 
 /**
+ * Capture a single frame of a recording as a JPEG data URL (no click marker).
+ * Used to give vision models visual context — e.g. the AI intro builder reads
+ * the recorded app's UI and brand colors from a mid-video frame.
+ */
+export async function captureFrameAt(
+	videoPath: string,
+	timeMs: number,
+	maxWidth = MAX_FRAME_WIDTH,
+): Promise<string | null> {
+	try {
+		const video = await loadVideo(videoPath);
+		try {
+			const sourceWidth = video.videoWidth || 1920;
+			const sourceHeight = video.videoHeight || 1080;
+			const scale = Math.min(1, maxWidth / sourceWidth);
+			const canvas = document.createElement("canvas");
+			canvas.width = Math.round(sourceWidth * scale);
+			canvas.height = Math.round(sourceHeight * scale);
+			const ctx = canvas.getContext("2d");
+			if (!ctx) return null;
+			await seekTo(video, timeMs);
+			ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+			return canvas.toDataURL("image/jpeg", JPEG_QUALITY);
+		} finally {
+			video.removeAttribute("src");
+			video.load();
+		}
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Downscale a data-URL image (JPEG output). Used to shrink step screenshots
+ * before sending them to the vision model — doc screenshots stay full size.
+ * Returns the original URL if decoding fails or it's already small enough.
+ */
+export async function downscaleDataUrl(dataUrl: string, maxWidth: number): Promise<string> {
+	try {
+		const img = new Image();
+		await new Promise<void>((resolve, reject) => {
+			img.onload = () => resolve();
+			img.onerror = () => reject(new Error("decode failed"));
+			img.src = dataUrl;
+		});
+		if (img.width <= maxWidth) return dataUrl;
+		const scale = maxWidth / img.width;
+		const canvas = document.createElement("canvas");
+		canvas.width = Math.round(img.width * scale);
+		canvas.height = Math.round(img.height * scale);
+		const ctx = canvas.getContext("2d");
+		if (!ctx) return dataUrl;
+		ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+		return canvas.toDataURL("image/jpeg", 0.75);
+	} catch {
+		return dataUrl;
+	}
+}
+
+/**
  * Capture a screenshot for each step, mutating nothing — returns new steps
  * with `screenshotDataUrl` filled in. Steps whose seek/capture fails are
  * returned without a screenshot rather than failing the whole run.

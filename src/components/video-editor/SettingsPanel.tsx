@@ -39,7 +39,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useScopedT } from "@/contexts/I18nContext";
-import { getAssetPath } from "@/lib/assetPath";
+import { getAssetPathSync } from "@/lib/assetPath";
 import { WEBCAM_LAYOUT_PRESETS } from "@/lib/compositeLayout";
 import { CURSOR_THEMES, DEFAULT_CURSOR_THEME_ID } from "@/lib/cursor/cursorThemes";
 import type {
@@ -603,10 +603,18 @@ export function SettingsPanel({
 			},
 			...CURSOR_THEMES.map((theme) => {
 				const previewPath = (theme.assets.arrow ?? theme.assets.pointer)?.assetPath;
+				let previewUrl = defaultCursorPreviewUrl;
+				if (previewPath) {
+					try {
+						previewUrl = getAssetPathSync(previewPath);
+					} catch {
+						// Asset base not available yet — keep the default cursor art.
+					}
+				}
 				return {
 					id: theme.id,
 					name: theme.name,
-					previewUrl: previewPath ? getAssetPath(previewPath) : defaultCursorPreviewUrl,
+					previewUrl,
 				};
 			}),
 		],

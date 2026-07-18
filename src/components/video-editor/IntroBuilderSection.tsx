@@ -16,6 +16,7 @@ import {
 	Upload,
 } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
 	Accordion,
 	AccordionContent,
@@ -30,7 +31,9 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { useAIService } from "@/hooks/useAIService";
 import { useIntroPreview } from "@/hooks/useIntroPreview";
+import { generateIntroFromRecording } from "@/lib/ai/introAI";
 import { renderIntroToBlob } from "@/lib/intro/introRenderer";
 import {
 	ANIMATION_LABELS,
@@ -45,6 +48,9 @@ import type { VideoClip } from "./types";
 
 interface IntroBuilderSectionProps {
 	onInsertIntro?: (clip: VideoClip) => void;
+	/** Recording context for the AI intro designer */
+	videoPath?: string | null;
+	videoDurationMs?: number;
 }
 
 const BACKGROUND_SWATCHES: { key: string; label: string; color: string; color2?: string }[] = [
@@ -61,10 +67,16 @@ const BACKGROUND_SWATCHES: { key: string; label: string; color: string; color2?:
 const ANIMATION_STYLES = Object.keys(ANIMATION_LABELS) as IntroAnimationStyle[];
 const TEXT_POSITIONS = Object.keys(POSITION_LABELS) as IntroTextPosition[];
 
-export function IntroBuilderSection({ onInsertIntro }: IntroBuilderSectionProps) {
+export function IntroBuilderSection({
+	onInsertIntro,
+	videoPath = null,
+	videoDurationMs = 0,
+}: IntroBuilderSectionProps) {
+	const { isUsingBackend } = useAIService();
 	const [config, setConfig] = useState<IntroConfig>({ ...DEFAULT_INTRO_CONFIG });
 	const [isInserting, setIsInserting] = useState(false);
 	const [insertError, setInsertError] = useState<string | null>(null);
+	const [isSuggesting, setIsSuggesting] = useState(false);
 	const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const fileInputRoleRef = useRef<"logo" | "background" | "decoration">("logo");
@@ -137,6 +149,30 @@ export function IntroBuilderSection({ onInsertIntro }: IntroBuilderSectionProps)
 		[],
 	);
 
+	// ── AI intro designer ───────────────────────────────────────────
+	// The vision model reads a frame of the recording and fills in title,
+	// subtitle, brand-matched accent color, background, and animations.
+	const handleGenerateWithAI = useCallback(async () => {
+		if (!videoPath || videoDurationMs <= 0) return;
+		setIsSuggesting(true);
+		try {
+			const suggestion = await generateIntroFromRecording({
+				videoPath,
+				videoDurationMs,
+				guideTitle: config.title !== DEFAULT_INTRO_CONFIG.title ? config.title : undefined,
+				allowedBackgrounds: BACKGROUND_SWATCHES.map((s) => s.key),
+			});
+			setConfig((prev) => ({ ...prev, ...suggestion }));
+			toast.success("Intro designed from your recording", {
+				description: "Title, colors, and animations set — tweak anything below.",
+			});
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : "AI intro design failed");
+		} finally {
+			setIsSuggesting(false);
+		}
+	}, [videoPath, videoDurationMs, config.title]);
+
 	// ── Insert handler ──────────────────────────────────────────────
 	const handleInsertIntro = useCallback(async () => {
 		if (!onInsertIntro) return;
@@ -183,6 +219,19 @@ export function IntroBuilderSection({ onInsertIntro }: IntroBuilderSectionProps)
 				accept=".jpg,.jpeg,.png,.gif,.webp,image/*"
 				className="hidden"
 			/>
+
+			{/* AI designer — reads the recording and fills the card */}
+			{isUsingBackend && videoPath && (
+				<button
+					type="button"
+					onClick={handleGenerateWithAI}
+					disabled={isSuggesting}
+					className="flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-medium bg-gradient-to-r from-[#6E6BFF]/20 to-[#2563eb]/20 hover:from-[#6E6BFF]/30 hover:to-[#2563eb]/30 text-white/80 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+				>
+					{isSuggesting ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+					{isSuggesting ? "Reading your recording…" : "Generate with AI"}
+				</button>
+			)}
 
 			{/* Live preview */}
 			<div className="rounded-lg overflow-hidden border border-white/10 aspect-video">

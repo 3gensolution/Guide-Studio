@@ -1,4 +1,7 @@
-import { ipcMain } from "electron";
+import { randomUUID } from "node:crypto";
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import { app, ipcMain } from "electron";
 import {
 	assembleSmartExport,
 	type ConvertVideoToGifOptions,
@@ -7,6 +10,9 @@ import {
 	type FlattenClipSegment,
 	flattenVideoClips,
 	getFfmpegPath,
+	type MusicMuxBed,
+	muxNarrationAudio,
+	type NarrationMuxSegment,
 	optimizeGif,
 	quickTrimExport,
 	remuxExport,
@@ -14,6 +20,56 @@ import {
 } from "../ffmpeg";
 
 export function registerFfmpegHandlers() {
+	// ── AI narration audio ──
+	// TTS bytes fetched by the renderer land here as local files so both the
+	// preview <audio> elements and the export-time FFmpeg mux can use them.
+	ipcMain.handle("save-narration-audio", async (_event, data: ArrayBuffer) => {
+		try {
+			const dir = path.join(app.getPath("userData"), "narration");
+			await fs.mkdir(dir, { recursive: true });
+			const filePath = path.join(dir, `tts-${randomUUID()}.mp3`);
+			await fs.writeFile(filePath, Buffer.from(data));
+			return { success: true, path: filePath };
+		} catch (error) {
+			console.error("Failed to save narration audio:", error);
+			return { success: false, error: String(error) };
+		}
+	});
+
+	// Mux narration segments into an exported video IN PLACE: write to a
+	// sibling temp file, then swap it over the original on success.
+	ipcMain.handle(
+		"mux-narration-audio",
+		async (
+			_event,
+			videoPath: string,
+			segments: NarrationMuxSegment[],
+			music?: MusicMuxBed | null,
+			muteOriginal?: boolean,
+		) => {
+			const tempPath = `${videoPath}.narration.tmp.mp4`;
+			try {
+				const result = await muxNarrationAudio(
+					videoPath,
+					segments,
+					tempPath,
+					music,
+					Boolean(muteOriginal),
+				);
+				if (!result.success) {
+					await fs.rm(tempPath, { force: true });
+					return result;
+				}
+				await fs.rename(tempPath, videoPath);
+				return { success: true };
+			} catch (error) {
+				await fs.rm(tempPath, { force: true }).catch(() => {});
+				console.error("Failed to mux narration audio:", error);
+				return { success: false, error: String(error) };
+			}
+		},
+	);
+
 	ipcMain.handle("get-ffmpeg-path", async () => {
 		try {
 			const ffmpegPath = await getFfmpegPath();

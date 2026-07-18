@@ -171,6 +171,137 @@ export async function mergeVideoWithAudio(
 	}
 }
 
+/** One narration segment to lay over an exported video. */
+export interface NarrationMuxSegment {
+	/** Absolute path to the segment's audio file (TTS mp3). */
+	audioPath: string;
+	/** Where the segment starts on the EXPORTED video's timeline. */
+	offsetMs: number;
+}
+
+/** Background music bed for an exported video. */
+export interface MusicMuxBed {
+	/** Absolute path to the music file. */
+	audioPath: string;
+	/** Base volume 0–1. */
+	volume: number;
+	/** Windows (export-timeline ms) where music ducks under narration. */
+	duckWindows: Array<{ startMs: number; endMs: number }>;
+}
+
+/** While narration speaks, the music bed drops to this fraction of its base volume. */
+const MUSIC_DUCK_FACTOR = 0.3;
+
+/**
+ * Mux AI audio into an exported video: narration segments delayed to their
+ * timeline offsets, plus an optional looped music bed (at its own volume,
+ * ducked under narration), mixed over the video's own audio (or silence).
+ * Video stream is copied — no re-encode. Writes to outputPath.
+ */
+export async function muxNarrationAudio(
+	videoPath: string,
+	segments: NarrationMuxSegment[],
+	outputPath: string,
+	music?: MusicMuxBed | null,
+	muteOriginal = false,
+): Promise<{ success: boolean; error?: string }> {
+	if (segments.length === 0 && !music && !muteOriginal) {
+		return { success: false, error: "No narration segments or music" };
+	}
+	const ffmpegPath = await getFfmpegPath();
+	if (!ffmpegPath) return { success: false, error: "FFmpeg not found" };
+
+	const { execFile } = await import("node:child_process");
+	const { promisify } = await import("node:util");
+	const execFileAsync = promisify(execFile);
+	const env = getFfmpegEnv(ffmpegPath);
+
+	const info = await probeStreamInfo(videoPath, ffmpegPath, execFileAsync, env);
+	// muteOriginal drops the video's own audio: swap in the silent base.
+	const hasAudio = info.audioCodec !== null && !muteOriginal;
+	const durationSec = info.durationMs ? Math.ceil(info.durationMs / 1000) : 3600;
+
+	const args: string[] = ["-i", videoPath];
+	if (!hasAudio) {
+		// Silent base track the length of the video so amix duration=first works.
+		args.push("-f", "lavfi", "-t", String(durationSec), "-i", "anullsrc=r=48000:cl=stereo");
+	}
+	for (const segment of segments) {
+		args.push("-i", segment.audioPath);
+	}
+	if (music) {
+		// Loop the bed; amix duration=first bounds the output to the video.
+		args.push("-stream_loop", "-1", "-i", music.audioPath);
+	}
+
+	const baseLabel = hasAudio ? "[0:a]" : "[1:a]";
+	const firstSegInput = hasAudio ? 1 : 2;
+	const musicInput = firstSegInput + segments.length;
+	const buildFilter = (normalizeOff: boolean) => {
+		const parts: string[] = [];
+		const mixed: string[] = [baseLabel];
+		segments.forEach((segment, i) => {
+			const delay = Math.max(0, Math.round(segment.offsetMs));
+			parts.push(`[${firstSegInput + i}:a]adelay=${delay}:all=1[n${i}]`);
+			mixed.push(`[n${i}]`);
+		});
+		if (music) {
+			const baseVolume = Math.min(1, Math.max(0, music.volume));
+			let chain = `[${musicInput}:a]volume=${baseVolume.toFixed(3)}`;
+			if (music.duckWindows.length > 0) {
+				// One timeline-enabled volume pass: duck while any narration speaks.
+				const windows = music.duckWindows
+					.map((w) => `between(t,${(w.startMs / 1000).toFixed(3)},${(w.endMs / 1000).toFixed(3)})`)
+					.join("+");
+				chain += `[bg0];[bg0]volume=enable='${windows}':volume=${MUSIC_DUCK_FACTOR}`;
+			}
+			parts.push(`${chain}[bg]`);
+			mixed.push("[bg]");
+		}
+		// normalize=0 keeps speech at full level; older builds lack the option,
+		// so the fallback compensates with a post-mix volume boost instead.
+		const mixOpts = normalizeOff
+			? `amix=inputs=${mixed.length}:duration=first:dropout_transition=0:normalize=0[aout]`
+			: `amix=inputs=${mixed.length}:duration=first:dropout_transition=0[amixed];[amixed]volume=${mixed.length}[aout]`;
+		parts.push(`${mixed.join("")}${mixOpts}`);
+		return parts.join(";");
+	};
+
+	const runArgs = (filter: string) => [
+		...args,
+		"-filter_complex",
+		filter,
+		"-map",
+		"0:v",
+		"-map",
+		"[aout]",
+		"-c:v",
+		"copy",
+		"-c:a",
+		"aac",
+		"-b:a",
+		"192k",
+		"-movflags",
+		"+faststart",
+		"-y",
+		outputPath,
+	];
+
+	try {
+		await execFileAsync(ffmpegPath, runArgs(buildFilter(true)), { timeout: 300_000, env });
+		return { success: true };
+	} catch (err1) {
+		console.warn("[FFmpeg] Narration mux with normalize=0 failed, retrying:", err1);
+		try {
+			await execFileAsync(ffmpegPath, runArgs(buildFilter(false)), { timeout: 300_000, env });
+			return { success: true };
+		} catch (err2) {
+			console.error("[FFmpeg] Narration mux failed:", err2);
+			return { success: false, error: `Narration mux failed: ${err2}` };
+		}
+	}
+}
+
 /**
  * Probe a file with ffmpeg -i to detect whether it has an audio stream.
  * ffmpeg prints stream info to stderr and always exits with code 1 when

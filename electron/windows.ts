@@ -1,6 +1,6 @@
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { BrowserWindow, ipcMain, screen } from "electron";
+import { app, BrowserWindow, ipcMain, screen } from "electron";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -82,6 +82,61 @@ ipcMain.on("hud-overlay-set-size", (_event, width: number, height: number) => {
 		width: nextWidth,
 		height: nextHeight,
 	});
+});
+
+// ---------------------------------------------------------------------------
+// Webcam preview IPC handlers
+// ---------------------------------------------------------------------------
+
+let webcamPreviewWindow: BrowserWindow | null = null;
+
+ipcMain.handle("webcam-preview-show", (_event, deviceId?: string) => {
+	if (webcamPreviewWindow && !webcamPreviewWindow.isDestroyed()) {
+		webcamPreviewWindow.webContents.send("webcam-preview-device-changed", deviceId ?? "");
+		if (!HEADLESS) webcamPreviewWindow.showInactive();
+		return { success: true };
+	}
+
+	const win = createWebcamPreviewWindow(deviceId);
+	win.on("closed", () => {
+		if (webcamPreviewWindow === win) {
+			webcamPreviewWindow = null;
+		}
+	});
+	webcamPreviewWindow = win;
+	return { success: true };
+});
+
+ipcMain.handle("webcam-preview-hide", () => {
+	if (webcamPreviewWindow && !webcamPreviewWindow.isDestroyed()) {
+		webcamPreviewWindow.close();
+	}
+	webcamPreviewWindow = null;
+	return { success: true };
+});
+
+// The bubble is a passive overlay: if it outlived every real window it would
+// keep the app alive (window-all-closed never fires) with an orphaned camera
+// light on. Close it whenever no host window remains.
+function closeWebcamPreviewIfOrphaned() {
+	if (!webcamPreviewWindow || webcamPreviewWindow.isDestroyed()) {
+		return;
+	}
+	const hasHostWindow = BrowserWindow.getAllWindows().some((window) => {
+		if (window === webcamPreviewWindow || window.isDestroyed()) {
+			return false;
+		}
+		const url = window.webContents.getURL();
+		return !url.includes("windowType=countdown-overlay");
+	});
+	if (!hasHostWindow) {
+		webcamPreviewWindow.close();
+		webcamPreviewWindow = null;
+	}
+}
+
+app.on("browser-window-created", (_event, window) => {
+	window.on("closed", closeWebcamPreviewIfOrphaned);
 });
 
 // ---------------------------------------------------------------------------
@@ -335,6 +390,61 @@ export function createCountdownOverlayWindow(): BrowserWindow {
 		});
 	}
 
+	return win;
+}
+
+/**
+ * Floating draggable webcam self-view bubble, shown while the webcam is enabled
+ * so the user can check their framing before and during a recording.
+ * Content-protected: the webcam is composited in the editor afterwards, so the
+ * live self-view must never appear in the screen capture itself.
+ */
+export function createWebcamPreviewWindow(deviceId?: string): BrowserWindow {
+	const { workArea } = screen.getPrimaryDisplay();
+	const size = 220;
+
+	const win = new BrowserWindow({
+		width: size,
+		height: size,
+		x: workArea.x + 24,
+		y: workArea.y + workArea.height - size - 24,
+		frame: false,
+		transparent: true,
+		backgroundColor: "#00000000",
+		roundedCorners: false,
+		resizable: false,
+		alwaysOnTop: true,
+		skipTaskbar: true,
+		hasShadow: false,
+		show: false, // shown via ready-to-show to avoid black rectangle flash
+		webPreferences: {
+			preload: path.join(__dirname, "preload.mjs"),
+			additionalArguments: [ASSET_BASE_URL_ARG],
+			nodeIntegration: false,
+			contextIsolation: true,
+			backgroundThrottling: false,
+		},
+	});
+	win.setContentProtection(true);
+
+	if (process.platform === "darwin") {
+		win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+	}
+
+	// showInactive keeps focus on the app the user is about to record.
+	win.once("ready-to-show", () => {
+		if (!HEADLESS) win.showInactive();
+	});
+
+	const query: Record<string, string> = { windowType: "webcam-preview" };
+	if (deviceId) {
+		query["deviceId"] = deviceId;
+	}
+	if (VITE_DEV_SERVER_URL) {
+		win.loadURL(VITE_DEV_SERVER_URL + "?" + new URLSearchParams(query).toString());
+	} else {
+		win.loadFile(path.join(RENDERER_DIST, "index.html"), { query });
+	}
 	return win;
 }
 

@@ -6,6 +6,7 @@ import { Loader2, MessageSquare, Send, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { v4 as uuidv4 } from "uuid";
+import { useAIPreflight } from "@/hooks/useAIPreflight";
 import { useAIService } from "@/hooks/useAIService";
 import type { EditorState } from "@/hooks/useEditorHistory";
 import { buildSystemPrompt, type ChatPromptContext } from "@/lib/ai/chatPrompt";
@@ -126,6 +127,7 @@ export function AIChatSidebar({
 	videoPath,
 }: AIChatSidebarProps) {
 	const { analyze } = useAIService();
+	const { requireChatProvider } = useAIPreflight();
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
 	const [input, setInput] = useState("");
 	const [isLoading, setIsLoading] = useState(false);
@@ -520,6 +522,11 @@ export function AIChatSidebar({
 		const trimmed = input.trim();
 		if (!trimmed || isLoading) return;
 
+		// Require a signed-in backend session before sending. If the user isn't
+		// authenticated this pops the login dialog and aborts — we never fire an
+		// AI request against an unauthenticated account.
+		if (!(await requireChatProvider("AI Chat"))) return;
+
 		const userMessage: ChatMessage = {
 			id: uuidv4(),
 			role: "user",
@@ -590,7 +597,7 @@ export function AIChatSidebar({
 		} finally {
 			setIsLoading(false);
 		}
-	}, [input, isLoading, messages, systemPromptContext, executeTool, analyze]);
+	}, [input, isLoading, messages, systemPromptContext, executeTool, analyze, requireChatProvider]);
 
 	// ── Keyboard handling ──
 

@@ -58,9 +58,17 @@ export interface AICapabilities {
 // ── AI Service Interfaces ────────────────────────────────────────────────
 
 // Chat/Text Generation
+/** OpenAI-style multimodal content part. Messages containing image parts are
+ *  routed to the backend's vision model (Gemini) instead of DeepSeek. */
+export interface ChatContentPart {
+	type: "text" | "image_url";
+	text?: string;
+	image_url?: { url: string };
+}
+
 export interface ChatMessage {
 	role: "system" | "user" | "assistant";
-	content: string;
+	content: string | ChatContentPart[];
 }
 
 export interface ChatCompletionRequest {
@@ -111,20 +119,66 @@ export interface VideoGenerationRequest {
 const STUDIO_PREFIX = "/studio/ai";
 
 export class AIService {
-	// Chat Completion (DeepSeek Flash via OpenRouter)
+	// Chat Completion (DeepSeek for text; Gemini/OpenRouter vision for image parts)
 	async chatCompletion(
 		request: ChatCompletionRequest,
+		opts?: { timeoutMs?: number },
 	): Promise<
 		{ success: true; data: { content: string; usage: unknown } } | { success: false; error: string }
 	> {
-		return apiClient.post(`${STUDIO_PREFIX}/chat/completion`, request);
+		return apiClient.post(`${STUDIO_PREFIX}/chat/completion`, request, opts?.timeoutMs);
 	}
 
-	// Text-to-Speech (Edge TTS free / ElevenLabs premium)
+	// Text-to-Speech (Edge TTS free / ElevenLabs premium).
+	// The backend STREAMS raw MP3 bytes (not JSON), so this bypasses the JSON
+	// client: fetch the bytes, persist them to a local file via the main
+	// process, and return that path. A local file works for both the preview
+	// <audio> elements and FFmpeg narration muxing at export.
 	async generateSpeech(
 		request: TTSRequest,
 	): Promise<{ success: true; data: { audioUrl: string } } | { success: false; error: string }> {
-		return apiClient.post(`${STUDIO_PREFIX}/tts/generate`, request);
+		try {
+			const headers: Record<string, string> = { "Content-Type": "application/json" };
+			const token = apiClient.getAccessToken();
+			if (token) headers.Authorization = `Bearer ${token}`;
+
+			const response = await fetch(`${apiClient.getBaseUrl()}${STUDIO_PREFIX}/tts/generate`, {
+				method: "POST",
+				headers,
+				body: JSON.stringify(request),
+				signal: AbortSignal.timeout(120_000),
+			});
+			if (!response.ok) {
+				const err = await response.json().catch(() => ({ message: response.statusText }));
+				return {
+					success: false,
+					error:
+						(err as { message?: string; detail?: string }).message ||
+						(err as { detail?: string }).detail ||
+						`TTS failed: HTTP ${response.status}`,
+				};
+			}
+
+			const audio = await response.arrayBuffer();
+			if (audio.byteLength === 0) return { success: false, error: "TTS returned empty audio" };
+
+			if (window.electronAPI?.saveNarrationAudio) {
+				const saved = await window.electronAPI.saveNarrationAudio(audio);
+				if (saved.success && saved.path) {
+					return { success: true, data: { audioUrl: saved.path } };
+				}
+				return { success: false, error: saved.error || "Failed to save narration audio" };
+			}
+
+			// Non-Electron fallback (web preview): blob URL — playable, not muxable.
+			const blobUrl = URL.createObjectURL(new Blob([audio], { type: "audio/mpeg" }));
+			return { success: true, data: { audioUrl: blobUrl } };
+		} catch (error) {
+			return {
+				success: false,
+				error: error instanceof Error ? error.message : "TTS request failed",
+			};
+		}
 	}
 
 	// List available TTS voices

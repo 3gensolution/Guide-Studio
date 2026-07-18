@@ -1,14 +1,5 @@
 import type { Span } from "dnd-timeline";
-import {
-	Camera,
-	Download,
-	FilePlus2,
-	FolderOpen,
-	Languages,
-	Save,
-	Video,
-	Wand2,
-} from "lucide-react";
+import { Camera, Download, FilePlus2, FolderOpen, Languages, Save, Video } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { toast } from "sonner";
@@ -23,6 +14,7 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { ProGateDialog, useProGate } from "@/components/ui/ProGate";
 import {
 	Select,
 	SelectContent,
@@ -30,14 +22,20 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { useBackend } from "@/contexts/BackendContext";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
 import type { EditorState } from "@/hooks/useEditorHistory";
 import { INITIAL_EDITOR_STATE, useEditorHistory } from "@/hooks/useEditorHistory";
 import { type Locale } from "@/i18n/config";
 import { getAvailableLocales, getLocaleName } from "@/i18n/loader";
-import { generatePolishEdits } from "@/lib/ai/oneClickPolish";
-import type { PolishPreview } from "@/lib/ai/types";
+import { AutoPolishAuthError, runAutoPolish } from "@/lib/ai/autoPolish";
+import {
+	DEFAULT_POLISH_OPTIONS,
+	normalizePolishOptions,
+	type PolishOptions,
+} from "@/lib/ai/polishTemplates";
+import { fetchPolishTemplates } from "@/lib/api/templates";
 import {
 	captionSegmentsToAnnotationRegions,
 	extractMono16kFromVideoUrl,
@@ -78,6 +76,8 @@ import {
 	sliceFlattenPlanFlat,
 } from "@/lib/exporter/smartRender";
 import { computeFrameStepTime } from "@/lib/frameStep";
+import { renderIntroToBlob } from "@/lib/intro/introRenderer";
+import type { IntroConfig } from "@/lib/intro/introTypes";
 import type { CursorCaptureMode, ProjectMedia } from "@/lib/recordingSession";
 import { matchesShortcut } from "@/lib/shortcuts";
 import {
@@ -107,6 +107,7 @@ import {
 	DEFAULT_SOURCE_DIMENSIONS,
 } from "./editorDefaults";
 import PlaybackControls from "./PlaybackControls";
+import { PolishSetupDialog } from "./PolishSetupDialog";
 import {
 	createProjectData,
 	createProjectSnapshot,
@@ -208,6 +209,38 @@ function buildSaveDiagnosticMessage(formatLabel: "GIF" | "Video", reason?: strin
 }
 
 const CAPTION_WORD_CHOICES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
+
+const POLISH_OPTIONS_STORAGE_KEY = "guide_studio_polish_options";
+
+/** Load the user's saved polish selections, falling back to defaults. */
+function loadPolishOptions(): PolishOptions {
+	try {
+		const raw = localStorage.getItem(POLISH_OPTIONS_STORAGE_KEY);
+		return normalizePolishOptions(raw ? JSON.parse(raw) : null);
+	} catch {
+		return DEFAULT_POLISH_OPTIONS;
+	}
+}
+
+/** Persist the user's polish selections. */
+function savePolishOptions(options: PolishOptions): void {
+	try {
+		localStorage.setItem(POLISH_OPTIONS_STORAGE_KEY, JSON.stringify(options));
+	} catch {
+		// Ignore storage failures (e.g. private mode); prefs just won't persist.
+	}
+}
+
+/** Derive a human-friendly guide title from the project file path. */
+function deriveProjectTitle(projectPath: string | null): string {
+	if (!projectPath) return "Untitled guide";
+	const base = projectPath.split(/[\\/]/).pop() ?? "";
+	const name = base
+		.replace(/\.[^.]+$/, "")
+		.replace(/[-_]+/g, " ")
+		.trim();
+	return name || "Untitled guide";
+}
 
 export default function VideoEditor() {
 	const {
@@ -318,9 +351,25 @@ export default function VideoEditor() {
 			setInspectorOpen(true);
 		}
 	}, [selectedZoomId, selectedTrimId, selectedSpeedId, selectedAnnotationId, selectedBlurId]);
-	const [polishPreview, setPolishPreview] = useState<PolishPreview | null>(null);
-	const [polishEdits, setPolishEdits] = useState<Partial<EditorState> | null>(null);
-	const [showPolishDialog, setShowPolishDialog] = useState(false);
+	// Auto-Polish (Guidde-style one-click production) runs asynchronously.
+	const [isAutoPolishing, setIsAutoPolishing] = useState(false);
+	const [showPolishSetup, setShowPolishSetup] = useState(false);
+	// Background music is temporarily disabled in Magic Polish — force it off even
+	// if a saved selection had it on.
+	const [polishOptions, setPolishOptions] = useState<PolishOptions>(() => ({
+		...loadPolishOptions(),
+		music: false,
+	}));
+	const { isAuthenticated: isBackendAuthed, showLogin } = useBackend();
+	// Video (export) is gated to paid plans — free = AI chat only, no video.
+	const { isPro: hasActivePlan } = useProGate();
+	const [showPublishGate, setShowPublishGate] = useState(false);
+
+	// Persist polish selections so the setup dialog opens pre-filled next time.
+	const updatePolishOptions = useCallback((next: PolishOptions) => {
+		setPolishOptions(next);
+		savePolishOptions(next);
+	}, []);
 	const [previewWallpaper, setPreviewWallpaper] = useState<string | null>(null);
 	const [showCloseConfirmDialog, setShowCloseConfirmDialog] = useState(false);
 	// Unsaved-changes confirmation for New Project / Load Project.
@@ -2111,6 +2160,74 @@ export default function VideoEditor() {
 		}
 	}, []);
 
+	// AI narration and the music bed play in the preview from audio files;
+	// exports must carry them too. Maps master-timeline positions onto the
+	// exported timeline (trims compress time) and lays the audio over the
+	// finished file via FFmpeg — narration on top, music looped at its set
+	// volume and ducked while narration speaks. Video stream copied.
+	const muxNarrationIntoExport = useCallback(
+		async (filePath: string): Promise<void> => {
+			if (!window.electronAPI?.muxNarrationAudio) return;
+			const segments = editorState.narrationTrack?.segments ?? [];
+			// Only local files can be muxed (blob:/http URLs come from web preview).
+			const isLocal = (p: string) => !/^(https?|blob|data):/.test(p);
+			const muxable = segments.filter((s) => s.audioPath && isLocal(s.audioPath));
+
+			const trims = [...editorState.trimRegions].sort((a, b) => a.startMs - b.startMs);
+			const toExportTime = (masterMs: number): number => {
+				let removed = 0;
+				for (const trim of trims) {
+					if (masterMs >= trim.endMs) {
+						removed += trim.endMs - trim.startMs;
+					} else if (masterMs > trim.startMs) {
+						// Inside a cut — surface at the cut point.
+						return trim.startMs - removed;
+					}
+				}
+				return masterMs - removed;
+			};
+
+			const muxSegments = muxable
+				.filter((s) => s.audioPath)
+				.map((s) => ({ audioPath: s.audioPath as string, offsetMs: toExportTime(s.startMs) }));
+
+			const musicPath = editorState.backgroundMusic;
+			const music =
+				musicPath && musicPath !== "none" && isLocal(musicPath)
+					? {
+							audioPath: musicPath,
+							volume: (editorState.backgroundMusicVolume ?? 18) / 100,
+							duckWindows: muxSegments.map((s, i) => ({
+								startMs: s.offsetMs,
+								endMs: toExportTime(muxable[i].endMs),
+							})),
+						}
+					: null;
+			const muteOriginal = editorState.muteOriginalAudio;
+			if (muxSegments.length === 0 && !music && !muteOriginal) return;
+
+			const result = await window.electronAPI.muxNarrationAudio(
+				filePath,
+				muxSegments,
+				music,
+				muteOriginal,
+			);
+			if (!result.success) {
+				// The video itself is fine — the AI audio just isn't in it.
+				toast.warning("Exported without narration/music audio", {
+					description: result.error || "Audio mux failed",
+				});
+			}
+		},
+		[
+			editorState.narrationTrack,
+			editorState.trimRegions,
+			editorState.backgroundMusic,
+			editorState.backgroundMusicVolume,
+			editorState.muteOriginalAudio,
+		],
+	);
+
 	const handleExportSaved = useCallback(
 		(formatLabel: "GIF" | "Video", filePath: string) => {
 			setExportedFilePath(filePath);
@@ -2118,22 +2235,28 @@ export default function VideoEditor() {
 			if (folder) {
 				saveUserPreferences({ exportFolder: folder });
 			}
-			toast.success(
-				t("export.exportedSuccessfully", {
-					format: formatLabel,
-				}),
-				{
-					description: filePath,
-					action: {
-						label: rawT("common.actions.showInFolder"),
-						onClick: () => {
-							void handleShowExportedFile(filePath);
+			const announce = () =>
+				toast.success(
+					t("export.exportedSuccessfully", {
+						format: formatLabel,
+					}),
+					{
+						description: filePath,
+						action: {
+							label: rawT("common.actions.showInFolder"),
+							onClick: () => {
+								void handleShowExportedFile(filePath);
+							},
 						},
 					},
-				},
-			);
+				);
+			if (formatLabel === "Video") {
+				void muxNarrationIntoExport(filePath).finally(announce);
+			} else {
+				announce();
+			}
 		},
-		[handleShowExportedFile, t, rawT],
+		[handleShowExportedFile, t, rawT, muxNarrationIntoExport],
 	);
 
 	const handleSaveUnsavedExport = useCallback(async () => {
@@ -2180,6 +2303,23 @@ export default function VideoEditor() {
 		}
 	}, [unsavedExport, handleExportSaved, gifLoop, gifSizePreset]);
 
+	// Video export is a paid feature: free accounts get AI chat only, no video.
+	// Requires sign-in + an active plan (Starter or above). AI usage inside the
+	// editor is metered separately by the backend (per-plan / credits).
+	const ensurePublishAllowed = useCallback((): boolean => {
+		if (!isBackendAuthed) {
+			toast.info("Sign in to export video.");
+			showLogin();
+			return false;
+		}
+		if (!hasActivePlan) {
+			// Free tier — offer upgrade.
+			setShowPublishGate(true);
+			return false;
+		}
+		return true;
+	}, [isBackendAuthed, hasActivePlan, showLogin]);
+
 	const handleExport = useCallback(
 		async (settings: ExportSettings) => {
 			if (!videoPath) {
@@ -2196,6 +2336,13 @@ export default function VideoEditor() {
 			// Pick the save path before exporting, otherwise the save dialog can end up
 			// hidden behind other windows after a long-running export.
 			const isGifFormat = settings.format === "gif";
+
+			// Video export is a paid feature (GIFs are exempt).
+			if (!isGifFormat && !ensurePublishAllowed()) {
+				setShowExportDialog(false);
+				return;
+			}
+
 			const targetFileName = `export-${Date.now()}.${isGifFormat ? "gif" : "mp4"}`;
 			const pickResult = await window.electronAPI.pickExportSavePath(
 				targetFileName,
@@ -2958,6 +3105,7 @@ export default function VideoEditor() {
 			editorState.introClip,
 			editorState.videoClips,
 			duration,
+			ensurePublishAllowed,
 		],
 	);
 
@@ -3245,34 +3393,103 @@ export default function VideoEditor() {
 
 	// ── AI Feature handlers ──
 
-	const handleMagicPolish = useCallback(() => {
-		if (cursorTelemetry.length === 0 || duration <= 0) return;
-
-		const result = generatePolishEdits({
-			cursorTelemetry,
-			videoDurationMs: duration * 1000,
-			currentState: editorState,
-		});
-
-		setPolishPreview(result.preview);
-		setPolishEdits(result.edits);
-		setShowPolishDialog(true);
-	}, [cursorTelemetry, duration, editorState]);
-
-	const handleApplyPolish = useCallback(() => {
-		if (!polishEdits) return;
-		pushState(polishEdits);
-		setShowPolishDialog(false);
-		setPolishPreview(null);
-		setPolishEdits(null);
-		toast.success("Magic Polish applied!");
-	}, [polishEdits, pushState]);
-
-	const handleCancelPolish = useCallback(() => {
-		setShowPolishDialog(false);
-		setPolishPreview(null);
-		setPolishEdits(null);
+	// Legacy synchronous "Magic Polish" (visual-only preview dialog). Kept for
+	// reference; the ToolRail now runs the full async Auto-Polish below.
+	// Render a resolved intro config to a video file and package it as a clip.
+	const buildIntroClip = useCallback(async (config: IntroConfig): Promise<VideoClip | null> => {
+		const blob = await renderIntroToBlob(config);
+		const arrayBuffer = await blob.arrayBuffer();
+		const result = await window.electronAPI.saveIntroVideo(arrayBuffer);
+		if (!result.success || !result.path) return null;
+		return {
+			id: `intro-${config.durationMs}-${config.title.length}`,
+			sourceVideoPath: result.path,
+			startMs: 0,
+			endMs: config.durationMs,
+			offsetMs: 0,
+			durationMs: config.durationMs,
+			label: config.title || "Intro",
+			sourceType: "intro",
+			introConfig: { config: { ...config } },
+		};
 	}, []);
+
+	// ── Auto-Polish: runs once with the user's selected options ──
+	const handleAutoPolish = useCallback(async () => {
+		if (isAutoPolishing) return;
+		if (cursorTelemetry.length === 0 || duration <= 0) {
+			toast.error("Record a screen with cursor activity first.");
+			return;
+		}
+		// Only the AI stages need the account; framing/cursor/intro are local.
+		const needsBackend = polishOptions.narration || polishOptions.music;
+		if (needsBackend && !isBackendAuthed) {
+			toast.info("Sign in to your account to use narration and music.");
+			showLogin();
+			return;
+		}
+
+		setShowPolishSetup(false);
+		setIsAutoPolishing(true);
+		const toastId = toast.loading("Polish: starting…");
+		try {
+			const { templates } = await fetchPolishTemplates();
+			const template = templates[0];
+			if (!template) throw new Error("No polish template available.");
+
+			const result = await runAutoPolish({
+				cursorTelemetry,
+				videoDurationMs: duration * 1000,
+				currentState: editorState,
+				projectTitle: deriveProjectTitle(currentProjectPath),
+				captionTrack: editorState.captionTrack ?? null,
+				template,
+				options: polishOptions,
+				introClipFactory: buildIntroClip,
+				onProgress: (_stage, message) => toast.loading(message, { id: toastId }),
+			});
+
+			pushState(result.edits);
+			// Cursor smoothing renders from local component state, not EditorState.
+			if (result.cursorSmoothing !== null) setCursorSmoothing(result.cursorSmoothing);
+
+			const s = result.summary;
+			const parts = [
+				s.zoomCount ? `${s.zoomCount} zooms` : null,
+				s.trimCount ? `${s.trimCount} trims` : null,
+				s.narrationLineCount ? `${s.narrationLineCount} narration lines` : null,
+				s.musicAdded ? "music" : null,
+				s.introAdded ? "intro" : null,
+			].filter(Boolean);
+			toast.success(`Polish applied${parts.length ? `: ${parts.join(", ")}` : ""}`, {
+				id: toastId,
+			});
+			if (result.warnings.length > 0) toast.warning(result.warnings[0]);
+		} catch (err) {
+			if (err instanceof AutoPolishAuthError) {
+				toast.dismiss(toastId);
+				toast.info("Sign in to your account to use narration and music.");
+				showLogin();
+			} else if (err instanceof DOMException && err.name === "AbortError") {
+				toast.dismiss(toastId);
+			} else {
+				toast.error(err instanceof Error ? err.message : "Polish failed", { id: toastId });
+			}
+		} finally {
+			setIsAutoPolishing(false);
+		}
+	}, [
+		isAutoPolishing,
+		cursorTelemetry,
+		duration,
+		polishOptions,
+		isBackendAuthed,
+		showLogin,
+		editorState,
+		currentProjectPath,
+		buildIntroClip,
+		pushState,
+	]);
 
 	const handleAIApplyEdits = useCallback(
 		(edits: Partial<EditorState>) => {
@@ -3650,7 +3867,11 @@ export default function VideoEditor() {
 						}
 						onToolClick={(tool: ToolRailTool) => {
 							if (tool === "polish") {
-								handleMagicPolish();
+								if (cursorTelemetry.length === 0 || duration <= 0) {
+									toast.error("Record a screen with cursor activity first.");
+									return;
+								}
+								setShowPolishSetup(true);
 								return;
 							}
 							if (tool === "crop") {
@@ -3683,7 +3904,7 @@ export default function VideoEditor() {
 							showCursorSettings &&
 							(cursorTelemetry.length > 0 || hasNativeCursorRecordingData(cursorRecordingData))
 						}
-						polishDisabled={cursorTelemetry.length === 0}
+						polishDisabled={cursorTelemetry.length === 0 || isAutoPolishing}
 					/>
 					<div className="min-w-0 min-h-0 flex-1">
 						<PanelGroup direction="vertical" className="min-h-0">
@@ -3994,6 +4215,10 @@ export default function VideoEditor() {
 														introClip={introClip}
 														introDurationMs={introDurationMs}
 														isInIntroPhase={isInIntroPhase}
+														narrationTrack={editorState.narrationTrack ?? null}
+														backgroundMusic={editorState.backgroundMusic}
+														backgroundMusicVolume={editorState.backgroundMusicVolume}
+														muteOriginalAudio={editorState.muteOriginalAudio}
 														webcamLayoutPreset={webcamLayoutPreset}
 														webcamMaskShape={webcamMaskShape}
 														webcamMirrored={webcamMirrored}
@@ -4045,6 +4270,7 @@ export default function VideoEditor() {
 														cursorClickBounce={cursorClickBounce}
 														cursorClipToBounds={cursorClipToBounds}
 														cursorTheme={cursorTheme}
+														showClickRings={editorState.showClickRings}
 														isPreviewingZoom={isPreviewingZoom}
 														captionTrack={editorState.captionTrack ?? null}
 														captionStyle={editorState.captionStyle}
@@ -4172,63 +4398,21 @@ export default function VideoEditor() {
 				</div>
 			)}
 
-			{/* Magic Polish confirmation dialog */}
-			<Dialog open={showPolishDialog} onOpenChange={setShowPolishDialog}>
-				<DialogContent
-					className="sm:max-w-[500px]"
-					style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
-				>
-					<DialogHeader>
-						<DialogTitle className="flex items-center gap-2">
-							<Wand2 className="w-5 h-5 text-[#6E6BFF]" />
-							Magic Polish Preview
-						</DialogTitle>
-						<DialogDescription>
-							Review the suggested edits before applying. These are based on your cursor activity
-							and video content.
-						</DialogDescription>
-					</DialogHeader>
-					{polishPreview && (
-						<div className="space-y-2 py-2 text-sm">
-							{polishPreview.zoomCount > 0 && (
-								<div className="flex items-center gap-2 text-slate-300">
-									<span className="w-5 h-5 rounded bg-[#6E6BFF]/20 flex items-center justify-center text-[#6E6BFF] text-xs font-bold">
-										{polishPreview.zoomCount}
-									</span>
-									zoom region{polishPreview.zoomCount !== 1 ? "s" : ""} to add
-								</div>
-							)}
-							{polishPreview.trimCount > 0 && (
-								<div className="flex items-center gap-2 text-slate-300">
-									<span className="w-5 h-5 rounded bg-orange-500/20 flex items-center justify-center text-orange-400 text-xs font-bold">
-										{polishPreview.trimCount}
-									</span>
-									trim{polishPreview.trimCount !== 1 ? "s" : ""} to add
-								</div>
-							)}
-							{polishPreview.description && (
-								<p className="text-slate-400 text-xs mt-2">{polishPreview.description}</p>
-							)}
-						</div>
-					)}
-					<DialogFooter>
-						<button
-							type="button"
-							onClick={handleCancelPolish}
-							className="px-4 py-2 rounded-md bg-white/10 text-white hover:bg-white/20 text-sm font-medium transition-colors"
-						>
-							Cancel
-						</button>
-						<button
-							type="button"
-							onClick={handleApplyPolish}
-							className="px-4 py-2 rounded-md bg-[#6E6BFF] text-white hover:bg-[#6E6BFF]/90 text-sm font-medium transition-colors"
-						>
-							Apply Polish
-						</button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
+			<PolishSetupDialog
+				open={showPolishSetup}
+				onOpenChange={setShowPolishSetup}
+				options={polishOptions}
+				onOptionsChange={updatePolishOptions}
+				onRun={handleAutoPolish}
+				isRunning={isAutoPolishing}
+				isAuthenticated={isBackendAuthed}
+			/>
+
+			<ProGateDialog
+				open={showPublishGate}
+				onOpenChange={setShowPublishGate}
+				feature="unlimited-publishing"
+			/>
 
 			<ExportDialog
 				isOpen={showExportDialog}

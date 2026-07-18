@@ -62,6 +62,8 @@ export interface EditorState {
 	captionTrack: CaptionTrack | null;
 	captionStyle: CaptionStyle;
 	narrationTrack: NarrationTrack | null;
+	/** Silence the recording's own audio (e.g. when AI narration carries the video) */
+	muteOriginalAudio: boolean;
 	backgroundMusic: string;
 	backgroundMusicVolume: number;
 	animatedBgSpeed: number;
@@ -101,6 +103,7 @@ export const INITIAL_EDITOR_STATE: EditorState = {
 	captionTrack: null,
 	captionStyle: DEFAULT_CAPTION_STYLE,
 	narrationTrack: null,
+	muteOriginalAudio: false,
 	backgroundMusic: "none",
 	backgroundMusicVolume: 50,
 	animatedBgSpeed: 1,

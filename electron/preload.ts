@@ -213,6 +213,21 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	mergeVideoAudio: (videoPath: string, audioPath: string) => {
 		return ipcRenderer.invoke("merge-video-audio", videoPath, audioPath);
 	},
+	saveNarrationAudio: (data: ArrayBuffer) => {
+		return ipcRenderer.invoke("save-narration-audio", data);
+	},
+	muxNarrationAudio: (
+		videoPath: string,
+		segments: Array<{ audioPath: string; offsetMs: number }>,
+		music?: {
+			audioPath: string;
+			volume: number;
+			duckWindows: Array<{ startMs: number; endMs: number }>;
+		} | null,
+		muteOriginal?: boolean,
+	) => {
+		return ipcRenderer.invoke("mux-narration-audio", videoPath, segments, music, muteOriginal);
+	},
 	setCurrentVideoPath: (path: string) => {
 		return ipcRenderer.invoke("set-current-video-path", path);
 	},
@@ -507,6 +522,19 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		const listener = () => callback();
 		ipcRenderer.on("stop-recording-from-bar", listener);
 		return () => ipcRenderer.removeListener("stop-recording-from-bar", listener);
+	},
+
+	// ── Webcam preview ──
+	showWebcamPreview: (deviceId?: string) => {
+		return ipcRenderer.invoke("webcam-preview-show", deviceId);
+	},
+	hideWebcamPreview: () => {
+		return ipcRenderer.invoke("webcam-preview-hide");
+	},
+	onWebcamPreviewDeviceChanged: (callback: (deviceId: string) => void) => {
+		const handler = (_event: Electron.IpcRendererEvent, deviceId: string) => callback(deviceId);
+		ipcRenderer.on("webcam-preview-device-changed", handler);
+		return () => ipcRenderer.removeListener("webcam-preview-device-changed", handler);
 	},
 
 	// ── Studio site cache ──
