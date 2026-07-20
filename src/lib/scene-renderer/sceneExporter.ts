@@ -94,6 +94,7 @@ export async function exportSceneProject(
 		let frameIndex = 0;
 		let segIndex = 0;
 		let segTimeMs = 0;
+		const exportStartTime = performance.now();
 
 		// Cache for outgoing scene's last frame
 		let lastSceneCanvas: HTMLCanvasElement | null = null;
@@ -164,8 +165,13 @@ export async function exportSceneProject(
 			segTimeMs += frameDuration;
 			frameIndex++;
 
-			// Use requestAnimationFrame to avoid blocking the UI
-			requestAnimationFrame(renderNextFrame);
+			// Pace frames to the target fps: MediaRecorder timestamps captured
+			// frames with wall-clock time, so pushing frames faster than real time
+			// produces a sped-up video (all the content squeezed into however long
+			// the render loop took). Scheduling each frame at its real timestamp
+			// keeps output duration equal to the timeline duration.
+			const nextFrameAt = exportStartTime + frameIndex * frameDuration;
+			setTimeout(renderNextFrame, Math.max(0, nextFrameAt - performance.now()));
 		}
 
 		renderNextFrame();

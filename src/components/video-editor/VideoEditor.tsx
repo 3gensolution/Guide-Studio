@@ -1,9 +1,10 @@
 import type { Span } from "dnd-timeline";
-import { Camera, Download, FilePlus2, FolderOpen, Languages, Save, Video } from "lucide-react";
+import { Bot, Camera, Download, FilePlus2, FolderOpen, Languages, Save, Video } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { toast } from "sonner";
 import guideLogo from "@/assets/guide-logo.svg";
+import { WelcomeScreen } from "@/components/recording/WelcomeScreen";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -96,7 +97,6 @@ import {
 	isPortraitAspectRatio,
 } from "@/utils/aspectRatioUtils";
 import { getTestId } from "@/utils/getTestId";
-import { AIChatSidebar } from "./AIChatSidebar";
 import { AIPanelSidebar } from "./AIPanelSidebar";
 import { EditorEmptyState } from "./EditorEmptyState";
 import { ExportDialog } from "./ExportDialog";
@@ -377,6 +377,9 @@ export default function VideoEditor() {
 	const [confirmDialogVariant, setConfirmDialogVariant] = useState<
 		"newProject" | "loadProject" | null
 	>(null);
+	// Fresh-boot Welcome dashboard: shown when the editor opens with nothing to
+	// edit. Dismissed by New Project so that flow keeps its in-editor empty state.
+	const [welcomeDismissed, setWelcomeDismissed] = useState(false);
 	const playerContainerRef = useRef<HTMLDivElement | null>(null);
 	const cursorTelemetrySourcePath = videoSourcePath ?? (videoPath ? fromFileUrl(videoPath) : null);
 	const { samples: cursorTelemetry, error: cursorTelemetryError } =
@@ -960,6 +963,34 @@ export default function VideoEditor() {
 		toast.success(t("project.loadedFrom", { path: result.path ?? "" }));
 	}, [applyLoadedProject, t]);
 
+	// Video import via file picker: shared by the Welcome screen and the AI
+	// chat's importVideo tool (same flow as EditorEmptyState's import button).
+	const importVideoFromPicker = useCallback(async (): Promise<{
+		success: boolean;
+		path?: string;
+		error?: string;
+	}> => {
+		const result = await window.electronAPI.openVideoFilePicker();
+		if (result.canceled || !result.success || !result.path) {
+			return { success: false };
+		}
+
+		const setResult = await nativeBridgeClient.project.setCurrentVideoPath(result.path);
+		if (!setResult.success) {
+			return { success: false, error: "Failed to set current video path" };
+		}
+
+		setVideoPath(toFileUrl(result.path));
+		setVideoSourcePath(result.path);
+		setWebcamVideoPath(null);
+		setWebcamVideoSourcePath(null);
+		return { success: true, path: result.path };
+	}, []);
+
+	const handleWelcomeOpenVideo = useCallback(async () => {
+		await importVideoFromPicker();
+	}, [importVideoFromPicker]);
+
 	const handleLoadProject = useCallback(async () => {
 		if (hasUnsavedChanges) {
 			setConfirmDialogVariant("loadProject");
@@ -984,6 +1015,7 @@ export default function VideoEditor() {
 	// New Project: clear all media/project/editor state back to the empty
 	// Studio dashboard. Prompts to save first when there are unsaved changes.
 	const doNewProject = useCallback(async () => {
+		setWelcomeDismissed(true);
 		await nativeBridgeClient.project.clearCurrentVideoPath();
 		setVideoPath(null);
 		setVideoSourcePath(null);
@@ -3576,6 +3608,22 @@ export default function VideoEditor() {
 			</div>
 		);
 	}
+
+	// Fresh launch with nothing to edit: show the Welcome dashboard until the
+	// user picks an entry point. Recording is summoned in the HUD; media and
+	// projects load into this window.
+	if (!videoPath && !welcomeDismissed && !error) {
+		return (
+			<WelcomeScreen
+				onNewRecording={() => {
+					void window.electronAPI.startNewRecording();
+				}}
+				onOpenVideo={handleWelcomeOpenVideo}
+				onOpenProject={doLoadProject}
+			/>
+		);
+	}
+
 	if (error) {
 		return (
 			<div className="flex items-center justify-center h-screen bg-background">
@@ -3917,16 +3965,18 @@ export default function VideoEditor() {
 											{showAIPanel ? (
 												<div className="flex-1 min-h-0">
 													{aiPanelMode === "chat" ? (
-														<AIChatSidebar
-															editorState={editorState}
-															cursorTelemetry={cursorTelemetry}
-															videoDurationMs={duration * 1000}
-															onApplyEdits={handleAIApplyEdits}
-															onSeek={(timeMs) => handleSeek(timeMs / 1000)}
-															onScreenshot={handleScreenshot}
-															captionTrack={editorState.captionTrack ?? null}
-															videoPath={videoPath}
-														/>
+														<div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
+															<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#6E6BFF]/10 border border-[#6E6BFF]/30">
+																<Bot size={22} className="text-[#6E6BFF]" />
+															</div>
+															<div className="text-sm font-medium text-white/90">
+																AI editing — coming soon
+															</div>
+															<p className="max-w-[240px] text-xs leading-relaxed text-white/50">
+																Editing your video by chatting with AI is on the way. For now, use
+																the AI tools tab for captions, zoom, and polish.
+															</p>
+														</div>
 													) : (
 														<AIPanelSidebar
 															editorState={editorState}

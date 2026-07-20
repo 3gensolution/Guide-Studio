@@ -846,13 +846,16 @@ function createEditorWindowWrapper(): BrowserWindow {
 }
 
 function switchToHudWrapper() {
-	if (mainWindow) {
-		isForceClosing = true;
-		mainWindow.close();
-		isForceClosing = false;
-		mainWindow = null;
+	// Show the HUD directly — showMainWindow() prefers editor windows, which
+	// would leave "New Recording" from the editor/Welcome screen doing nothing.
+	if (mainWindow && !mainWindow.isDestroyed()) {
+		if (mainWindow.isMinimized()) mainWindow.restore();
+		mainWindow.show();
+		mainWindow.focus();
+		return;
 	}
-	showMainWindow();
+	mainWindow = null;
+	createWindow();
 }
 
 function createSourceSelectorWindowWrapper() {
@@ -1202,6 +1205,8 @@ app.whenReady().then(async () => {
 	// Global shortcuts
 	await loadAndRegisterGlobalShortcut(showMainWindow);
 
-	// Create the initial HUD overlay window
-	createWindow();
+	// Welcome-first boot: open an editor window (it renders the Welcome dashboard
+	// when there is nothing to edit). The recording HUD is summoned on demand via
+	// "start-new-recording" / "switch-to-hud".
+	createEditorWindowWrapper();
 });

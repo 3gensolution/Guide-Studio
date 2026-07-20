@@ -109,7 +109,7 @@ buildNpmPackage {
         "Video"
         "Recorder"
       ];
-      startupWMClass = "GuideStudio";
+      startupWMClass = "Guide-Studio";
       terminal = false;
     })
   ];

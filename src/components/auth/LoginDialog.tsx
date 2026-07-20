@@ -1,4 +1,4 @@
-import { Lock, LogIn, Mail, Sparkles, User } from "lucide-react";
+import { Lock, LogIn, Mail, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -18,11 +18,8 @@ interface LoginDialogProps {
 }
 
 export function LoginDialog({ isOpen, onClose, onLoginSuccess }: LoginDialogProps) {
-	const [mode, setMode] = useState<"login" | "signup">("login");
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
-	const [name, setName] = useState("");
-	const [companyName, setCompanyName] = useState("");
 	const [isLoading, setIsLoading] = useState(false);
 
 	const handleSubmit = async (e: React.FormEvent) => {
@@ -30,30 +27,13 @@ export function LoginDialog({ isOpen, onClose, onLoginSuccess }: LoginDialogProp
 		setIsLoading(true);
 
 		try {
-			if (mode === "login") {
-				const result = await authService.login({ email, password });
-				if (result.success) {
-					toast.success("Welcome back!");
-					onLoginSuccess(result.user);
-					onClose();
-				} else {
-					toast.error(result.error);
-				}
+			const result = await authService.login({ email, password });
+			if (result.success) {
+				toast.success("Welcome back!");
+				onLoginSuccess(result.user);
+				onClose();
 			} else {
-				const result = await authService.signup({
-					email,
-					password,
-					name,
-					company_name: companyName || name,
-				});
-				if (result.success) {
-					toast.success(
-						result.message || "Account created! An admin needs to activate your account.",
-					);
-					setMode("login");
-				} else {
-					toast.error(result.error);
-				}
+				toast.error(result.error);
 			}
 		} catch (_error) {
 			toast.error("An unexpected error occurred");
@@ -72,51 +52,16 @@ export function LoginDialog({ isOpen, onClose, onLoginSuccess }: LoginDialogProp
 						</div>
 						<div>
 							<DialogTitle className="text-2xl font-bold bg-gradient-to-r from-[#6E6BFF] to-[#22D3EE] bg-clip-text text-transparent">
-								{mode === "login" ? "Welcome Back" : "Create Account"}
+								Welcome Back
 							</DialogTitle>
 							<DialogDescription className="text-white/60">
-								{mode === "login"
-									? "Sign in to access AI features"
-									: "Get started with Guide Studio"}
+								Sign in to access AI features
 							</DialogDescription>
 						</div>
 					</div>
 				</DialogHeader>
 
 				<form onSubmit={handleSubmit} className="space-y-4 mt-4">
-					{mode === "signup" && (
-						<>
-							<div className="space-y-2">
-								<label className="text-sm font-medium text-white/80 flex items-center gap-2">
-									<User size={14} />
-									Full Name
-								</label>
-								<input
-									type="text"
-									value={name}
-									onChange={(e) => setName(e.target.value)}
-									className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/40 focus:outline-none focus:border-[#6E6BFF]/50 focus:ring-2 focus:ring-[#6E6BFF]/20 transition-all"
-									placeholder="John Doe"
-									required
-								/>
-							</div>
-							<div className="space-y-2">
-								<label className="text-sm font-medium text-white/80 flex items-center gap-2">
-									<User size={14} />
-									Company Name
-								</label>
-								<input
-									type="text"
-									value={companyName}
-									onChange={(e) => setCompanyName(e.target.value)}
-									className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/40 focus:outline-none focus:border-[#6E6BFF]/50 focus:ring-2 focus:ring-[#6E6BFF]/20 transition-all"
-									placeholder="My Company"
-									required
-								/>
-							</div>
-						</>
-					)}
-
 					<div className="space-y-2">
 						<label className="text-sm font-medium text-white/80 flex items-center gap-2">
 							<Mail size={14} />
@@ -154,33 +99,8 @@ export function LoginDialog({ isOpen, onClose, onLoginSuccess }: LoginDialogProp
 						className="w-full py-6 text-base font-semibold bg-gradient-to-r from-[#6E6BFF] to-[#22D3EE] hover:shadow-[0_0_30px_rgba(168,85,247,0.3)] transition-all duration-200"
 					>
 						<LogIn size={18} className="mr-2" />
-						{isLoading ? "Please wait..." : mode === "login" ? "Sign In" : "Create Account"}
+						{isLoading ? "Please wait..." : "Sign In"}
 					</Button>
-
-					<div className="relative">
-						<div className="absolute inset-0 flex items-center">
-							<div className="w-full border-t border-white/10" />
-						</div>
-						<div className="relative flex justify-center text-xs">
-							<span className="bg-[#070809] px-3 text-white/50">or</span>
-						</div>
-					</div>
-
-					<button
-						type="button"
-						onClick={() => setMode(mode === "login" ? "signup" : "login")}
-						className="w-full text-sm text-white/60 hover:text-white/90 transition-colors"
-					>
-						{mode === "login" ? (
-							<>
-								Don't have an account? <span className="text-[#6E6BFF] font-medium">Sign up</span>
-							</>
-						) : (
-							<>
-								Already have an account? <span className="text-[#6E6BFF] font-medium">Sign in</span>
-							</>
-						)}
-					</button>
 				</form>
 
 				{/* Features list */}

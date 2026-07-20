@@ -158,7 +158,7 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           ARCH="${{ matrix.arch }}"
-          DMG_NAME="GuideStudio-Mac-${ARCH}-${VERSION}.dmg"
+          DMG_NAME="Guide-Studio-Mac-${ARCH}-${VERSION}.dmg"
           RELEASE_DIR="release/${VERSION}"
           DMG_OUTPUT="${RELEASE_DIR}/${DMG_NAME}"
           STAGING="${RELEASE_DIR}/dmg-staging"
@@ -169,7 +169,7 @@ jobs:
 
           hdiutil create \
             -srcfolder "$STAGING" \
-            -volname "GuideStudio" \
+            -volname "Guide-Studio" \
             -fs HFS+ \
             -fsargs "-c c=64,a=16,e=16" \
             -format UDBZ \
