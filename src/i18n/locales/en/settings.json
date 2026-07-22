@@ -94,7 +94,7 @@
 		"title": "Export resolution",
 		"low": "720p",
 		"medium": "1080p",
-		"high": "Source"
+		"high": "Original"
 	},
 	"gifSettings": {
 		"frameRate": "GIF Frame Rate",

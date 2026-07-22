@@ -1,4 +1,35 @@
 {
+	"tour": {
+		"start": "Take a tour",
+		"progress": "{{current}} of {{total}}",
+		"next": "Next",
+		"back": "Back",
+		"done": "Got it",
+		"welcome": {
+			"title": "Welcome to Guide Studio",
+			"description": "Here's a 30-second tour of the editor. You can replay it any time from the help button up top."
+		},
+		"toolRail": {
+			"title": "Your toolbox",
+			"description": "Every editing tool lives here — backgrounds, effects, layout, cursor, and crop. Click an icon to open its panel."
+		},
+		"preview": {
+			"title": "Live preview",
+			"description": "See your guide render exactly as it will export, updating live as you make changes."
+		},
+		"timeline": {
+			"title": "The timeline",
+			"description": "Trim, split, and reorder clips, add zooms, and fine-tune captions along the track."
+		},
+		"ai": {
+			"title": "AI superpowers",
+			"description": "One click for auto-polish, captions, and AI voiceover — or chat with the editor to make edits for you."
+		},
+		"export": {
+			"title": "Export & publish",
+			"description": "When you're happy, export to MP4 or GIF, or publish your guide as a shareable kit."
+		}
+	},
 	"newRecording": {
 		"title": "Return to Recorder",
 		"description": "Your current session has been saved.",
@@ -51,6 +82,10 @@
 		"minWords": "Minimum words per caption",
 		"maxWords": "Maximum words per caption",
 		"wordsCount": "{{count}} words",
+		"engineLabel": "Caption engine",
+		"engineOnline": "Online — faster (uses your account)",
+		"engineFree": "Free — on-device (works offline)",
+		"engineOnlineSignIn": "Sign in to use the online engine.",
 		"generate": "Generate",
 		"dialogCancel": "Cancel",
 		"generating": "Generating captions from audio…",
@@ -59,7 +94,7 @@
 		"busy": "Caption generation is already in progress.",
 		"done": "Added {{count}} captions.",
 		"noneHeard": "No speech was detected.",
-		"noAudio": "This video has no usable audio to transcribe.",
+		"noAudio": "No audio to process.",
 		"failed": "Could not generate captions.",
 		"truncated": "Only the first {{minutes}} minutes were transcribed."
 	},

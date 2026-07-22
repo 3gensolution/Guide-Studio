@@ -26,7 +26,65 @@
     "!*.md",
     "!README.md",
     "!CONTRIBUTING.md",
-    "!LICENSE"
+    "!LICENSE",
+    // Renderer-only libraries: Vite already bundles these into dist/, so their raw
+    // source in the packaged node_modules is dead weight. The main process never
+    // require()s them (verified: electron/ imports none of them). ~450MB saved.
+    "!node_modules/react-icons/**/*",
+    "!node_modules/@phosphor-icons/**/*",
+    "!node_modules/lucide-react/**/*",
+    "!node_modules/pixi.js/**/*",
+    "!node_modules/pixi-filters/**/*",
+    "!node_modules/@pixi/**/*",
+    "!node_modules/three/**/*",
+    "!node_modules/three-stdlib/**/*",
+    "!node_modules/@react-three/**/*",
+    "!node_modules/@dimforge/**/*",
+    "!node_modules/hls.js/**/*",
+    "!node_modules/lottie-web/**/*",
+    "!node_modules/emoji-picker-react/**/*",
+    "!node_modules/@mediapipe/**/*",
+    "!node_modules/@techstark/**/*",
+    "!node_modules/gsap/**/*",
+    "!node_modules/framer-motion/**/*",
+    "!node_modules/motion-dom/**/*",
+    "!node_modules/html2canvas/**/*",
+    // Captioning stack runs in the renderer/worker (bundled by Vite) and loads the
+    // Whisper model + ORT wasm from the caption-assets/ extraResource, not node_modules.
+    "!node_modules/@xenova/**/*",
+    "!node_modules/onnxruntime-web/**/*",
+    // onnxruntime-node is stubbed out in the renderer (vite.config alias) and never
+    // imported by the main process — it's unused at runtime. ~77MB saved.
+    "!node_modules/onnxruntime-node/**/*",
+    // Build-time bundler backends. Packaged builds render from the pre-bundled
+    // remotion-bundle/ resource (see electron/export/remotionExport.ts resolveServeUrl);
+    // @remotion/bundler + its rspack/esbuild/webpack backends only run in dev on-the-fly
+    // bundling and are NOT deps of @remotion/renderer. ~85MB saved.
+    "!node_modules/@rspack/**/*",
+    "!node_modules/esbuild/**/*",
+    "!node_modules/@esbuild/**/*",
+    "!node_modules/webpack/**/*",
+    "!node_modules/@remotion/bundler/**/*",
+    // Remotion Studio is the interactive dev UI; headless renderMedia() never uses it.
+    "!node_modules/@remotion/studio/**/*",
+    // remotion-bits is a renderer composition lib (src/lib/remotion) — bundled by Vite
+    // into dist/ and into the pre-bundled remotion-bundle/; the node_modules copy is unused.
+    "!node_modules/remotion-bits/**/*",
+    // playwright is only used by dev scripts/e2e (@playwright/test, scripts/*.mjs), never
+    // by the packaged app. chromium-bidi is its child dep. ~20MB saved.
+    "!node_modules/playwright-core/**/*",
+    "!node_modules/chromium-bidi/**/*",
+    // Renderer-only video/animation libs — bundled by Vite into dist/, not imported by
+    // the main process. ~42MB saved.
+    "!node_modules/mediabunny/**/*",
+    "!node_modules/@mediabunny/**/*",
+    "!node_modules/mp4box/**/*",
+    "!node_modules/web-demuxer/**/*",
+    "!node_modules/gifuct-js/**/*",
+    "!node_modules/gif.js/**/*",
+    "!node_modules/@remotion/web-renderer/**/*",
+    "!node_modules/@remotion/media-utils/**/*",
+    "!node_modules/react-dom/**/*"
   ],
   "extraResources": [
     {
@@ -38,8 +96,12 @@
       "to": "cursors"
     },
     {
+      // Ship only the ORT wasm runtime (~19MB). The Whisper model weights (~45MB) are
+      // downloaded to userData on first caption run (see electron/ai/captionModelDownload.ts
+      // + the "ensure-caption-model" IPC), so they're excluded from the installer here.
       "from": "caption-assets",
-      "to": "caption-assets"
+      "to": "caption-assets",
+      "filter": ["**/*", "!models/**"]
     },
     {
       "from": "dist-remotion",

@@ -1,0 +1,120 @@
+/*
+ * Theme overrides for driver.js so the onboarding tour matches Guide Studio's
+ * graphite + indigo design system. Scoped under the `guide-tour` popover class
+ * (set via driver's `popoverClass`) so we never affect any other driver usage.
+ */
+
+/* Spotlight backdrop — warm graphite instead of driver's default black. */
+.driver-overlay {
+	/* driver draws the dim via an SVG fill; nudge it toward the app backdrop. */
+	filter: none;
+}
+
+.driver-popover.guide-tour {
+	background: #1c1917;
+	color: rgba(255, 255, 255, 0.9);
+	border: 1px solid rgba(110, 107, 255, 0.28);
+	border-radius: 14px;
+	box-shadow:
+		0 0 0 1px rgba(0, 0, 0, 0.4),
+		0 18px 48px -12px rgba(0, 0, 0, 0.7),
+		0 0 32px -8px rgba(110, 107, 255, 0.35);
+	padding: 18px 18px 14px;
+	max-width: 320px;
+	font-family:
+		"Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+}
+
+.driver-popover.guide-tour .driver-popover-title {
+	font-size: 14px;
+	font-weight: 700;
+	line-height: 1.3;
+	margin-bottom: 6px;
+	background: linear-gradient(90deg, #8b89ff, #22d3ee);
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+}
+
+.driver-popover.guide-tour .driver-popover-description {
+	font-size: 12.5px;
+	line-height: 1.55;
+	color: rgba(255, 255, 255, 0.6);
+}
+
+/* Arrow color to match the panel background. */
+.driver-popover.guide-tour .driver-popover-arrow-side-left.driver-popover-arrow {
+	border-left-color: #1c1917;
+}
+.driver-popover.guide-tour .driver-popover-arrow-side-right.driver-popover-arrow {
+	border-right-color: #1c1917;
+}
+.driver-popover.guide-tour .driver-popover-arrow-side-top.driver-popover-arrow {
+	border-top-color: #1c1917;
+}
+.driver-popover.guide-tour .driver-popover-arrow-side-bottom.driver-popover-arrow {
+	border-bottom-color: #1c1917;
+}
+
+.driver-popover.guide-tour .driver-popover-footer {
+	margin-top: 14px;
+	gap: 8px;
+}
+
+.driver-popover.guide-tour .driver-popover-progress-text {
+	font-size: 11px;
+	font-weight: 600;
+	color: rgba(255, 255, 255, 0.35);
+	letter-spacing: 0.04em;
+}
+
+/* Shared button reset. */
+.driver-popover.guide-tour .driver-popover-footer button {
+	all: unset;
+	box-sizing: border-box;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	height: 30px;
+	padding: 0 14px;
+	border-radius: 8px;
+	font-size: 12px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: all 150ms ease;
+	text-shadow: none;
+}
+
+/* Primary "Next / Done" button — indigo fill. */
+.driver-popover.guide-tour .driver-popover-next-btn {
+	background: #6e6bff;
+	color: #fff;
+}
+.driver-popover.guide-tour .driver-popover-next-btn:hover {
+	background: #7d7aff;
+}
+
+/* Secondary "Back" button — subtle outline. */
+.driver-popover.guide-tour .driver-popover-prev-btn {
+	background: rgba(255, 255, 255, 0.06);
+	color: rgba(255, 255, 255, 0.7);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.driver-popover.guide-tour .driver-popover-prev-btn:hover {
+	background: rgba(255, 255, 255, 0.1);
+	color: rgba(255, 255, 255, 0.9);
+}
+
+.driver-popover.guide-tour .driver-popover-prev-btn.driver-popover-btn-disabled {
+	opacity: 0.35;
+	cursor: not-allowed;
+}
+
+/* Close (X) button. */
+.driver-popover.guide-tour .driver-popover-close-btn {
+	color: rgba(255, 255, 255, 0.4);
+	transition: color 150ms ease;
+}
+.driver-popover.guide-tour .driver-popover-close-btn:hover {
+	color: rgba(255, 255, 255, 0.85);
+}

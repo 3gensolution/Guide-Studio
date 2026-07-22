@@ -110,10 +110,10 @@ function buildNarrationUserPrompt(steps: GuideStep[], projectTitle: string): str
  * process. Returns the local path, or null when unavailable (non-Electron,
  * fetch failure) — callers keep the remote URL for preview-only use.
  */
-export async function localizeAudioUrl(url: string): Promise<string | null> {
+export async function localizeAudioUrl(url: string, timeoutMs = 60_000): Promise<string | null> {
 	if (!/^https?:/.test(url)) return url; // already local
 	try {
-		const response = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+		const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
 		if (!response.ok) return null;
 		const data = await response.arrayBuffer();
 		if (data.byteLength === 0 || !window.electronAPI?.saveNarrationAudio) return null;

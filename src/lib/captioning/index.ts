@@ -15,3 +15,9 @@ export type {
 	TranscribeMono16kResult,
 } from "./transcribe";
 export { transcribeMono16kToSegments } from "./transcribe";
+export type { TranscribeAutoOptions } from "./transcribeAuto";
+export {
+	captionSegmentsToTrack,
+	encodeMono16kWav,
+	transcribeSegmentsAuto,
+} from "./transcribeAuto";

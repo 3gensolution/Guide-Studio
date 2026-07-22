@@ -67,6 +67,7 @@ export function ToolRail({
 			<Tooltip key={item.id} content={item.label} side="right">
 				<button
 					type="button"
+					data-tour={`tool-${item.id}`}
 					disabled={item.disabled}
 					onClick={() => {
 						if (item.disabled) return;
@@ -94,7 +95,10 @@ export function ToolRail({
 
 	return (
 		<TooltipProvider delayDuration={150}>
-			<div className="editor-tool-rail flex h-full w-12 flex-shrink-0 flex-col items-center gap-1.5 py-3">
+			<div
+				data-tour="tool-rail"
+				className="editor-tool-rail flex h-full w-12 flex-shrink-0 flex-col items-center gap-1.5 py-3"
+			>
 				{settingsItems.map(renderItem)}
 				<div className="my-1.5 h-px w-6 bg-white/[0.08]" />
 				{aiItems.map(renderItem)}

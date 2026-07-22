@@ -574,6 +574,11 @@ export function captionSegmentsToAnnotationRegions(
 			endMs,
 			type: "text",
 			content: seg.text,
+			// Populate textContent too: the settings-panel textarea reads
+			// `textContent || content`, and the type-change handler falls back to
+			// textContent. Without this, re-selecting the "text" type would wipe the
+			// caption to a placeholder. See handleAnnotationTypeChange.
+			textContent: seg.text,
 			annotationSource: "auto-caption",
 			position: { ...CAPTION_POSITION },
 			size: { ...CAPTION_SIZE },

@@ -390,15 +390,13 @@ export function AIPanelSidebar({
 					/>
 				</Section>
 
-				{/* Background Music — temporarily disabled (remove the wrapper div to restore) */}
+				{/* Background Music */}
 				<Section title="Background Music" icon={Music2}>
-					<div className="pointer-events-none opacity-50" aria-disabled="true">
-						<MusicSection
-							editorState={editorState}
-							onApplyEdits={onApplyEdits}
-							isBackendReady={isBackendAvailable && isAuthenticated}
-						/>
-					</div>
+					<MusicSection
+						editorState={editorState}
+						onApplyEdits={onApplyEdits}
+						isBackendReady={isBackendAvailable && isAuthenticated}
+					/>
 				</Section>
 
 				{/* Magic Polish */}

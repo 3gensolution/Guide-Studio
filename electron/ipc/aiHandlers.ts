@@ -19,6 +19,7 @@ import {
 	generateSfx,
 	generateSfxBatch,
 } from "../ai/elevenLabsSfxService";
+import { downloadFreeMusic, searchFreeMusic } from "../ai/freeMusicSearch";
 import {
 	downloadLottieAnimation,
 	getPopularLotties,
@@ -209,6 +210,18 @@ export function registerAIHandlers(): void {
 
 	ipcMain.handle("lottie-download", async (_event, lottieUrl: string, name: string) => {
 		return downloadLottieAnimation(lottieUrl, name);
+	});
+
+	// Free music search (Openverse — openly-licensed audio, no account needed)
+	ipcMain.handle(
+		"free-music-search",
+		async (_event, query: string, page?: number, pageSize?: number) => {
+			return searchFreeMusic(query, page, pageSize);
+		},
+	);
+
+	ipcMain.handle("free-music-download", async (_event, audioUrl: string, name: string) => {
+		return downloadFreeMusic(audioUrl, name);
 	});
 
 	// Video generation

@@ -1,5 +1,14 @@
 import type { Span } from "dnd-timeline";
-import { Bot, Camera, Download, FilePlus2, FolderOpen, Languages, Save, Video } from "lucide-react";
+import {
+	Camera,
+	Download,
+	FilePlus2,
+	FolderOpen,
+	HelpCircle,
+	Languages,
+	Save,
+	Video,
+} from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { toast } from "sonner";
@@ -38,12 +47,14 @@ import {
 } from "@/lib/ai/polishTemplates";
 import { fetchPolishTemplates } from "@/lib/api/templates";
 import {
+	type CaptionSegment,
 	captionSegmentsToAnnotationRegions,
+	captionSegmentsToTrack,
 	extractMono16kFromVideoUrl,
 	MAX_CAPTION_AUDIO_SEC,
 	reconcileAutoCaptionTimelineGaps,
 	shiftTrimRegionsMsForCaptionBuffer,
-	transcribeMono16kToSegments,
+	transcribeSegmentsAuto,
 	trimLeadingSilenceMono16k,
 } from "@/lib/captioning";
 import { hasNativeCursorRecordingData } from "@/lib/cursor/nativeCursor";
@@ -78,9 +89,11 @@ import {
 } from "@/lib/exporter/smartRender";
 import { computeFrameStepTime } from "@/lib/frameStep";
 import { renderIntroToBlob } from "@/lib/intro/introRenderer";
-import type { IntroConfig } from "@/lib/intro/introTypes";
+import { DEFAULT_INTRO_CONFIG, type IntroConfig } from "@/lib/intro/introTypes";
 import type { CursorCaptureMode, ProjectMedia } from "@/lib/recordingSession";
 import { matchesShortcut } from "@/lib/shortcuts";
+import { runEditorTour } from "@/lib/tour/editorTour";
+import { hasSeenEditorTour } from "@/lib/tour/tourState";
 import {
 	getExportFolder,
 	getProjectFolder,
@@ -97,6 +110,7 @@ import {
 	isPortraitAspectRatio,
 } from "@/utils/aspectRatioUtils";
 import { getTestId } from "@/utils/getTestId";
+import { AIChatPanel, type EditTool } from "./AIChatPanel";
 import { AIPanelSidebar } from "./AIPanelSidebar";
 import { EditorEmptyState } from "./EditorEmptyState";
 import { ExportDialog } from "./ExportDialog";
@@ -334,7 +348,7 @@ export default function VideoEditor() {
 	const [isFullscreen, setIsFullscreen] = useState(false);
 	// AI panel state
 	const [showAIPanel, setShowAIPanel] = useState(false);
-	const [aiPanelMode, setAIPanelMode] = useState<"chat" | "tools">("chat");
+	const [aiPanelMode, setAIPanelMode] = useState<"chat" | "tools">("tools");
 	// Right inspector state (driven by the far-left tool rail)
 	const [inspectorOpen, setInspectorOpen] = useState(true);
 	const [showCropDialog, setShowCropDialog] = useState(false);
@@ -435,6 +449,26 @@ export default function VideoEditor() {
 	const ts = useScopedT("settings");
 	const availableLocales = getAvailableLocales();
 
+	// First-run onboarding tour. Anchored to the always-present editor
+	// landmarks, so it only makes sense once a video is loaded.
+	const tourStartedRef = useRef(false);
+	const startTour = useCallback(() => {
+		runEditorTour(t, {
+			openAIPanel: () => {
+				setShowAIPanel(true);
+				setAIPanelMode("tools");
+				setInspectorOpen(true);
+			},
+		});
+	}, [t]);
+	useEffect(() => {
+		if (!videoPath || tourStartedRef.current || hasSeenEditorTour()) return;
+		tourStartedRef.current = true;
+		// Let the workspace mount before the spotlight measures its targets.
+		const id = window.setTimeout(startTour, 600);
+		return () => window.clearTimeout(id);
+	}, [videoPath, startTour]);
+
 	const nextAnnotationIdRef = useRef(1);
 	const nextAnnotationZIndexRef = useRef(1);
 	const isAutoCaptioningRef = useRef(false);
@@ -442,6 +476,9 @@ export default function VideoEditor() {
 	const [showAutoCaptionsDialog, setShowAutoCaptionsDialog] = useState(false);
 	const [captionWordsMin, setCaptionWordsMin] = useState(2);
 	const [captionWordsMax, setCaptionWordsMax] = useState(7);
+	// Which transcription engine to use: the fast online (account) engine or the
+	// free on-device WASM engine. Defaults to online when signed in, else free.
+	const [captionEngine, setCaptionEngine] = useState<"online" | "free">("free");
 	const exporterRef = useRef<VideoExporter | null>(null);
 
 	const annotationOnlyRegions = useMemo(
@@ -1182,30 +1219,33 @@ export default function VideoEditor() {
 		return () => window.removeEventListener("keydown", handleKeyDown);
 	}, [isFullscreen]);
 
-	function handleSeek(time: number) {
-		const introDur = introDurationMs / 1000;
+	const handleSeek = useCallback(
+		(time: number) => {
+			const introDur = introDurationMs / 1000;
 
-		if (introClip && time < introDur) {
-			// Seeking into intro zone — position intro video
-			const introVideo = videoPlaybackRef.current?.introVideo;
-			if (introVideo) {
-				introVideo.currentTime = time;
+			if (introClip && time < introDur) {
+				// Seeking into intro zone — position intro video
+				const introVideo = videoPlaybackRef.current?.introVideo;
+				if (introVideo) {
+					introVideo.currentTime = time;
+				}
+				setCurrentTime(time);
+				return;
 			}
-			setCurrentTime(time);
-			return;
-		}
 
-		// Seeking into main content zone — adjust time to main-video-relative
-		const mainTime = time - introDur;
-		const video = videoPlaybackRef.current?.video;
-		if (!video) return;
-		if (editorState.videoClips.length > 0) {
-			setCurrentTime(time);
-		} else {
-			video.currentTime = mainTime;
-			setCurrentTime(time);
-		}
-	}
+			// Seeking into main content zone — adjust time to main-video-relative
+			const mainTime = time - introDur;
+			const video = videoPlaybackRef.current?.video;
+			if (!video) return;
+			if (editorState.videoClips.length > 0) {
+				setCurrentTime(time);
+			} else {
+				video.currentTime = mainTime;
+				setCurrentTime(time);
+			}
+		},
+		[introClip, introDurationMs, editorState.videoClips.length],
+	);
 
 	const handleSelectZoom = useCallback((id: string | null) => {
 		setSelectedZoomId(id);
@@ -1926,12 +1966,20 @@ export default function VideoEditor() {
 
 	const handleAnnotationTypeChange = useCallback(
 		(id: string, type: AnnotationRegion["type"]) => {
+			// Re-selecting the already-active type must be a no-op. Radix Tabs fires
+			// onValueChange even when the value is unchanged, and rebuilding the region
+			// below would wipe edited caption text back to a placeholder.
+			const current = editorState.annotationRegions.find((r) => r.id === id);
+			if (current && current.type === type) return;
 			pushState((prev) => ({
 				annotationRegions: prev.annotationRegions.map((region) => {
 					if (region.id !== id) return region;
 					const updatedRegion = { ...region, type };
 					if (type === "text") {
-						updatedRegion.content = region.textContent || "Enter text...";
+						// Preserve whatever text the region already holds (auto-captions
+						// only set `content`), never blindly reset to the placeholder.
+						updatedRegion.content = region.textContent || region.content || "Enter text...";
+						updatedRegion.textContent = updatedRegion.content;
 					} else if (type === "image") {
 						updatedRegion.content = region.imageContent || "";
 					} else if (type === "figure") {
@@ -1958,7 +2006,7 @@ export default function VideoEditor() {
 				setSelectedAnnotationId(id);
 			}
 		},
-		[pushState, selectedAnnotationId, selectedBlurId],
+		[pushState, selectedAnnotationId, selectedBlurId, editorState.annotationRegions],
 	);
 
 	const handleAnnotationStyleChange = useCallback(
@@ -2335,22 +2383,18 @@ export default function VideoEditor() {
 		}
 	}, [unsavedExport, handleExportSaved, gifLoop, gifSizePreset]);
 
-	// Video export is a paid feature: free accounts get AI chat only, no video.
-	// Requires sign-in + an active plan (Starter or above). AI usage inside the
-	// editor is metered separately by the backend (per-plan / credits).
+	// Video export is a paid feature gated by the Studio Pro license only.
+	// It does NOT require a backend account sign-in — the Pro gate dialog has
+	// its own "Connect to GuideAI" flow for users who need to upgrade. AI usage
+	// inside the editor is metered separately by the backend (per-plan / credits).
 	const ensurePublishAllowed = useCallback((): boolean => {
-		if (!isBackendAuthed) {
-			toast.info("Sign in to export video.");
-			showLogin();
-			return false;
-		}
 		if (!hasActivePlan) {
-			// Free tier — offer upgrade.
+			// Not Pro — the gate dialog handles connecting / subscribing.
 			setShowPublishGate(true);
 			return false;
 		}
 		return true;
-	}, [isBackendAuthed, hasActivePlan, showLogin]);
+	}, [hasActivePlan]);
 
 	const handleExport = useCallback(
 		async (settings: ExportSettings) => {
@@ -3105,34 +3149,22 @@ export default function VideoEditor() {
 			speedRegions,
 			shadowIntensity,
 			showBlur,
-			motionBlurAmount,
 			borderRadius,
 			padding,
 			cropRegion,
 			cursorRecordingData,
 			annotationRegions,
 			isPlaying,
-			aspectRatio,
-			webcamLayoutPreset,
-			webcamMaskShape,
-			webcamMirrored,
-			webcamReactiveZoom,
-			webcamSizePreset,
-			webcamPosition,
 			exportQuality,
 			mp4FrameRate,
 			encodingMode,
-			pipelineModel,
 			handleExportSaved,
 			cursorTelemetry,
-			cursorClickTimestamps,
 			effectiveShowCursor,
 			cursorSize,
 			cursorSmoothing,
 			cursorMotionBlur,
 			cursorClickBounce,
-			cursorClipToBounds,
-			cursorTheme,
 			t,
 			editorState.introClip,
 			editorState.videoClips,
@@ -3198,7 +3230,6 @@ export default function VideoEditor() {
 		gifLoop,
 		gifSizePreset,
 		gifVideoOnly,
-		aspectRatio,
 		cropRegion,
 		handleExport,
 	]);
@@ -3216,7 +3247,7 @@ export default function VideoEditor() {
 	}, []);
 
 	const generateAutoCaptions = useCallback(
-		async (minWords: number, maxWords: number) => {
+		async (minWords: number, maxWords: number, preferServer: boolean) => {
 			if (!videoPath) {
 				toast.error(t("errors.noVideoLoaded"));
 				return;
@@ -3233,6 +3264,10 @@ export default function VideoEditor() {
 			toast.loading(t("autoCaptions.generating"), { id: AUTO_CAPTION_PROGRESS_TOAST_ID });
 			try {
 				const transcribeOptions = {
+					// The user picks the engine in the dialog: online (account) or free
+					// on-device. Online still falls back to the local WASM engine on any
+					// server failure so a chosen-online run never dead-ends offline.
+					preferServer,
 					onStatus: (phase: "model" | "transcribe") => {
 						if (phase === "model") {
 							toast.loading(t("autoCaptions.loadingModel"), {
@@ -3247,13 +3282,34 @@ export default function VideoEditor() {
 				};
 
 				let allRegions: AnnotationRegion[] = [];
+				// Accumulate segments (with master-timeline offsets applied) so we can
+				// build a CaptionTrack for the Transcript panel after transcription.
+				const allSegments: CaptionSegment[] = [];
+				let trackGranularity: "word" | "phrase" = "word";
 				let runningNumericId = nextAnnotationIdRef.current;
 				let runningZIndex = nextAnnotationZIndexRef.current;
 				let anyTruncated = false;
+				// Tracks whether any source actually yielded usable audio, so we can tell
+				// "no audio at all" apart from "audio present but no speech".
+				let anyAudioProcessed = false;
 
 				// --- Process primary video (offset = 0) ---
-				const { samples, truncated, durationSec } = await extractMono16kFromVideoUrl(videoPath);
-				if (Number.isFinite(durationSec) && durationSec > 0 && samples.length >= 800) {
+				let primaryAudio: Awaited<ReturnType<typeof extractMono16kFromVideoUrl>> | null = null;
+				try {
+					primaryAudio = await extractMono16kFromVideoUrl(videoPath);
+				} catch (audioErr) {
+					// A video with no decodable audio track makes the demuxer throw — treat it
+					// as "no audio" below rather than a hard failure.
+					console.warn("[autoCaptions] no audio extracted from primary video:", audioErr);
+				}
+				if (
+					primaryAudio &&
+					Number.isFinite(primaryAudio.durationSec) &&
+					primaryAudio.durationSec > 0 &&
+					primaryAudio.samples.length >= 800
+				) {
+					anyAudioProcessed = true;
+					const { samples, truncated } = primaryAudio;
 					if (truncated) anyTruncated = true;
 
 					const { samples: speechSamples, trimSec } = trimLeadingSilenceMono16k(samples);
@@ -3264,7 +3320,7 @@ export default function VideoEditor() {
 							trimMs,
 						);
 
-						let { segments: segmentsRaw, granularity } = await transcribeMono16kToSegments(
+						let { segments: segmentsRaw, granularity } = await transcribeSegmentsAuto(
 							speechSamples,
 							{
 								trimRegions: trimRegionsForTranscribe,
@@ -3274,7 +3330,7 @@ export default function VideoEditor() {
 						let transcribedFromTrimmedBuffer = true;
 
 						if (segmentsRaw.length === 0 && trimSec > 0) {
-							({ segments: segmentsRaw, granularity } = await transcribeMono16kToSegments(samples, {
+							({ segments: segmentsRaw, granularity } = await transcribeSegmentsAuto(samples, {
 								trimRegions,
 								...transcribeOptions,
 							}));
@@ -3289,6 +3345,11 @@ export default function VideoEditor() {
 										endSec: s.endSec + trimSec,
 									}))
 								: segmentsRaw;
+
+						if (segments.length > 0) {
+							allSegments.push(...segments);
+							trackGranularity = granularity;
+						}
 
 						let { regions, nextNumericId, nextZIndex } = captionSegmentsToAnnotationRegions(
 							segments,
@@ -3332,6 +3393,7 @@ export default function VideoEditor() {
 						) {
 							continue;
 						}
+						anyAudioProcessed = true;
 						if (clipResult.truncated) anyTruncated = true;
 
 						toast.loading(t("autoCaptions.transcribing"), {
@@ -3339,7 +3401,7 @@ export default function VideoEditor() {
 						});
 
 						const { segments: clipSegmentsRaw, granularity: clipGranularity } =
-							await transcribeMono16kToSegments(clipResult.samples, transcribeOptions);
+							await transcribeSegmentsAuto(clipResult.samples, transcribeOptions);
 
 						if (clipSegmentsRaw.length === 0) continue;
 
@@ -3350,6 +3412,9 @@ export default function VideoEditor() {
 							startSec: s.startSec + offsetSec,
 							endSec: s.endSec + offsetSec,
 						}));
+
+						allSegments.push(...offsetSegments);
+						trackGranularity = clipGranularity;
 
 						let {
 							regions: clipRegions,
@@ -3393,11 +3458,29 @@ export default function VideoEditor() {
 
 				if (allRegions.length === 0) {
 					toast.dismiss(AUTO_CAPTION_PROGRESS_TOAST_ID);
-					toast.info(t("autoCaptions.noneHeard"));
+					// No usable audio anywhere vs. audio that simply had no speech.
+					toast.info(t(anyAudioProcessed ? "autoCaptions.noneHeard" : "autoCaptions.noAudio"));
 					return;
 				}
 
-				pushState((prev) => ({ annotationRegions: [...prev.annotationRegions, ...allRegions] }));
+				// Build a CaptionTrack from the transcript so it shows (and is word-editable)
+				// under the editor's Transcript panel. Sorted by time across all clips.
+				const sortedSegments = [...allSegments].sort((a, b) => a.startSec - b.startSec);
+				const captionTrack =
+					sortedSegments.length > 0
+						? captionSegmentsToTrack(
+								sortedSegments,
+								trackGranularity,
+								preferServer ? "server-whisper" : "whisper-tiny",
+								"en",
+								Date.now(),
+							)
+						: null;
+
+				pushState((prev) => ({
+					annotationRegions: [...prev.annotationRegions, ...allRegions],
+					...(captionTrack ? { captionTrack } : {}),
+				}));
 				nextAnnotationIdRef.current = runningNumericId;
 				nextAnnotationZIndexRef.current = runningZIndex;
 
@@ -3539,6 +3622,159 @@ export default function VideoEditor() {
 		[pushState],
 	);
 
+	// ── AI Chat edit tools ──
+	// The registry the agentic AI Chat can invoke. Each tool wraps a real editor
+	// handler and returns a short confirmation string shown back in the chat.
+	const aiEditTools = useMemo<EditTool[]>(() => {
+		const openPanel = (panel: SettingsPanelMode) => {
+			setShowAIPanel(false);
+			setSettingsPanel(panel);
+			setInspectorOpen(true);
+		};
+		const tools: EditTool[] = [
+			{
+				name: "generate_captions",
+				label: "Auto Captions",
+				description:
+					"Open the Auto Captions dialog to transcribe the video into on-screen captions",
+				run: () => {
+					if (!videoPath) throw new Error("Load a video first.");
+					if (isAutoCaptioningRef.current) throw new Error("Captions are already generating.");
+					setShowAutoCaptionsDialog(true);
+					return "Opened Auto Captions — pick an engine and generate.";
+				},
+			},
+			{
+				name: "magic_polish",
+				label: "Magic Polish",
+				description:
+					"Open Magic Polish, which auto-adds zooms/cursor smoothing from recorded cursor activity",
+				run: () => {
+					if (cursorTelemetry.length === 0 || duration <= 0) {
+						throw new Error("Record a screen with cursor activity first.");
+					}
+					setShowPolishSetup(true);
+					return "Opened Magic Polish setup.";
+				},
+			},
+			{
+				name: "toggle_auto_zoom",
+				label: "Auto Zoom",
+				description: "Turn automatic zoom-to-cursor regions on or off",
+				args: { enabled: "boolean — true to enable, false to disable" },
+				run: (args) => {
+					const enabled = args.enabled !== false;
+					handleToggleAutoZoom(enabled);
+					return `Auto Zoom ${enabled ? "enabled" : "disabled"}.`;
+				},
+			},
+			{
+				name: "open_panel",
+				label: "Open panel",
+				description: "Switch the inspector to a settings panel",
+				args: { panel: "one of: background, effects, layout, cursor, timeline, export" },
+				run: (args) => {
+					const panel = String(args.panel ?? "").toLowerCase();
+					const valid = ["background", "effects", "layout", "cursor", "timeline", "export"];
+					if (!valid.includes(panel)) {
+						throw new Error(`Unknown panel "${panel}". Try: ${valid.join(", ")}.`);
+					}
+					openPanel(panel as SettingsPanelMode);
+					return `Opened the ${panel} panel.`;
+				},
+			},
+			{
+				name: "crop_video",
+				label: "Crop",
+				description: "Open the crop dialog to trim the video frame",
+				run: () => {
+					setShowAIPanel(false);
+					setInspectorOpen(true);
+					setShowCropDialog(true);
+					return "Opened the crop tool.";
+				},
+			},
+			{
+				name: "export_video",
+				label: "Export",
+				description: "Open the export dialog to render and save the video",
+				run: () => {
+					if (!videoPath) throw new Error("Load a video first.");
+					setShowExportDialog(true);
+					return "Opened the export dialog.";
+				},
+			},
+			{
+				name: "seek",
+				label: "Seek",
+				description: "Move the playhead to a timestamp in seconds",
+				args: { seconds: "number — position in seconds" },
+				run: (args) => {
+					const seconds = Number(args.seconds);
+					if (!Number.isFinite(seconds) || seconds < 0)
+						throw new Error("Provide a positive number of seconds.");
+					handleSeek(Math.min(seconds, duration || seconds));
+					return `Jumped to ${seconds.toFixed(1)}s.`;
+				},
+			},
+			{
+				name: "trim_range",
+				label: "Trim range",
+				description:
+					"Cut out a time range from the video by adding a trim region (the range is removed on playback and export)",
+				args: {
+					startSeconds: "number — range start in seconds",
+					endSeconds: "number — range end in seconds (must be greater than start)",
+				},
+				run: (args) => {
+					if (!videoPath) throw new Error("Load a video first.");
+					const start = Number(args.startSeconds);
+					const end = Number(args.endSeconds);
+					if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start) {
+						throw new Error("Provide a valid start and end in seconds (end after start).");
+					}
+					const cap = duration > 0 ? duration : end;
+					const startMs = Math.round(Math.min(start, cap) * 1000);
+					const endMs = Math.round(Math.min(end, cap) * 1000);
+					handleTrimAdded({ start: startMs, end: endMs });
+					return `Trimmed out ${start.toFixed(1)}s–${end.toFixed(1)}s.`;
+				},
+			},
+			{
+				name: "create_intro",
+				label: "Create intro",
+				description: "Render a title-card intro video and add it to the start of the project",
+				args: {
+					title: "string — the intro title text",
+					subtitle: "string (optional) — a smaller line under the title",
+				},
+				run: async (args) => {
+					const title = String(args.title ?? "").trim() || "Intro";
+					const subtitle = String(args.subtitle ?? "").trim();
+					const config: IntroConfig = {
+						...DEFAULT_INTRO_CONFIG,
+						title,
+						subtitle,
+					};
+					const clip = await buildIntroClip(config);
+					if (!clip) throw new Error("Could not render the intro video.");
+					handleInsertIntroClip(clip);
+					return `Created an intro titled "${title}" and added it to the start.`;
+				},
+			},
+		];
+		return tools;
+	}, [
+		videoPath,
+		cursorTelemetry.length,
+		duration,
+		handleToggleAutoZoom,
+		handleSeek,
+		handleTrimAdded,
+		buildIntroClip,
+		handleInsertIntroClip,
+	]);
+
 	const handleScreenshot = useCallback(async () => {
 		const container = videoPlaybackRef.current?.containerRef?.current ?? playerContainerRef.current;
 		if (!container) {
@@ -3671,7 +3907,15 @@ export default function VideoEditor() {
 				</DialogContent>
 			</Dialog>
 
-			<Dialog open={showAutoCaptionsDialog} onOpenChange={setShowAutoCaptionsDialog}>
+			<Dialog
+				open={showAutoCaptionsDialog}
+				onOpenChange={(open) => {
+					// When opening, default to the online engine if the user is signed in,
+					// otherwise the free on-device engine (online would just fall back).
+					if (open) setCaptionEngine(isBackendAuthed ? "online" : "free");
+					setShowAutoCaptionsDialog(open);
+				}}
+			>
 				<DialogContent
 					className="sm:max-w-md"
 					style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
@@ -3681,6 +3925,26 @@ export default function VideoEditor() {
 						<DialogDescription>{t("autoCaptions.dialogDescription")}</DialogDescription>
 					</DialogHeader>
 					<div className="grid gap-4 py-2">
+						<div className="grid gap-2">
+							<Label htmlFor="caption-engine">{t("autoCaptions.engineLabel")}</Label>
+							<Select
+								value={captionEngine}
+								onValueChange={(v) => setCaptionEngine(v as "online" | "free")}
+							>
+								<SelectTrigger id="caption-engine" className="h-9">
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="online" disabled={!isBackendAuthed}>
+										{t("autoCaptions.engineOnline")}
+									</SelectItem>
+									<SelectItem value="free">{t("autoCaptions.engineFree")}</SelectItem>
+								</SelectContent>
+							</Select>
+							{!isBackendAuthed && (
+								<p className="text-[11px] text-white/40">{t("autoCaptions.engineOnlineSignIn")}</p>
+							)}
+						</div>
 						<div className="grid gap-2">
 							<Label htmlFor="caption-min-words">{t("autoCaptions.minWords")}</Label>
 							<Select
@@ -3740,7 +4004,11 @@ export default function VideoEditor() {
 							disabled={isAutoCaptioning}
 							onClick={() => {
 								setShowAutoCaptionsDialog(false);
-								void generateAutoCaptions(captionWordsMin, captionWordsMax);
+								void generateAutoCaptions(
+									captionWordsMin,
+									captionWordsMax,
+									captionEngine === "online" && isBackendAuthed,
+								);
 							}}
 							className="bg-[#6E6BFF] text-white hover:bg-[#6E6BFF]/90"
 						>
@@ -3767,6 +4035,7 @@ export default function VideoEditor() {
 							<button
 								type="button"
 								data-testid={getTestId("export-panel-button")}
+								data-tour="export"
 								onClick={() => {
 									setShowAIPanel(false);
 									setInspectorOpen(true);
@@ -3860,6 +4129,19 @@ export default function VideoEditor() {
 					>
 						<Save size={14} className="text-white/50 group-hover:text-white/80 transition-colors" />
 					</button>
+					{videoPath && (
+						<button
+							type="button"
+							onClick={startTour}
+							className="group p-1.5 rounded-lg hover:bg-white/[0.06] transition-all duration-150"
+							title={t("tour.start")}
+						>
+							<HelpCircle
+								size={14}
+								className="text-white/50 group-hover:text-[#8B89FF] transition-colors"
+							/>
+						</button>
+					)}
 					<div className="w-px h-4 bg-white/[0.08] mx-1" />
 					{/* Language selector */}
 					<div className="relative group">
@@ -3963,20 +4245,9 @@ export default function VideoEditor() {
 										<div className="editor-inspector-rail order-2 w-[324px] flex-shrink-0 h-full flex flex-col">
 											{/* Settings or AI panel content */}
 											{showAIPanel ? (
-												<div className="flex-1 min-h-0">
+												<div className="flex-1 min-h-0 flex flex-col">
 													{aiPanelMode === "chat" ? (
-														<div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
-															<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#6E6BFF]/10 border border-[#6E6BFF]/30">
-																<Bot size={22} className="text-[#6E6BFF]" />
-															</div>
-															<div className="text-sm font-medium text-white/90">
-																AI editing — coming soon
-															</div>
-															<p className="max-w-[240px] text-xs leading-relaxed text-white/50">
-																Editing your video by chatting with AI is on the way. For now, use
-																the AI tools tab for captions, zoom, and polish.
-															</p>
-														</div>
+														<AIChatPanel editTools={aiEditTools} />
 													) : (
 														<AIPanelSidebar
 															editorState={editorState}
@@ -4230,7 +4501,10 @@ export default function VideoEditor() {
 										</div>
 									)}
 
-									<div className="editor-preview-zone order-1 min-w-0 h-full flex-1">
+									<div
+										data-tour="preview"
+										className="editor-preview-zone order-1 min-w-0 h-full flex-1"
+									>
 										<div
 											ref={playerContainerRef}
 											className={
@@ -4355,7 +4629,10 @@ export default function VideoEditor() {
 
 							{/* Full-width timeline */}
 							<Panel defaultSize={40} maxSize={56} minSize={26} className="min-h-[220px]">
-								<div className="editor-timeline-panel h-full overflow-hidden flex flex-col">
+								<div
+									data-tour="timeline"
+									className="editor-timeline-panel h-full overflow-hidden flex flex-col"
+								>
 									<div className="editor-timeline-header flex items-center h-11 flex-shrink-0 gap-2 px-3 border-b border-white/[0.06]">
 										<PlaybackControls
 											variant="docked"

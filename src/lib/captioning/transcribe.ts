@@ -26,6 +26,13 @@ export interface TranscribeWorkerRequest {
 	useLocalModels: boolean;
 	/** Base URL of bundled resources (packaged: resourcesPath file:// URL); used when `useLocalModels`. */
 	assetBaseUrl?: string;
+	/**
+	 * Base file:// URL (trailing slash) whose `Xenova/whisper-tiny/...` holds the model weights.
+	 * Resolved by the main process (bundled or downloaded to userData on first use). Used as
+	 * transformers.js `env.localModelPath` when `useLocalModels`. ORT wasm still comes from
+	 * `assetBaseUrl` (bundled caption-assets/ort).
+	 */
+	modelBaseUrl?: string;
 }
 
 /** Messages the transcription worker posts back to the renderer. */
@@ -93,14 +100,32 @@ export function transcribeMono16kToSegments(
 		const assetBaseUrl =
 			typeof window !== "undefined" ? window.electronAPI?.assetBaseUrl : undefined;
 
-		// Structured-clone copy, not a transfer: the caller may reuse `samples` for the
-		// full-buffer retry pass, so the buffer must stay valid here.
-		const request: TranscribeWorkerRequest = {
-			samples,
-			trimRegions: options?.trimRegions ?? [],
-			useLocalModels,
-			assetBaseUrl,
+		// The model weights are no longer bundled; the main process ensures they exist locally
+		// (downloading ~45MB to userData on first use) and returns the base URL. ORT wasm stays
+		// bundled (assetBaseUrl). Surface this as the "model" phase so existing UI shows progress.
+		const start = async () => {
+			let modelBaseUrl: string | undefined;
+			if (
+				useLocalModels &&
+				typeof window !== "undefined" &&
+				window.electronAPI?.ensureCaptionModel
+			) {
+				options?.onStatus?.("model");
+				modelBaseUrl = await window.electronAPI.ensureCaptionModel();
+			}
+			// Structured-clone copy, not a transfer: the caller may reuse `samples` for the
+			// full-buffer retry pass, so the buffer must stay valid here.
+			const request: TranscribeWorkerRequest = {
+				samples,
+				trimRegions: options?.trimRegions ?? [],
+				useLocalModels,
+				assetBaseUrl,
+				modelBaseUrl,
+			};
+			worker.postMessage(request);
 		};
-		worker.postMessage(request);
+		start().catch((err) =>
+			finish(() => reject(err instanceof Error ? err : new Error(String(err)))),
+		);
 	});
 }

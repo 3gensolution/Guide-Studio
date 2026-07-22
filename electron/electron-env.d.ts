@@ -80,6 +80,7 @@ interface Window {
 		}>;
 		assetBaseUrl: string;
 		getAssetBasePath: () => Promise<string | null>;
+		ensureCaptionModel: () => Promise<string>;
 		storeRecordedVideo: (
 			videoData: ArrayBuffer,
 			fileName: string,
@@ -430,6 +431,10 @@ interface Window {
 		revealInFolder: (
 			filePath: string,
 		) => Promise<{ success: boolean; error?: string; message?: string }>;
+		saveAudioAs: (
+			sourcePath: string,
+			defaultFileName: string,
+		) => Promise<{ success: boolean; path?: string; canceled?: boolean; error?: string }>;
 		getShortcuts: () => Promise<Record<string, unknown> | null>;
 		saveShortcuts: (shortcuts: unknown) => Promise<{ success: boolean; error?: string }>;
 		updateGlobalShortcut: (binding: {
@@ -658,6 +663,29 @@ interface Window {
 		}>;
 		lottieDownload: (
 			lottieUrl: string,
+			name: string,
+		) => Promise<{ success: boolean; filePath?: string; error?: string }>;
+
+		// Free music search (Openverse)
+		freeMusicSearch: (
+			query: string,
+			page?: number,
+			pageSize?: number,
+		) => Promise<{
+			results: Array<{
+				id: string;
+				title: string;
+				creator: string;
+				audioUrl: string;
+				license: string;
+				licenseUrl: string;
+				durationMs: number;
+				sourceUrl: string;
+			}>;
+			error?: string;
+		}>;
+		freeMusicDownload: (
+			audioUrl: string,
 			name: string,
 		) => Promise<{ success: boolean; filePath?: string; error?: string }>;
 

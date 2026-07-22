@@ -343,6 +343,9 @@ export function AnnotationOverlay({
 							alt="Annotation"
 							className="w-full h-full object-contain"
 							draggable={false}
+							// Decode off the main thread so a large data-URL image
+							// doesn't block the renderer (frozen UI / stalled cursor).
+							decoding="async"
 						/>
 					);
 				}

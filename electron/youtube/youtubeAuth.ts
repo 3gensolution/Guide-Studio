@@ -4,9 +4,12 @@
 // to YouTube Data API v3 with resumable uploads and progress tracking.
 
 import fs from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
+// Per-API package instead of the `googleapis` meta-package (which bundles every Google API,
+// ~34MB) — we only use YouTube Data v3 + OAuth2.
+import { auth as googleAuth, youtube as youtubeApi } from "@googleapis/youtube";
 import { app, BrowserWindow } from "electron";
-import { google } from "googleapis";
 
 const SCOPES = ["https://www.googleapis.com/auth/youtube.upload"];
 const TOKEN_PATH = path.join(app.getPath("userData"), "youtube-tokens.json");
@@ -15,6 +18,12 @@ const TOKEN_PATH = path.join(app.getPath("userData"), "youtube-tokens.json");
 let clientId = process.env.YOUTUBE_CLIENT_ID || "";
 let clientSecret = process.env.YOUTUBE_CLIENT_SECRET || "";
 const REDIRECT_URI = "http://localhost:19284/oauth2callback";
+
+interface StoredTokens {
+	access_token?: string;
+	refresh_token?: string;
+	[key: string]: unknown;
+}
 
 export function setYouTubeCredentials(id: string, secret: string) {
 	clientId = id;
@@ -27,7 +36,7 @@ function getOAuth2Client() {
 			"YouTube API credentials not configured. Set Client ID and Secret in Settings → YouTube.",
 		);
 	}
-	return new google.auth.OAuth2(clientId, clientSecret, REDIRECT_URI);
+	return new googleAuth.OAuth2(clientId, clientSecret, REDIRECT_URI);
 }
 
 /** Check if we have stored tokens */
@@ -42,9 +51,9 @@ export function isYouTubeConnected(): boolean {
 }
 
 /** Get stored tokens or null */
-function getStoredTokens(): any | null {
+function getStoredTokens(): StoredTokens | null {
 	try {
-		return JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
+		return JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8")) as StoredTokens;
 	} catch {
 		return null;
 	}
@@ -63,7 +72,7 @@ export async function authenticateYouTube(): Promise<{ success: boolean; error?:
 	return new Promise((resolve) => {
 		// Start a tiny HTTP server to capture the OAuth redirect
 		const http = require("node:http");
-		const server = http.createServer(async (req: any, res: any) => {
+		const server = http.createServer(async (req: IncomingMessage, res: ServerResponse) => {
 			const url = new URL(req.url, `http://localhost:19284`);
 			const code = url.searchParams.get("code");
 
@@ -140,7 +149,7 @@ export async function uploadToYouTube(opts: {
 		fs.writeFileSync(TOKEN_PATH, JSON.stringify(merged, null, 2));
 	});
 
-	const youtube = google.youtube({ version: "v3", auth: oauth2Client });
+	const youtube = youtubeApi({ version: "v3", auth: oauth2Client });
 
 	const fileSize = fs.statSync(opts.filePath).size;
 
@@ -175,12 +184,14 @@ export async function uploadToYouTube(opts: {
 			videoId: videoId || undefined,
 			url: videoId ? `https://www.youtube.com/watch?v=${videoId}` : undefined,
 		};
-	} catch (err: any) {
+	} catch (err: unknown) {
 		// Check for expired/revoked tokens
-		if (err.code === 401 || err.code === 403) {
+		const code =
+			typeof err === "object" && err !== null ? (err as { code?: number }).code : undefined;
+		if (code === 401 || code === 403) {
 			disconnectYouTube();
 			return { success: false, error: "YouTube access expired. Please reconnect." };
 		}
-		return { success: false, error: err.message || String(err) };
+		return { success: false, error: err instanceof Error ? err.message : String(err) };
 	}
 }

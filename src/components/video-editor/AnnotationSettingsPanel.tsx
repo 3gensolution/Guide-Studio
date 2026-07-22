@@ -30,6 +30,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useScopedT } from "@/contexts/I18nContext";
 import { normalizeTextAnimation, TEXT_ANIMATION_OPTIONS } from "@/lib/annotationTextAnimation";
 import { type CustomFont, getCustomFonts } from "@/lib/customFonts";
+import { fileToDownscaledDataUrl } from "@/lib/media/imageResize";
 import { cn } from "@/lib/utils";
 import ColorPicker from "../ui/color-picker";
 import { AddCustomFontDialog } from "./AddCustomFontDialog";
@@ -146,23 +147,22 @@ export function AnnotationSettingsPanel({
 			return;
 		}
 
-		const reader = new FileReader();
-
-		reader.onload = (e) => {
-			const dataUrl = e.target?.result as string;
-			if (dataUrl) {
-				onContentChange(dataUrl);
-				toast.success(t("annotation.imageUploadSuccess"));
-			}
-		};
-
-		reader.onerror = () => {
-			toast.error(t("annotation.failedImageUpload"), {
-				description: "There was an error reading the file.",
+		// Downscale before storing: the raw file becomes an inline base64 data
+		// URL that lives in editor state and is decoded on the main thread on
+		// every paint — a large photo freezes the UI and stalls the cursor.
+		fileToDownscaledDataUrl(file)
+			.then((dataUrl) => {
+				if (dataUrl) {
+					onContentChange(dataUrl);
+					toast.success(t("annotation.imageUploadSuccess"));
+				}
+			})
+			.catch(() => {
+				toast.error(t("annotation.failedImageUpload"), {
+					description: "There was an error reading the file.",
+				});
 			});
-		};
 
-		reader.readAsDataURL(file);
 		event.target.value = "";
 	};
 

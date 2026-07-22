@@ -24,6 +24,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	getAssetBasePath: async () => {
 		return await ipcRenderer.invoke("get-asset-base-path");
 	},
+	// Ensures the Whisper caption model is available locally (downloads on first use in the
+	// packaged app) and returns a file:// URL for transformers.js `env.localModelPath`.
+	ensureCaptionModel: async (): Promise<string> => {
+		return await ipcRenderer.invoke("ensure-caption-model");
+	},
 
 	// ── Native bridge (Guide Studio) ──
 	invokeNativeBridge: <TData>(request: NativeBridgeRequest) => {
@@ -335,6 +340,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	},
 	revealInFolder: (filePath: string) => {
 		return ipcRenderer.invoke("reveal-in-folder", filePath);
+	},
+	saveAudioAs: (sourcePath: string, defaultFileName: string) => {
+		return ipcRenderer.invoke("save-audio-as", sourcePath, defaultFileName);
 	},
 	getShortcuts: () => {
 		return ipcRenderer.invoke("get-shortcuts");
@@ -813,6 +821,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	},
 	lottieDownload: (lottieUrl: string, name: string) => {
 		return ipcRenderer.invoke("lottie-download", lottieUrl, name);
+	},
+
+	// ── Free music search (Openverse) ──
+	freeMusicSearch: (query: string, page?: number, pageSize?: number) => {
+		return ipcRenderer.invoke("free-music-search", query, page, pageSize);
+	},
+	freeMusicDownload: (audioUrl: string, name: string) => {
+		return ipcRenderer.invoke("free-music-download", audioUrl, name);
 	},
 
 	// ── Remotion SSR Export ──

@@ -1,4 +1,35 @@
 {
+	"tour": {
+		"start": "Take a tour",
+		"progress": "{{current}} of {{total}}",
+		"next": "Next",
+		"back": "Back",
+		"done": "Got it",
+		"welcome": {
+			"title": "Welcome to Guide Studio",
+			"description": "Here's a 30-second tour of the editor. You can replay it any time from the help button up top."
+		},
+		"toolRail": {
+			"title": "Your toolbox",
+			"description": "Every editing tool lives here — backgrounds, effects, layout, cursor, and crop. Click an icon to open its panel."
+		},
+		"preview": {
+			"title": "Live preview",
+			"description": "See your guide render exactly as it will export, updating live as you make changes."
+		},
+		"timeline": {
+			"title": "The timeline",
+			"description": "Trim, split, and reorder clips, add zooms, and fine-tune captions along the track."
+		},
+		"ai": {
+			"title": "AI superpowers",
+			"description": "One click for auto-polish, captions, and AI voiceover — or chat with the editor to make edits for you."
+		},
+		"export": {
+			"title": "Export & publish",
+			"description": "When you're happy, export to MP4 or GIF, or publish your guide as a shareable kit."
+		}
+	},
 	"newRecording": {
 		"title": "녹화로 돌아가기",
 		"description": "현재 세션이 저장되었습니다.",

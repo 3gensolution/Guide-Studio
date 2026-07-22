@@ -46,22 +46,36 @@ function withoutNodeVersion<T>(fn: () => Promise<T>): Promise<T> {
 async function loadTranscriber(opts: {
 	useLocalModels: boolean;
 	assetBaseUrl?: string;
+	modelBaseUrl?: string;
 }): Promise<TranscriberFn> {
 	return withoutNodeVersion(async () => {
 		const { pipeline, env } = await import("@xenova/transformers");
 		if (opts.useLocalModels && opts.assetBaseUrl) {
-			// Packaged app: load the bundled model and ORT wasm from disk so transcription
+			// Packaged app: load the model and bundled ORT wasm from disk so transcription
 			// needs no network and works under file:// (remote HuggingFace/CDN fetches fail there).
+			// ORT wasm ships in caption-assets/ort; the model dir is resolved by the main process
+			// (bundled or downloaded to userData) and passed as modelBaseUrl. Fall back to the old
+			// bundled caption-assets/models layout when modelBaseUrl is absent.
 			const base = new URL("caption-assets/", opts.assetBaseUrl).href;
 			env.allowLocalModels = true;
 			env.allowRemoteModels = false;
-			env.localModelPath = new URL("models/", base).href;
+			env.localModelPath = opts.modelBaseUrl ?? new URL("models/", base).href;
 			env.backends.onnx.wasm.wasmPaths = new URL("ort/", base).href;
 			// Non-threaded wasm: SharedArrayBuffer isn't available under file:// (no cross-origin isolation).
 			env.backends.onnx.wasm.numThreads = 1;
 		} else {
-			// Dev (http://localhost): fetch from the remote CDN, which works there.
+			// Dev (http://localhost): fetch model weights from the remote hub, which works there.
 			env.allowLocalModels = false;
+			// Pin the ORT wasm to the CDN. Without an explicit wasmPaths, onnxruntime-web
+			// resolves `ort-wasm-simd.wasm` relative to the page; the Vite dev server answers
+			// unknown paths with index.html, so ORT tries to compile HTML and throws
+			// "CompileError: expected magic word". The version must track the installed
+			// @xenova/transformers (its dist ships matching ORT wasm binaries).
+			env.backends.onnx.wasm.wasmPaths =
+				"https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/";
+			// No cross-origin isolation on the dev server (no SharedArrayBuffer), so force the
+			// single-threaded wasm — the threaded variant would fail to instantiate.
+			env.backends.onnx.wasm.numThreads = 1;
 		}
 		// Default tiny weights only: the `output_attentions` revision regresses inference in
 		// some environments (empty chunks, thrown errors) while phrase mode works on this model.
@@ -74,10 +88,10 @@ async function loadTranscriber(opts: {
 }
 
 self.onmessage = async (event: MessageEvent<TranscribeWorkerRequest>) => {
-	const { samples, trimRegions, useLocalModels, assetBaseUrl } = event.data;
+	const { samples, trimRegions, useLocalModels, assetBaseUrl, modelBaseUrl } = event.data;
 	try {
 		post({ type: "status", phase: "model" });
-		const transcriber = await loadTranscriber({ useLocalModels, assetBaseUrl });
+		const transcriber = await loadTranscriber({ useLocalModels, assetBaseUrl, modelBaseUrl });
 
 		post({ type: "status", phase: "transcribe" });
 		const { segments, granularity } = await runTranscription(

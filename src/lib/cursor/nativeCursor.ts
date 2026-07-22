@@ -16,7 +16,7 @@ import textUrl from "@/assets/cursors/Cursor=Text-Cursor.svg";
 import upArrowUrl from "@/assets/cursors/Cursor=Up-Arrow.svg";
 import waitUrl from "@/assets/cursors/Cursor=Wait.svg";
 import type { CropRegion } from "@/components/video-editor/types";
-import { getAssetPath } from "@/lib/assetPath";
+import { getAssetPathSync } from "@/lib/assetPath";
 import { DEFAULT_CURSOR_THEME_ID, getCursorTheme } from "@/lib/cursor/cursorThemes";
 import type {
 	CursorRecordingData,
@@ -567,7 +567,11 @@ function resolveThemedCursorAsset(
 	}
 	try {
 		return {
-			imageDataUrl: getAssetPath(themeAsset.assetPath) as unknown as string,
+			// Must be synchronous: this runs inside the per-frame render loop and
+			// the URL is assigned straight to img.src / Texture.from. The async
+			// getAssetPath returns a Promise, which coerced to "[object Promise]"
+			// (broken-image box) and threw in Texture.from, freezing playback.
+			imageDataUrl: getAssetPathSync(themeAsset.assetPath),
 			width: themeAsset.width,
 			height: themeAsset.height,
 			hotspotX: themeAsset.hotspotX,

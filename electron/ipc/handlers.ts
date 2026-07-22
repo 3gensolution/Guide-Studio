@@ -2367,6 +2367,25 @@ export function registerIpcHandlers(
 		return resolveAssetBasePath();
 	});
 
+	// Resolve the caption model dir for transformers.js `env.localModelPath`. The ~45MB
+	// Whisper weights are no longer bundled; if a build still ships them use those, otherwise
+	// download to userData on first use (idempotent, then fully offline). Returns a file:// URL
+	// (parent of `Xenova/...`, trailing slash) or throws with a user-facing message if offline.
+	ipcMain.handle("ensure-caption-model", async () => {
+		if (app.isPackaged) {
+			const bundled = path.join(process.resourcesPath, "caption-assets", "models");
+			const marker = path.join(bundled, "Xenova", "whisper-tiny", "config.json");
+			try {
+				await fs.access(marker, fsConstants.R_OK);
+				return pathToFileURL(`${bundled}${path.sep}`).toString();
+			} catch {
+				// Not bundled — fall through to download.
+			}
+		}
+		const { ensureCaptionModelDir } = await import("../ai/captionModelDownload");
+		return ensureCaptionModelDir();
+	});
+
 	ipcMain.handle("pick-export-save-path", async (_, fileName: string, exportFolder?: string) => {
 		try {
 			const isGif = fileName.toLowerCase().endsWith(".gif");
@@ -2920,6 +2939,31 @@ export function registerIpcHandlers(
 			}
 		},
 	);
+
+	// Copy an already-saved local audio file to a user-chosen destination via a
+	// real Save-As dialog (defaults to the Downloads folder). Lets people keep the
+	// generated/uploaded track anywhere, not just inside the app's data folder.
+	ipcMain.handle("save-audio-as", async (_, sourcePath: string, defaultFileName: string) => {
+		const ext = path.extname(sourcePath) || ".mp3";
+		const base = defaultFileName.replace(/[^a-zA-Z0-9-_ ]/g, "_").trim() || "background-music";
+		const suggested = base.endsWith(ext) ? base : `${base}${ext}`;
+		const { filePath, canceled } = await dialog.showSaveDialog({
+			title: "Save Audio Track",
+			defaultPath: path.join(app.getPath("downloads"), suggested),
+			filters: [{ name: "Audio", extensions: [ext.replace(/^\./, "") || "mp3"] }],
+			properties: ["createDirectory", "showOverwriteConfirmation"],
+		});
+
+		if (canceled || !filePath) return { success: false, canceled: true };
+
+		try {
+			await fs.copyFile(sourcePath, filePath);
+			return { success: true, path: filePath };
+		} catch (error) {
+			console.error("Failed to save audio file:", error);
+			return { success: false, error: String(error) };
+		}
+	});
 
 	registerNativeBridgeHandlers({
 		getPlatform: () => process.platform,

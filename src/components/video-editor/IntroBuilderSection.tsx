@@ -44,6 +44,7 @@ import {
 	type IntroTextPosition,
 	POSITION_LABELS,
 } from "@/lib/intro/introTypes";
+import { fileToDownscaledDataUrl } from "@/lib/media/imageResize";
 import type { VideoClip } from "./types";
 
 interface IntroBuilderSectionProps {
@@ -100,12 +101,12 @@ export function IntroBuilderSection({
 				return;
 			}
 
-			const reader = new FileReader();
-			reader.onload = (e) => {
-				const dataUrl = e.target?.result as string;
-				if (!dataUrl) return;
+			const role = fileInputRoleRef.current;
 
-				const role = fileInputRoleRef.current;
+			// Downscale before storing as an inline base64 data URL to avoid
+			// bloating intro config and stalling the main thread on decode.
+			fileToDownscaledDataUrl(file).then((dataUrl) => {
+				if (!dataUrl) return;
 
 				if (role === "background") {
 					updateConfig("customBackgroundImage", dataUrl);
@@ -120,8 +121,7 @@ export function IntroBuilderSection({
 					};
 					setConfig((prev) => ({ ...prev, images: [...prev.images, entry] }));
 				}
-			};
-			reader.readAsDataURL(file);
+			});
 			event.target.value = "";
 		},
 		[updateConfig],

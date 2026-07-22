@@ -208,28 +208,37 @@ export class AIService {
 		  }
 		| { success: false; error: string }
 	> {
-		// STT endpoint expects multipart/form-data, not JSON
-		const formData = new FormData();
-		formData.append("audio", audioFile);
-		if (language) {
-			formData.append("language", language);
-		}
-
+		// STT endpoint expects multipart/form-data, not JSON. FormData sets its own
+		// multipart Content-Type/boundary, so we never set that header manually.
 		const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
 		const url = `${baseUrl}${STUDIO_PREFIX}/stt/transcribe`;
+		const apiKey = import.meta.env.VITE_API_KEY as string | undefined;
+
+		// A fresh FormData per attempt: a body stream can only be sent once, so the
+		// post-refresh retry below needs its own instance.
+		const buildForm = () => {
+			const form = new FormData();
+			form.append("audio", audioFile);
+			if (language) form.append("language", language);
+			return form;
+		};
+
+		const send = async (token: string | null): Promise<Response> => {
+			const headers: Record<string, string> = {};
+			if (token) headers.Authorization = `Bearer ${token}`;
+			if (apiKey) headers["X-API-Key"] = apiKey;
+			return fetch(url, { method: "POST", headers, body: buildForm() });
+		};
 
 		try {
-			const token = apiClient.getAccessToken();
-			const headers: Record<string, string> = {};
-			if (token) {
-				headers.Authorization = `Bearer ${token}`;
-			}
+			let response = await send(apiClient.getAccessToken());
 
-			const response = await fetch(url, {
-				method: "POST",
-				headers,
-				body: formData,
-			});
+			// Mirror apiClient.request: access tokens expire after ~30 min, so on a 401
+			// refresh once and retry. Without this the raw fetch fails on an expired
+			// token while every other AI call transparently recovers.
+			if (response.status === 401 && (await apiClient.refreshAccessToken())) {
+				response = await send(apiClient.getAccessToken());
+			}
 
 			if (!response.ok) {
 				const error = await response.json().catch(() => ({ detail: response.statusText }));
@@ -256,13 +265,16 @@ export class AIService {
 	}
 
 	// Music Generation (Replicate MusicGen)
+	// MusicGen render time scales with the requested duration, so callers asking
+	// for long tracks should pass a longer `timeoutMs` than the client default (30s).
 	async generateMusic(
 		request: MusicGenerationRequest,
+		timeoutMs?: number,
 	): Promise<
 		| { success: true; data: { audioUrl: string; duration: number } }
 		| { success: false; error: string }
 	> {
-		return apiClient.post(`${STUDIO_PREFIX}/music/generate`, request);
+		return apiClient.post(`${STUDIO_PREFIX}/music/generate`, request, timeoutMs);
 	}
 
 	// SFX Generation (not yet implemented in backend)

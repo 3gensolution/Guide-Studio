@@ -62,6 +62,7 @@ import {
 	formatEstimatedSize,
 	getRecommendedMp4ExportSettings,
 } from "@/lib/exporter/exportRecommendation";
+import { fileToDownscaledDataUrl } from "@/lib/media/imageResize";
 import { cn } from "@/lib/utils";
 import { resolveImageWallpaperUrl, WALLPAPER_PATHS } from "@/lib/wallpaper";
 import { type AspectRatio, isPortraitAspectRatio } from "@/utils/aspectRatioUtils";
@@ -821,24 +822,22 @@ export function SettingsPanel({
 			return;
 		}
 
-		const reader = new FileReader();
-
-		reader.onload = (e) => {
-			const dataUrl = e.target?.result as string;
-			if (dataUrl) {
-				setCustomImages((prev) => [...prev, dataUrl]);
-				onWallpaperChange(dataUrl);
-				toast.success(t("imageUpload.uploadSuccess"));
-			}
-		};
-
-		reader.onerror = () => {
-			toast.error(t("imageUpload.failedToUpload"), {
-				description: t("imageUpload.errorReading"),
+		// Downscale before storing: a raw full-resolution wallpaper becomes a
+		// huge inline base64 string in editor state and stalls the main thread.
+		fileToDownscaledDataUrl(file, { maxDimension: 2560 })
+			.then((dataUrl) => {
+				if (dataUrl) {
+					setCustomImages((prev) => [...prev, dataUrl]);
+					onWallpaperChange(dataUrl);
+					toast.success(t("imageUpload.uploadSuccess"));
+				}
+			})
+			.catch(() => {
+				toast.error(t("imageUpload.failedToUpload"), {
+					description: t("imageUpload.errorReading"),
+				});
 			});
-		};
 
-		reader.readAsDataURL(file);
 		// Reset input so the same file can be selected again
 		event.target.value = "";
 	};
@@ -2223,7 +2222,6 @@ export function SettingsPanel({
 											Beta
 										</span>
 									</div>
-									<span className="text-[9px] text-slate-500">Fastest backend with fallback</span>
 								</div>
 							)}
 
@@ -2234,7 +2232,7 @@ export function SettingsPanel({
 											<div className="flex items-center justify-between px-0.5 text-[10px] leading-none text-slate-500">
 												<span>{t("exportQuality.title")}</span>
 												<span>
-													Source {sourceDimensions.width}x{sourceDimensions.height}
+													Original {sourceDimensions.width}x{sourceDimensions.height}
 												</span>
 											</div>
 										)}
