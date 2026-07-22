@@ -73,7 +73,8 @@ export async function authenticateYouTube(): Promise<{ success: boolean; error?:
 		// Start a tiny HTTP server to capture the OAuth redirect
 		const http = require("node:http");
 		const server = http.createServer(async (req: IncomingMessage, res: ServerResponse) => {
-			const url = new URL(req.url, `http://localhost:19284`);
+			const requestUrl = req.url ?? "/";
+			const url = new URL(requestUrl, "http://localhost:19284");
 			const code = url.searchParams.get("code");
 
 			if (code) {

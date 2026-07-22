@@ -22,8 +22,10 @@
     <key>com.apple.security.device.camera</key>
     <true/>
 
-    <!-- Screen recording (required for desktopCapturer.getSources() on macOS 10.15+) -->
-    <key>com.apple.security.device.screen-capture</key>
-    <true/>
+    <!--
+      Screen recording is authorized by macOS TCC, not by a code-signing
+      entitlement. Keep the signing identity stable so TCC can retain that
+      authorization across app updates.
+    -->
 </dict>
 </plist>

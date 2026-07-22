@@ -65,8 +65,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	startNewRecording: () => {
 		return ipcRenderer.invoke("start-new-recording");
 	},
-	openSourceSelector: () => {
-		return ipcRenderer.invoke("open-source-selector");
+	openSourceSelector: (options?: { skipPermissionCheck?: boolean }) => {
+		return ipcRenderer.invoke("open-source-selector", options);
 	},
 	selectSource: (source: ProcessedDesktopSource) => {
 		return ipcRenderer.invoke("select-source", source);

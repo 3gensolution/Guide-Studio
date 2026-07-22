@@ -48,7 +48,7 @@ interface Window {
 		switchToEditor: () => Promise<void>;
 		switchToHud: () => Promise<void>;
 		startNewRecording: () => Promise<{ success: boolean; error?: string }>;
-		openSourceSelector: () => Promise<{
+		openSourceSelector: (options?: { skipPermissionCheck?: boolean }) => Promise<{
 			opened: boolean;
 			reason?: string;
 			access?: {

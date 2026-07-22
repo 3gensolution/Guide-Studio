@@ -75,6 +75,31 @@ After running this command, proceed to **System Preferences > Security & Privacy
 > [!NOTE]
 > **Upgrading from an older version and hitting permission issues?** If you already had Guide Studio installed and the new version won't record (Screen Recording or Accessibility keep failing even after you grant them), uninstall the old version, remove Guide Studio's existing entries under **System Settings > Privacy & Security** (both Screen Recording and Accessibility), then do a fresh install and grant the permissions again when prompted.
 
+### Building a macOS DMG
+
+Use `npm run build:mac` for a distributable macOS release. It requires a **Developer ID Application** certificate and a notarization profile in `.env`:
+
+```bash
+SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+NOTARY_PROFILE="your-notarytool-keychain-profile"
+```
+
+The release script checks the final app signature and stops if Electron Builder falls back to ad-hoc signing. This is important for screen recording: macOS stores that permission against the app's signing identity. An ad-hoc build gets a new identity every time its code changes, so its Screen Recording toggle cannot persist across rebuilds.
+
+`npm run build` (the same as `npm run build:mac:unsigned`) is for a local test DMG. Do not distribute it or expect Screen Recording permission to survive a rebuild. Each time you install a newly built unsigned copy, reset the old entry first, then open the app from `/Applications` — not directly from the mounted DMG:
+
+```bash
+tccutil reset ScreenCapture com.guidestudio.app
+```
+
+For local development without that reset loop, create an **Apple Development** certificate in Xcode (**Settings → Accounts → add your Apple ID → Manage Certificates → + → Apple Development**) and run:
+
+```bash
+npm run build:mac:dev
+```
+
+This keeps a stable local signing identity, so Screen Recording approval survives rebuilds. It is still not notarized and must not be used as a public release.
+
 ### Windows
 
 Install via [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/):

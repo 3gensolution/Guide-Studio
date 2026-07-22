@@ -13,6 +13,7 @@ export type OpenSourceSelectorResult = {
 
 type OpenSourceSelectorFlowOptions = {
 	openSourceSelector: () => Promise<OpenSourceSelectorResult>;
+	openSourceSelectorAfterPermission?: () => Promise<OpenSourceSelectorResult>;
 	requestScreenAccess: () => Promise<ScreenAccessResult>;
 	wait?: (ms: number) => Promise<void>;
 	retryDelayMs?: number;
@@ -31,6 +32,7 @@ function shouldRetryAfterPermissionPrompt(result: OpenSourceSelectorResult): boo
 
 export async function openSourceSelectorWithPermissionRetry({
 	openSourceSelector,
+	openSourceSelectorAfterPermission = openSourceSelector,
 	requestScreenAccess,
 	wait = defaultWait,
 	retryDelayMs = 750,
@@ -46,7 +48,7 @@ export async function openSourceSelectorWithPermissionRetry({
 		const access = await requestScreenAccess();
 
 		if (access.granted) {
-			return openSourceSelector();
+			return openSourceSelectorAfterPermission();
 		}
 
 		if (access.status !== "not-determined") {

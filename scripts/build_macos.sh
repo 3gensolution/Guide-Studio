@@ -24,6 +24,7 @@ fi
 
 # ── Config ────────────────────────────────────────────────────────────
 VERSION=$(node -p "require('${PROJECT_ROOT}/package.json').version")
+APP_NAME="${APP_NAME:-Guide Studio}"
 RELEASE_DIR="${PROJECT_ROOT}/release/${VERSION}"
 ENTITLEMENTS="${PROJECT_ROOT}/macos.entitlements"
 ARCHS=("arm64" "x64")
@@ -66,13 +67,32 @@ if ! command -v npm &> /dev/null; then
 fi
 print_ok "npm found: $(npm -v)"
 
+if [ -z "${SIGN_IDENTITY:-}" ]; then
+    print_err "SIGN_IDENTITY is not set in ${ENV_FILE}."
+    print_err "A Developer ID Application certificate is required for a distributable build."
+    print_err "An ad-hoc signature changes on every build, so macOS will not retain Screen Recording permission."
+    exit 1
+fi
+
+if [ -z "${NOTARY_PROFILE:-}" ]; then
+    print_err "NOTARY_PROFILE is not set in ${ENV_FILE}."
+    print_err "A notarization keychain profile is required for a distributable build."
+    exit 1
+fi
+
 # Check signing identity
-if ! security find-identity -v -p codesigning | grep -q "$SIGN_IDENTITY"; then
+if ! security find-identity -v -p codesigning | grep -Fq "$SIGN_IDENTITY"; then
     print_err "Signing identity not found: ${SIGN_IDENTITY}"
     print_err "Run 'security find-identity -v -p codesigning' to see available identities."
+    print_err "Do not fall back to ad-hoc signing: it cannot retain macOS Screen Recording permission across builds."
     exit 1
 fi
 print_ok "Signing identity found: ${SIGN_IDENTITY}"
+
+# Electron Builder signs the .app bundle with CSC_NAME, so default it to the
+# verified identity when the caller hasn't set a separate value.
+export CSC_NAME="${CSC_NAME:-$SIGN_IDENTITY}"
+print_ok "Electron Builder signing identity: ${CSC_NAME}"
 
 # Check notary profile
 if ! xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" &> /dev/null; then
@@ -100,6 +120,12 @@ print_ok "Clean complete"
 print_step "Installing dependencies..."
 npm ci
 print_ok "Dependencies installed"
+
+# Build the macOS helper binaries before packaging so the app bundle ships with
+# the native recorder helpers in both local and packaged layouts.
+print_step "Building macOS native helpers..."
+npm run build:native:mac
+print_ok "macOS native helpers built"
 
 # ── Build Vite + Electron ────────────────────────────────────────────
 print_step "Building Vite + Electron... (this may take a minute)"
@@ -135,7 +161,15 @@ for ARCH in "${ARCHS[@]}"; do
 
     # ── Verify codesign on .app ───────────────────────────────────
     print_step "[${ARCH}] Verifying .app code signature..."
-    codesign --verify --deep --strict "$APP_BUNDLE" 2>&1 || print_warn "[${ARCH}] Deep verify had warnings (may be expected pre-notarization)"
+    codesign --verify --deep --strict "$APP_BUNDLE"
+    SIGNATURE_INFO=$(codesign -dvvv "$APP_BUNDLE" 2>&1)
+    if printf '%s\n' "$SIGNATURE_INFO" | grep -q '^Signature=adhoc$' || \
+       printf '%s\n' "$SIGNATURE_INFO" | grep -q '^TeamIdentifier=not set$' || \
+       ! printf '%s\n' "$SIGNATURE_INFO" | grep -q '^Authority=Developer ID Application:'; then
+        print_err "[${ARCH}] The app was not signed with a Developer ID Application certificate."
+        print_err "Refusing to create a DMG because macOS would not retain Screen Recording permission across updates."
+        exit 1
+    fi
     print_ok "[${ARCH}] .app signature verified"
 
     # ── Create DMG ────────────────────────────────────────────────

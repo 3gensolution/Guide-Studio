@@ -520,6 +520,8 @@ export function LaunchWindow() {
 		if (window.electronAPI) {
 			await openSourceSelectorWithPermissionRetry({
 				openSourceSelector: () => window.electronAPI.openSourceSelector(),
+				openSourceSelectorAfterPermission: () =>
+					window.electronAPI.openSourceSelector({ skipPermissionCheck: true }),
 				requestScreenAccess: () => window.electronAPI.requestScreenAccess(),
 			});
 		}

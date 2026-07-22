@@ -1155,6 +1155,10 @@ export default function VideoEditor() {
 		}
 	}, [cursorRecordingDataError]);
 
+	// Intro clip is isolated from main timeline.
+	const introClip = editorState.introClip;
+	const introDurationMs = introClip ? introClip.durationMs : 0;
+
 	function togglePlayPause() {
 		const playback = videoPlaybackRef.current;
 		const video = playback?.video;
@@ -1786,10 +1790,6 @@ export default function VideoEditor() {
 		const furthestClipEndSec = Math.max(...clips.map((c) => (c.offsetMs + c.durationMs) / 1000));
 		return Math.max(duration, furthestClipEndSec);
 	}, [duration, editorState.videoClips]);
-
-	// Intro clip is isolated from main timeline
-	const introClip = editorState.introClip;
-	const introDurationMs = introClip ? introClip.durationMs : 0;
 
 	// Total duration includes intro prefix + main content
 	const totalDuration = useMemo(() => {

@@ -1418,35 +1418,37 @@ export function registerIpcHandlers(
 		return access;
 	});
 
-	ipcMain.handle("open-source-selector", async () => {
-		const access = await requestScreenAccess();
-		if (!access.granted) {
-			if (process.platform === "darwin" && access.status !== "not-determined") {
-				const mainWin = getMainWindow();
-				const messageOptions = {
-					type: "warning",
-					buttons: ["Open System Settings", "Cancel"],
-					defaultId: 0,
-					cancelId: 1,
-					message: "Screen Recording permission is required",
-					detail:
-						"Allow Guide Studio in macOS System Settings, then come back and choose a screen or window.",
-				} satisfies Electron.MessageBoxOptions;
-				const result =
-					mainWin && !mainWin.isDestroyed()
-						? await dialog.showMessageBox(mainWin, messageOptions)
-						: await dialog.showMessageBox(messageOptions);
-				if (result.response === 0) {
-					await shell.openExternal(
-						"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
-					);
+	ipcMain.handle("open-source-selector", async (_, options?: { skipPermissionCheck?: boolean }) => {
+		if (!options?.skipPermissionCheck) {
+			const access = await requestScreenAccess();
+			if (!access.granted) {
+				if (process.platform === "darwin" && access.status !== "not-determined") {
+					const mainWin = getMainWindow();
+					const messageOptions = {
+						type: "warning",
+						buttons: ["Open System Settings", "Cancel"],
+						defaultId: 0,
+						cancelId: 1,
+						message: "Screen Recording permission is required",
+						detail:
+							"Allow Guide Studio in macOS System Settings, then come back and choose a screen or window.",
+					} satisfies Electron.MessageBoxOptions;
+					const result =
+						mainWin && !mainWin.isDestroyed()
+							? await dialog.showMessageBox(mainWin, messageOptions)
+							: await dialog.showMessageBox(messageOptions);
+					if (result.response === 0) {
+						await shell.openExternal(
+							"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+						);
+					}
 				}
+				return {
+					opened: false,
+					reason: "screen-access-required",
+					access,
+				};
 			}
-			return {
-				opened: false,
-				reason: "screen-access-required",
-				access,
-			};
 		}
 
 		const sourceSelectorWin = getSourceSelectorWindow();

@@ -26,6 +26,7 @@ describe("openSourceSelectorWithPermissionRetry", () => {
 				access: { success: true, granted: false, status: "not-determined" },
 			})
 			.mockResolvedValueOnce({ opened: true });
+		const openSourceSelectorAfterPermission = vi.fn().mockResolvedValue({ opened: true });
 		const requestScreenAccess = vi
 			.fn()
 			.mockResolvedValueOnce({ success: true, granted: false, status: "not-determined" })
@@ -34,6 +35,7 @@ describe("openSourceSelectorWithPermissionRetry", () => {
 
 		const result = await openSourceSelectorWithPermissionRetry({
 			openSourceSelector,
+			openSourceSelectorAfterPermission,
 			requestScreenAccess,
 			wait,
 			maxAttempts: 4,
@@ -42,7 +44,8 @@ describe("openSourceSelectorWithPermissionRetry", () => {
 		expect(result).toEqual({ opened: true });
 		expect(wait).toHaveBeenCalledTimes(2);
 		expect(requestScreenAccess).toHaveBeenCalledTimes(2);
-		expect(openSourceSelector).toHaveBeenCalledTimes(2);
+		expect(openSourceSelector).toHaveBeenCalledTimes(1);
+		expect(openSourceSelectorAfterPermission).toHaveBeenCalledTimes(1);
 	});
 
 	it("stops retrying once macOS permission is explicitly denied", async () => {
