@@ -59,6 +59,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	switchToEditor: () => {
 		return ipcRenderer.invoke("switch-to-editor");
 	},
+	openAIVideoCreator: () => {
+		return ipcRenderer.invoke("open-ai-video-creator");
+	},
 	switchToHud: () => {
 		return ipcRenderer.invoke("switch-to-hud");
 	},
@@ -740,28 +743,44 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return ipcRenderer.invoke("ai-generate-video-batch", clips);
 	},
 
-	// ── Pro authentication ──
-	proAuthenticate: () => {
-		return ipcRenderer.invoke("pro-authenticate") as Promise<{
-			success: boolean;
-			token?: string;
-			refreshToken?: string;
-			error?: string;
-		}>;
+	// ── AI Video Creator (drives the user's own Claude Code install) ──
+	claudeDetect: () => ipcRenderer.invoke("claude-detect"),
+	claudeSkills: () => ipcRenderer.invoke("claude-skills"),
+	claudePlan: (input: {
+		request: string;
+		format?: "landscape" | "vertical" | "square";
+		targetSeconds?: number;
+		model?: string;
+		look?: "motion" | "cards";
+	}) => ipcRenderer.invoke("claude-plan", input),
+	claudePreview: (sessionId: string) => ipcRenderer.invoke("claude-preview", sessionId),
+	claudeRender: (sessionId: string) => ipcRenderer.invoke("claude-render", sessionId),
+	claudeSession: (sessionId: string) => ipcRenderer.invoke("claude-session", sessionId),
+	claudeSessions: () => ipcRenderer.invoke("claude-sessions"),
+	claudeCancel: (sessionId: string) => ipcRenderer.invoke("claude-cancel", sessionId),
+	claudeDiscard: (sessionId: string) => ipcRenderer.invoke("claude-discard", sessionId),
+	claudeInsertIntoEditor: (sessionId: string) =>
+		ipcRenderer.invoke("claude-insert-into-editor", sessionId),
+	onClaudeActivity: (
+		callback: (activity: import("./claude-runtime/events").ClaudeActivity) => void,
+	) => {
+		const listener = (_: unknown, activity: import("./claude-runtime/events").ClaudeActivity) =>
+			callback(activity);
+		ipcRenderer.on("claude-activity", listener);
+		return () => ipcRenderer.removeListener("claude-activity", listener);
 	},
-	proRefreshToken: () =>
-		ipcRenderer.invoke("pro-refresh-token") as Promise<{
-			success: boolean;
-			accessToken: string | null;
-		}>,
-
-	// ── Secure storage (OS-keychain-backed via Electron safeStorage) ──
-	secureStorageGet: (key: string) =>
-		ipcRenderer.invoke("secure-store-get", key) as Promise<string | null>,
-	secureStorageSet: (key: string, value: string) =>
-		ipcRenderer.invoke("secure-store-set", key, value) as Promise<{ success: boolean }>,
-	secureStorageDelete: (key: string) =>
-		ipcRenderer.invoke("secure-store-delete", key) as Promise<{ success: boolean }>,
+	onClaudeRenderProgress: (callback: (payload: { sessionId: string; percent: number }) => void) => {
+		const listener = (_: unknown, payload: { sessionId: string; percent: number }) =>
+			callback(payload);
+		ipcRenderer.on("claude-render-progress", listener);
+		return () => ipcRenderer.removeListener("claude-render-progress", listener);
+	},
+	onClaudeInsertClip: (callback: (payload: { videoPath: string; title: string }) => void) => {
+		const listener = (_: unknown, payload: { videoPath: string; title: string }) =>
+			callback(payload);
+		ipcRenderer.on("claude-insert-clip", listener);
+		return () => ipcRenderer.removeListener("claude-insert-clip", listener);
+	},
 
 	// ── Music library ──
 	musicLibraryList: () => {
@@ -790,26 +809,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	},
 	youtubeFetchChannelShorts: (channelHandle: string) => {
 		return ipcRenderer.invoke("youtube-fetch-channel-shorts", channelHandle);
-	},
-
-	// ── Showcase Gallery ──
-	showcaseUpload: (opts: {
-		videoPath: string;
-		title: string;
-		prompt?: string;
-		aesthetic?: string;
-		model?: string;
-		sceneCount?: number;
-		durationSec?: number;
-		token: string;
-	}) => ipcRenderer.invoke("showcase-upload", opts),
-	onShowcaseUploadProgress: (callback: (percent: number) => void) => {
-		const listener = (_: unknown, percent: number) => callback(percent);
-		ipcRenderer.on("showcase-upload-progress", listener);
-		return () => ipcRenderer.removeListener("showcase-upload-progress", listener);
-	},
-	showcaseFetchManifest: () => {
-		return ipcRenderer.invoke("showcase-fetch-manifest");
 	},
 
 	// ── Lottie ──

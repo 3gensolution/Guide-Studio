@@ -1,3 +1,7 @@
+// DORMANT — Guide Studio runs local-only. Nothing in the app constructs a
+// request through this module any more: AI goes over Electron IPC to the
+// local provider (see `src/lib/api/ai.ts`), and there is no account session.
+// Kept for reference only.
 // ── Guide Studio API Client ──────────────────────────────────────────────
 //
 // Backend API integration for Guide Studio
@@ -15,6 +19,8 @@ export interface AuthTokens {
 	expiresAt: number;
 }
 
+const AUTH_STORAGE_KEY = "guide_studio_auth";
+
 class ApiClient {
 	private config: ApiConfig;
 	private tokens: AuthTokens | null = null;
@@ -25,29 +31,40 @@ class ApiClient {
 			...config,
 		};
 		this.loadTokensFromStorage();
+
+		// Separate Electron windows each have their own ApiClient instance. Listen
+		// for changes made by another window, such as a sign-in in the editor.
+		if (typeof window !== "undefined") {
+			window.addEventListener("storage", (event) => {
+				if (event.key === AUTH_STORAGE_KEY) this.loadTokensFromStorage();
+			});
+		}
 	}
 
 	private loadTokensFromStorage() {
 		try {
-			const stored = localStorage.getItem("guide_studio_auth");
+			const stored = localStorage.getItem(AUTH_STORAGE_KEY);
 			if (stored) {
 				this.tokens = JSON.parse(stored);
 				// Check if token is expired
 				if (this.tokens && this.tokens.expiresAt < Date.now()) {
 					this.tokens = null;
-					localStorage.removeItem("guide_studio_auth");
+					localStorage.removeItem(AUTH_STORAGE_KEY);
 				}
+			} else {
+				this.tokens = null;
 			}
 		} catch (error) {
+			this.tokens = null;
 			console.error("[ApiClient] Failed to load tokens:", error);
 		}
 	}
 
 	private saveTokensToStorage() {
 		if (this.tokens) {
-			localStorage.setItem("guide_studio_auth", JSON.stringify(this.tokens));
+			localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(this.tokens));
 		} else {
-			localStorage.removeItem("guide_studio_auth");
+			localStorage.removeItem(AUTH_STORAGE_KEY);
 		}
 	}
 
@@ -62,10 +79,12 @@ class ApiClient {
 	}
 
 	isAuthenticated(): boolean {
+		this.loadTokensFromStorage();
 		return this.tokens !== null && this.tokens.expiresAt > Date.now();
 	}
 
 	getAccessToken(): string | null {
+		this.loadTokensFromStorage();
 		return this.tokens?.accessToken || null;
 	}
 

@@ -18,8 +18,21 @@ import { execFile as execFileCb } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
-import { renderMedia, selectComposition } from "@remotion/renderer";
+import { makeCancelSignal, renderMedia, selectComposition } from "@remotion/renderer";
 import { app } from "electron";
+import type {
+	HyperFrame,
+	HyperFrameCompositionProps,
+	HyperFrameFormat,
+	HyperFrameImageAsset,
+} from "../../src/lib/remotion/HyperFrameComposition";
+import { hyperFrameFormatSpec } from "../../src/lib/remotion/HyperFrameComposition";
+import type {
+	MotionCompositionProps,
+	MotionFormat,
+	MotionScene,
+} from "../../src/lib/remotion/MotionGraphicsComposition";
+import { motionFormatSpec } from "../../src/lib/remotion/MotionGraphicsComposition";
 import { getFfmpegEnv, getFfmpegPath } from "../ffmpeg";
 
 /**
@@ -34,9 +47,10 @@ function getRemotionBinariesDirectory(): string {
 	const libcSuffix =
 		process.platform === "win32" ? "-msvc" : process.platform === "linux" ? "-gnu" : "";
 	const pkg = `compositor-${process.platform}-${process.arch}${libcSuffix}`;
+	const projectRoot = resolveRuntimeProjectRoot();
 	const base = app.isPackaged
 		? path.join(process.resourcesPath, "app.asar.unpacked", "node_modules")
-		: path.join(app.getAppPath(), "node_modules");
+		: path.join(projectRoot, "node_modules");
 	return path.join(base, "@remotion", pkg);
 }
 
@@ -56,6 +70,283 @@ export interface RemotionExportOptions {
 	musicPath?: string;
 	musicVolume?: number;
 	onProgress?: (percent: number) => void;
+}
+
+// ── HyperFrame storyboard rendering ──────────────────────────────────────
+//
+// Trusted local render input for the fixed HyperFrame scene library. Claude
+// contributes a validated storyboard — text, timings, and a scene id drawn
+// from a closed set — and nothing else. No model-authored code is compiled
+// or executed here; these functions only feed validated props into the
+// compositions registered in `src/lib/remotion/Root.tsx`.
+
+export interface HyperFrameRenderOptions {
+	title: string;
+	accent: HyperFrameCompositionProps["accent"];
+	frames: HyperFrame[];
+	/** Local image files the frames reference, staged into the bundle here. */
+	imageAssets?: Array<{ assetId: string; src: string }>;
+	outputPath: string;
+	format?: HyperFrameFormat;
+	fps?: number;
+	onProgress?: (percent: number) => void;
+	signal?: AbortSignal;
+}
+
+/**
+ * A 3D frame needs a GL backend in headless Chromium. Hardware backends are
+ * unreliable across the machines this ships to, so software rasterisation is
+ * the default; `GUIDE_REMOTION_GL` overrides it for anyone whose machine does
+ * better with a hardware backend.
+ */
+function hyperFrameGlMode() {
+	const requested = process.env.GUIDE_REMOTION_GL;
+	const allowed = ["angle", "egl", "swiftshader", "swangle", "vulkan", "angle-egl"] as const;
+	return (allowed as readonly string[]).includes(requested ?? "")
+		? (requested as (typeof allowed)[number])
+		: "swangle";
+}
+
+/** Render an approved storyboard to an MP4 through the fixed composition. */
+export async function renderHyperFrameDemo(opts: HyperFrameRenderOptions) {
+	const fps = opts.fps ?? 30;
+	const spec = hyperFrameFormatSpec(opts.format ?? "landscape");
+	const serveUrl = await resolveServeUrl();
+	const binariesDirectory = getRemotionBinariesDirectory();
+	const staged = copyImageAssetsToBundle(serveUrl, opts.imageAssets);
+
+	const inputProps: HyperFrameCompositionProps = {
+		title: opts.title,
+		accent: opts.accent,
+		frames: opts.frames,
+		...(staged.length ? { imageAssets: staged } : {}),
+	};
+
+	const composition = await selectComposition({
+		serveUrl,
+		id: spec.id,
+		inputProps: inputProps as unknown as Record<string, unknown>,
+		binariesDirectory,
+	});
+
+	const needsGl = opts.frames.some((frame) => frame.kind === "scene3d");
+	const chromiumOptions = needsGl ? ({ gl: hyperFrameGlMode() } as const) : undefined;
+
+	const { cancelSignal, cancel } = makeCancelSignal();
+	const abortListener = () => cancel();
+	opts.signal?.addEventListener("abort", abortListener, { once: true });
+
+	try {
+		if (opts.signal?.aborted) throw new Error("HyperFrame render cancelled");
+		await renderMedia({
+			composition: { ...composition, fps, durationInFrames: composition.durationInFrames },
+			serveUrl,
+			codec: "h264",
+			outputLocation: opts.outputPath,
+			inputProps: inputProps as unknown as Record<string, unknown>,
+			binariesDirectory,
+			cancelSignal,
+			...(chromiumOptions ? { chromiumOptions } : {}),
+			onProgress: ({ progress }) => opts.onProgress?.(Math.round(progress * 100)),
+		});
+	} finally {
+		opts.signal?.removeEventListener("abort", abortListener);
+	}
+
+	return {
+		outputPath: opts.outputPath,
+		durationInFrames: composition.durationInFrames,
+		fps,
+		width: composition.width,
+		height: composition.height,
+	};
+}
+
+/**
+ * Render one still per requested frame. The creator window shows these as a
+ * storyboard preview so the user can judge the plan before paying for a full
+ * render.
+ */
+export async function renderHyperFrameStills(opts: {
+	title: string;
+	accent: HyperFrameCompositionProps["accent"];
+	frames: HyperFrame[];
+	imageAssets?: Array<{ assetId: string; src: string }>;
+	frameIndexes: number[];
+	outputDirectory: string;
+	format?: HyperFrameFormat;
+	signal?: AbortSignal;
+}) {
+	const { renderStill } = await import("@remotion/renderer");
+	const spec = hyperFrameFormatSpec(opts.format ?? "landscape");
+	const serveUrl = await resolveServeUrl();
+	const binariesDirectory = getRemotionBinariesDirectory();
+	const staged = copyImageAssetsToBundle(serveUrl, opts.imageAssets);
+
+	const inputProps: HyperFrameCompositionProps = {
+		title: opts.title,
+		accent: opts.accent,
+		frames: opts.frames,
+		...(staged.length ? { imageAssets: staged } : {}),
+	};
+
+	const composition = await selectComposition({
+		serveUrl,
+		id: spec.id,
+		inputProps: inputProps as unknown as Record<string, unknown>,
+		binariesDirectory,
+	});
+
+	const chromiumOptions = opts.frames.some((frame) => frame.kind === "scene3d")
+		? ({ gl: hyperFrameGlMode() } as const)
+		: undefined;
+
+	fs.mkdirSync(opts.outputDirectory, { recursive: true });
+	const fps = composition.fps || 30;
+	const results: Array<{ frameIndex: number; path: string }> = [];
+
+	for (const frameIndex of opts.frameIndexes) {
+		if (opts.signal?.aborted) throw new Error("Storyboard preview cancelled");
+		// Sample the middle of the frame's own span so the still shows the
+		// scene settled rather than mid-entrance.
+		const before = opts.frames
+			.slice(0, frameIndex)
+			.reduce((total, frame) => total + frame.durationSeconds, 0);
+		const own = opts.frames[frameIndex]?.durationSeconds ?? 0;
+		const middle = Math.round((before + own / 2) * fps);
+		const output = path.join(opts.outputDirectory, `frame-${frameIndex}.png`);
+		await renderStill({
+			composition,
+			serveUrl,
+			output,
+			frame: Math.max(0, Math.min(middle, composition.durationInFrames - 1)),
+			inputProps: inputProps as unknown as Record<string, unknown>,
+			binariesDirectory,
+			...(chromiumOptions ? { chromiumOptions } : {}),
+		});
+		results.push({ frameIndex, path: output });
+	}
+
+	return results;
+}
+
+// ── Motion graphics rendering ────────────────────────────────────────────
+//
+// The animated counterpart to the HyperFrame functions above. Same contract:
+// validated scene props in, MP4 or stills out, no model-authored code.
+
+export interface MotionRenderOptions {
+	title: string;
+	accent: MotionCompositionProps["accent"];
+	scenes: MotionScene[];
+	outputPath: string;
+	format?: MotionFormat;
+	fps?: number;
+	onProgress?: (percent: number) => void;
+	signal?: AbortSignal;
+}
+
+export async function renderMotionDemo(opts: MotionRenderOptions) {
+	const fps = opts.fps ?? 30;
+	const spec = motionFormatSpec(opts.format ?? "landscape");
+	const serveUrl = await resolveServeUrl();
+	const binariesDirectory = getRemotionBinariesDirectory();
+
+	const inputProps: MotionCompositionProps = {
+		title: opts.title,
+		accent: opts.accent,
+		scenes: opts.scenes,
+	};
+
+	const composition = await selectComposition({
+		serveUrl,
+		id: spec.id,
+		inputProps: inputProps as unknown as Record<string, unknown>,
+		binariesDirectory,
+	});
+
+	const { cancelSignal, cancel } = makeCancelSignal();
+	const abortListener = () => cancel();
+	opts.signal?.addEventListener("abort", abortListener, { once: true });
+
+	try {
+		if (opts.signal?.aborted) throw new Error("Motion render cancelled");
+		await renderMedia({
+			composition: { ...composition, fps },
+			serveUrl,
+			codec: "h264",
+			outputLocation: opts.outputPath,
+			inputProps: inputProps as unknown as Record<string, unknown>,
+			binariesDirectory,
+			cancelSignal,
+			onProgress: ({ progress }) => opts.onProgress?.(Math.round(progress * 100)),
+		});
+	} finally {
+		opts.signal?.removeEventListener("abort", abortListener);
+	}
+
+	return {
+		outputPath: opts.outputPath,
+		durationInFrames: composition.durationInFrames,
+		fps,
+		width: composition.width,
+		height: composition.height,
+	};
+}
+
+export async function renderMotionStills(opts: {
+	title: string;
+	accent: MotionCompositionProps["accent"];
+	scenes: MotionScene[];
+	sceneIndexes: number[];
+	outputDirectory: string;
+	format?: MotionFormat;
+	signal?: AbortSignal;
+}) {
+	const { renderStill } = await import("@remotion/renderer");
+	const spec = motionFormatSpec(opts.format ?? "landscape");
+	const serveUrl = await resolveServeUrl();
+	const binariesDirectory = getRemotionBinariesDirectory();
+
+	const inputProps: MotionCompositionProps = {
+		title: opts.title,
+		accent: opts.accent,
+		scenes: opts.scenes,
+	};
+
+	const composition = await selectComposition({
+		serveUrl,
+		id: spec.id,
+		inputProps: inputProps as unknown as Record<string, unknown>,
+		binariesDirectory,
+	});
+
+	fs.mkdirSync(opts.outputDirectory, { recursive: true });
+	const fps = composition.fps || 30;
+	const results: Array<{ frameIndex: number; path: string }> = [];
+
+	for (const sceneIndex of opts.sceneIndexes) {
+		if (opts.signal?.aborted) throw new Error("Motion preview cancelled");
+		// Sample two-thirds into the scene: entrance animations have landed by
+		// then, and exits have not started.
+		const before = opts.scenes
+			.slice(0, sceneIndex)
+			.reduce((total, scene) => total + scene.durationSeconds, 0);
+		const own = opts.scenes[sceneIndex]?.durationSeconds ?? 0;
+		const sample = Math.round((before + own * 0.66) * fps);
+		const output = path.join(opts.outputDirectory, `scene-${sceneIndex}.png`);
+		await renderStill({
+			composition,
+			serveUrl,
+			output,
+			frame: Math.max(0, Math.min(sample, composition.durationInFrames - 1)),
+			inputProps: inputProps as unknown as Record<string, unknown>,
+			binariesDirectory,
+		});
+		results.push({ frameIndex: sceneIndex, path: output });
+	}
+
+	return results;
 }
 
 export async function exportWithRemotion(opts: RemotionExportOptions) {
@@ -434,6 +725,42 @@ async function writeScreenshotsToBundle(
 	return urls;
 }
 
+/**
+ * Copy fetched images into the served bundle and hand back bundle-relative
+ * sources.
+ *
+ * Headless Chromium loads the composition over http, and a `file://` image on
+ * such a page is blocked — so the file has to live under the bundle to be
+ * fetchable at all. This mirrors how screenshots are staged, and the names are
+ * the validated asset ids, so nothing a planner wrote reaches the filesystem.
+ */
+function copyImageAssetsToBundle(
+	bundlePath: string,
+	assets: Array<{ assetId: string; src: string }> | undefined,
+): HyperFrameImageAsset[] {
+	if (!assets?.length) return [];
+	const assetDir = path.join(bundlePath, "_assets");
+	fs.mkdirSync(assetDir, { recursive: true });
+
+	const staged: HyperFrameImageAsset[] = [];
+	for (const asset of assets) {
+		// An id that is not a plain slug never becomes a path segment.
+		if (!/^[a-z0-9-]{1,64}$/i.test(asset.assetId)) continue;
+		try {
+			const extension = path.extname(asset.src).replace(/[^a-z0-9.]/gi, "") || ".png";
+			const fileName = `${asset.assetId}${extension}`;
+			fs.copyFileSync(asset.src, path.join(assetDir, fileName));
+			staged.push({ assetId: asset.assetId, src: `_assets/${fileName}` });
+		} catch (error) {
+			// A missing file is a text frame, not a failed render: the storyboard
+			// only ever references ids the resolver confirmed it downloaded, so
+			// this is the disk changing under us rather than a planning error.
+			console.warn(`[remotionExport] Could not stage image ${asset.assetId}:`, error);
+		}
+	}
+	return staged;
+}
+
 function cleanupScreenshots(bundlePath: string) {
 	const screenshotDir = path.join(bundlePath, "_screenshots");
 	try {
@@ -464,7 +791,7 @@ async function resolveServeUrl(): Promise<string> {
 		);
 	}
 
-	const entryPoint = path.resolve(app.getAppPath(), "src/lib/remotion/index.ts");
+	const entryPoint = path.resolve(resolveRuntimeProjectRoot(), "src/lib/remotion/index.ts");
 	console.log("[remotionExport] Bundling Remotion project from:", entryPoint);
 
 	const { bundle } = await import("@remotion/bundler");
@@ -483,4 +810,22 @@ async function resolveServeUrl(): Promise<string> {
 
 	console.log("[remotionExport] Bundle ready at:", cachedBundleLocation);
 	return cachedBundleLocation;
+}
+
+/**
+ * `app.getAppPath()` is the app directory in production but the generated
+ * `dist-electron` directory in Playwright/direct-main development launches.
+ * Resolve the checked-out project root in both cases without trusting input
+ * from the renderer.
+ */
+function resolveRuntimeProjectRoot() {
+	const appPath = app.getAppPath();
+	const candidates = [appPath, process.env.APP_ROOT, path.resolve(appPath, "..")].filter(
+		(candidate): candidate is string => Boolean(candidate),
+	);
+	return (
+		candidates.find((candidate) =>
+			fs.existsSync(path.join(candidate, "src", "lib", "remotion", "index.ts")),
+		) ?? appPath
+	);
 }

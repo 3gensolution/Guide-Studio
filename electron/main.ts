@@ -15,6 +15,7 @@ import {
 	Tray,
 } from "electron";
 import { ShortcutBinding } from "../src/lib/shortcuts";
+import { getSession as getCreatorSession } from "./claude-runtime/creator";
 import {
 	loadAndRegisterGlobalShortcut,
 	registerOpenAppShortcut,
@@ -23,14 +24,13 @@ import {
 import { mainT, setMainLocale } from "./i18n";
 import { registerAIHandlers } from "./ipc/aiHandlers";
 import { registerCaptureHandlers } from "./ipc/captureHandlers";
+import { registerClaudeHandlers } from "./ipc/claudeHandlers";
 import { registerDemoHandlers } from "./ipc/demoHandlers";
 import { registerExportHandlers } from "./ipc/exportHandlers";
 import { registerFfmpegHandlers } from "./ipc/ffmpegHandlers";
 import { getSelectedDesktopSource, registerIpcHandlers } from "./ipc/handlers";
 import { registerProjectHandlers } from "./ipc/projectHandlers";
-import { registerSecureStorageHandlers } from "./ipc/secureStorageHandlers";
 import { registerSettingsHandlers } from "./ipc/settingsHandlers";
-import { registerShowcaseHandlers } from "./ipc/showcaseHandlers";
 import { registerStudioCacheHandlers } from "./ipc/studioCacheHandlers";
 import { registerUpdaterHandlers } from "./ipc/updaterHandlers";
 import { registerWhisperHandlers } from "./ipc/whisperHandlers";
@@ -38,6 +38,7 @@ import { registerYouTubeHandlers } from "./ipc/youtubeHandlers";
 import { getCachedSetting, loadSettings, setSetting } from "./settings";
 import { checkForUpdates, setUpdateChannel, type UpdateChannel } from "./updater";
 import {
+	createAIVideoCreatorWindow,
 	createCountdownOverlayWindow,
 	createEditorWindow,
 	createHudOverlayWindow,
@@ -130,6 +131,7 @@ const editorWindows = new Set<BrowserWindow>();
 let mainWindow: BrowserWindow | null = null;
 let sourceSelectorWindow: BrowserWindow | null = null;
 let countdownOverlayWindow: BrowserWindow | null = null;
+let aiVideoCreatorWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let selectedSourceName = "";
 const isMac = process.platform === "darwin";
@@ -249,28 +251,6 @@ function triggerManualUpdateCheck() {
 }
 
 function handleChannelSelect(channel: UpdateChannel) {
-	const isPro = getCachedSetting("licenseTier") === "pro";
-	if (channel === "beta" && !isPro) {
-		dialog
-			.showMessageBox({
-				type: "info",
-				title: "Pro Feature",
-				message: "Beta releases are a Pro feature.",
-				detail:
-					"Pro subscribers get early access to new features through the Beta channel. " +
-					"Upgrade to Pro from Settings to opt in.",
-				buttons: ["OK", "Learn More"],
-				defaultId: 0,
-			})
-			.then((result) => {
-				if (result.response === 1) {
-					shell.openExternal("https://guidestudio.app/pro");
-				}
-			});
-		// Rebuild menu so the checkmark stays on "Stable".
-		setupApplicationMenu();
-		return;
-	}
 	setUpdateChannel(channel);
 	setSetting("updateChannel", channel).catch(() => {
 		/* intentional no-op */
@@ -501,7 +481,7 @@ function setupApplicationMenu() {
 							click: () => handleChannelSelect("latest"),
 						},
 						{
-							label: getCachedSetting("licenseTier") === "pro" ? "Beta" : "Beta (Pro)",
+							label: "Beta",
 							type: "radio",
 							checked: currentChannel === "beta",
 							click: () => handleChannelSelect("beta"),
@@ -845,6 +825,56 @@ function createEditorWindowWrapper(): BrowserWindow {
 	return win;
 }
 
+/** Open (or focus) the AI Video Creator workspace. */
+function createAIVideoCreatorWindowWrapper(): BrowserWindow {
+	if (aiVideoCreatorWindow && !aiVideoCreatorWindow.isDestroyed()) {
+		if (aiVideoCreatorWindow.isMinimized()) aiVideoCreatorWindow.restore();
+		aiVideoCreatorWindow.show();
+		aiVideoCreatorWindow.focus();
+		return aiVideoCreatorWindow;
+	}
+
+	const win = createAIVideoCreatorWindow();
+	aiVideoCreatorWindow = win;
+	win.on("closed", () => {
+		if (aiVideoCreatorWindow === win) aiVideoCreatorWindow = null;
+	});
+	return win;
+}
+
+ipcMain.handle("open-ai-video-creator", () => {
+	const win = createAIVideoCreatorWindowWrapper();
+	return { success: true, windowId: win.id };
+});
+
+/**
+ * Hand a finished scene to the editor. An editor window is created when none
+ * is open, so the creator works as an entry point on a fresh launch — the
+ * renderer registers its listener during boot, so the send is deferred until
+ * the window has finished loading.
+ */
+ipcMain.handle("claude-insert-into-editor", (_event, sessionId: string) => {
+	const session = getCreatorSession(sessionId);
+	if (!session?.videoPath) {
+		return { success: false, error: "That scene has not been rendered yet." };
+	}
+
+	const payload = { videoPath: session.videoPath, title: session.storyboard?.title ?? "AI scene" };
+	const existing = getFocusedEditorWindow() ?? getFirstEditorWindow();
+	if (existing && !existing.isDestroyed()) {
+		if (existing.isMinimized()) existing.restore();
+		existing.focus();
+		existing.webContents.send("claude-insert-clip", payload);
+		return { success: true };
+	}
+
+	const editor = createEditorWindowWrapper();
+	editor.webContents.once("did-finish-load", () => {
+		if (!editor.isDestroyed()) editor.webContents.send("claude-insert-clip", payload);
+	});
+	return { success: true };
+});
+
 function switchToHudWrapper() {
 	// Show the HUD directly — showMainWindow() prefers editor windows, which
 	// would leave "New Recording" from the editor/Welcome screen doing nothing.
@@ -905,28 +935,12 @@ app.on("will-quit", () => {
 	unregisterAllGlobalShortcuts();
 });
 
-// ── Pro auth via deep link protocol ──────────────────────────────────
-import { handleProAuthDeepLink, registerProAuthProtocol } from "./pro/proAuth";
-
-// Register the protocol before app is ready
-registerProAuthProtocol();
-
-// macOS: handle deep link when app is already running
-app.on("open-url", (event, url) => {
-	event.preventDefault();
-	handleProAuthDeepLink(url);
-});
-
 // Windows/Linux: second instance receives the deep link URL in argv
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
 	app.quit();
 } else {
-	app.on("second-instance", (_event, argv) => {
-		const deepLink = argv.find((arg) => arg.startsWith("guidestudio://"));
-		if (deepLink) {
-			handleProAuthDeepLink(deepLink);
-		}
+	app.on("second-instance", () => {
 		// Focus an existing editor window
 		const win = getFocusedEditorWindow() ?? getFirstEditorWindow();
 		if (win) {
@@ -1148,6 +1162,9 @@ app.whenReady().then(async () => {
 	// AI handlers (generate, narrate, etc.)
 	registerAIHandlers();
 
+	// AI Video Creator — orchestrates the user's own Claude Code install.
+	registerClaudeHandlers();
+
 	// Demo handlers
 	registerDemoHandlers(getFocusedEditorWindow);
 
@@ -1175,9 +1192,6 @@ app.whenReady().then(async () => {
 	// Settings handlers
 	registerSettingsHandlers();
 
-	// Secure storage (keychain-backed) + pro token refresh
-	registerSecureStorageHandlers();
-
 	// Studio cache handlers
 	registerStudioCacheHandlers();
 
@@ -1186,9 +1200,6 @@ app.whenReady().then(async () => {
 
 	// YouTube auth & upload handlers
 	registerYouTubeHandlers(getFocusedEditorWindow);
-
-	// Showcase handlers
-	registerShowcaseHandlers(getFocusedEditorWindow);
 
 	// FFmpeg path setup handlers
 	registerFfmpegHandlers();

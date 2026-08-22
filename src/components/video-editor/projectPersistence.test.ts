@@ -206,6 +206,116 @@ it("detects unsaved changes from differing snapshots", () => {
 	expect(hasProjectUnsavedChanges("current", "baseline")).toBe(true);
 });
 
+it("moves legacy agent captions and title cards fully inside the canvas", () => {
+	const normalized = normalizeProjectEditor({
+		annotationRegions: [
+			{
+				id: "agent-caption-1",
+				startMs: 0,
+				endMs: 1_000,
+				type: "text",
+				content: "A clear caption",
+				textContent: "A clear caption",
+				position: { x: 50, y: 86 },
+				size: { width: 84, height: 12 },
+				style: {
+					color: "#FFFFFF",
+					backgroundColor: "#111827",
+					fontSize: 42,
+					fontFamily: "Inter",
+					fontWeight: "bold",
+					fontStyle: "normal",
+					textDecoration: "none",
+					textAlign: "center",
+				},
+				zIndex: 1,
+				annotationSource: "auto-caption",
+			},
+			{
+				id: "agent-overlay-1",
+				startMs: 0,
+				endMs: 4_000,
+				type: "text",
+				content: "Welcome to Guide\nWelcome to Guide",
+				textContent: "Welcome to Guide\nWelcome to Guide",
+				position: { x: 50, y: 16 },
+				size: { width: 78, height: 18 },
+				style: {
+					color: "#FFFFFF",
+					backgroundColor: "transparent",
+					fontSize: 52,
+					fontFamily: "Inter",
+					fontWeight: "bold",
+					fontStyle: "normal",
+					textDecoration: "none",
+					textAlign: "center",
+				},
+				zIndex: 2,
+			},
+		],
+	});
+
+	expect(normalized.annotationRegions[0]).toMatchObject({
+		position: { x: 8, y: 82 },
+		size: { width: 84, height: 16 },
+		style: { fontSize: 36 },
+	});
+	expect(normalized.annotationRegions[1]).toMatchObject({
+		content: "Welcome to Guide",
+		textContent: "Welcome to Guide",
+		position: { x: 11, y: 12 },
+		size: { width: 78, height: 20 },
+		style: { fontSize: 48 },
+	});
+});
+
+it("persists and safely normalizes local production caption and narration lanes", () => {
+	const normalized = normalizeProjectEditor({
+		captionTrack: {
+			id: "agent-captions",
+			language: "en",
+			modelId: "local-guide-production",
+			createdAt: 100,
+			lines: [
+				{
+					id: "caption-1",
+					startMs: 0,
+					endMs: 900,
+					words: [
+						{ text: "Welcome", startMs: 0, endMs: 450, confidence: 0.9 },
+						{ text: "back", startMs: 450, endMs: 900, confidence: 0.9 },
+					],
+				},
+			],
+		},
+		narrationTrack: {
+			voiceId: "af_heart",
+			language: "en",
+			segments: [
+				{
+					id: "narration-1",
+					text: "Welcome back",
+					startMs: 0,
+					endMs: 900,
+					audioPath: "/tmp/narration-1.wav",
+				},
+			],
+		},
+		muteOriginalAudio: true,
+		backgroundMusic: "https://example.test/should-not-load.mp3",
+		backgroundMusicVolume: 120,
+	});
+
+	expect(normalized.captionTrack?.lines[0].words.map((word) => word.text)).toEqual([
+		"Welcome",
+		"back",
+	]);
+	expect(normalized.narrationTrack?.segments[0].audioPath).toBe("/tmp/narration-1.wav");
+	expect(normalized.muteOriginalAudio).toBe(true);
+	expect(normalized.backgroundMusic).toBe("none");
+	expect(normalized.backgroundMusicVolume).toBe(100);
+});
+
 describe("wallpaper legacy normalization", () => {
 	it("rewrites pre-fix packaged paths (resources/assets/wallpapers/…)", () => {
 		const normalized = normalizeProjectEditor({

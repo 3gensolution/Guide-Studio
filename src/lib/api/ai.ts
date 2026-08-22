@@ -1,17 +1,18 @@
-// ── AI Services API ──────────────────────────────────────────────────────
+// ── AI Services (local) ──────────────────────────────────────────────────
 //
-// AI capabilities integration with the Docker backend (GuideAI).
-// All AI endpoints are routed through the gateway at /api/v1/studio/ai/*
+// Guide Studio runs its AI locally. This module keeps the request/response
+// shapes callers were written against, but every call now goes over the
+// Electron IPC bridge to the local AI service (Ollama or the user's own
+// provider key, configured in Settings) instead of the Guide Studio backend.
 //
-// Available backend endpoints:
-//   POST /studio/ai/chat/completion  — Chat / script generation
-//   POST /studio/ai/image/generate   — Image generation (SDXL/Flux)
-//   POST /studio/ai/tts/generate     — Text-to-speech (Edge TTS / ElevenLabs)
-//   GET  /studio/ai/tts/voices       — List TTS voices
-//   POST /studio/ai/stt/transcribe   — Speech-to-text (Groq Whisper)
-//   POST /studio/ai/music/generate   — Music generation (MusicGen)
-
-import { apiClient } from "./client";
+// Local providers behind each method:
+//   chatCompletion  — ai-analyze / ai-analyze-image
+//   generateSpeech  — ai-minimax-tts, falling back to ai-tts-synthesize
+//   listVoices      — ai-minimax-voices
+//   generateImage   — ai-minimax-image
+//   generateMusic   — ai-generate-music
+//   transcribe      — not available here; captions use the local Whisper
+//                     engine in `src/lib/captioning/transcribe.ts`
 
 // ── Supported AI Capabilities ────────────────────────────────────────────
 
@@ -116,63 +117,95 @@ export interface VideoGenerationRequest {
 
 // ── AI Service Class ──────────────────────────────────────────────────────
 
-const STUDIO_PREFIX = "/studio/ai";
+/** Flatten an OpenAI-style message list into a prompt plus a system context. */
+function splitMessages(messages: ChatMessage[]) {
+	const system: string[] = [];
+	const turns: string[] = [];
+	let imageBase64: string | undefined;
+
+	for (const message of messages) {
+		const parts = typeof message.content === "string" ? [message.content] : message.content;
+		const text: string[] = [];
+		for (const part of parts) {
+			if (typeof part === "string") {
+				text.push(part);
+				continue;
+			}
+			if (part.type === "text" && part.text) text.push(part.text);
+			if (part.type === "image_url" && part.image_url?.url && !imageBase64) {
+				// The local vision call takes bare base64, not a data URL.
+				imageBase64 = part.image_url.url.replace(/^data:[^;]+;base64,/, "");
+			}
+		}
+		const joined = text.join("\n").trim();
+		if (!joined) continue;
+		if (message.role === "system") system.push(joined);
+		else turns.push(message.role === "assistant" ? `Assistant: ${joined}` : joined);
+	}
+
+	return {
+		prompt: turns.join("\n\n"),
+		context: system.length > 0 ? system.join("\n\n") : undefined,
+		imageBase64,
+	};
+}
 
 export class AIService {
-	// Chat Completion (DeepSeek for text; Gemini/OpenRouter vision for image parts)
+	// Chat completion through the local provider. Messages carrying an image
+	// part are routed to the local vision call instead.
 	async chatCompletion(
 		request: ChatCompletionRequest,
-		opts?: { timeoutMs?: number },
+		_opts?: { timeoutMs?: number },
 	): Promise<
 		{ success: true; data: { content: string; usage: unknown } } | { success: false; error: string }
 	> {
-		return apiClient.post(`${STUDIO_PREFIX}/chat/completion`, request, opts?.timeoutMs);
+		const { prompt, context, imageBase64 } = splitMessages(request.messages);
+		if (!window.electronAPI?.aiAnalyze) {
+			return { success: false, error: "No local AI provider is available" };
+		}
+
+		try {
+			const result = imageBase64
+				? await window.electronAPI.aiAnalyzeImage(prompt, imageBase64, context)
+				: await window.electronAPI.aiAnalyze(prompt, context);
+			if (result.success && result.text) {
+				return { success: true, data: { content: result.text, usage: null } };
+			}
+			return { success: false, error: result.error || "The local AI provider returned no text" };
+		} catch (error) {
+			return {
+				success: false,
+				error: error instanceof Error ? error.message : "Local AI request failed",
+			};
+		}
 	}
 
-	// Text-to-Speech (Edge TTS free / ElevenLabs premium).
-	// The backend STREAMS raw MP3 bytes (not JSON), so this bypasses the JSON
-	// client: fetch the bytes, persist them to a local file via the main
-	// process, and return that path. A local file works for both the preview
-	// <audio> elements and FFmpeg narration muxing at export.
+	// Text-to-speech through the local TTS providers. Returns a local file
+	// path, which both the preview <audio> elements and FFmpeg narration
+	// muxing at export can use.
 	async generateSpeech(
 		request: TTSRequest,
 	): Promise<{ success: true; data: { audioUrl: string } } | { success: false; error: string }> {
 		try {
-			const headers: Record<string, string> = { "Content-Type": "application/json" };
-			const token = apiClient.getAccessToken();
-			if (token) headers.Authorization = `Bearer ${token}`;
-
-			const response = await fetch(`${apiClient.getBaseUrl()}${STUDIO_PREFIX}/tts/generate`, {
-				method: "POST",
-				headers,
-				body: JSON.stringify(request),
-				signal: AbortSignal.timeout(120_000),
-			});
-			if (!response.ok) {
-				const err = await response.json().catch(() => ({ message: response.statusText }));
-				return {
-					success: false,
-					error:
-						(err as { message?: string; detail?: string }).message ||
-						(err as { detail?: string }).detail ||
-						`TTS failed: HTTP ${response.status}`,
-				};
-			}
-
-			const audio = await response.arrayBuffer();
-			if (audio.byteLength === 0) return { success: false, error: "TTS returned empty audio" };
-
-			if (window.electronAPI?.saveNarrationAudio) {
-				const saved = await window.electronAPI.saveNarrationAudio(audio);
-				if (saved.success && saved.path) {
-					return { success: true, data: { audioUrl: saved.path } };
+			if (window.electronAPI?.aiMinimaxTts) {
+				const minimax = await window.electronAPI.aiMinimaxTts(request.text, {
+					voiceId: request.voice,
+					speed: request.speed,
+				});
+				if (minimax.success && minimax.audioPath) {
+					return { success: true, data: { audioUrl: minimax.audioPath } };
 				}
-				return { success: false, error: saved.error || "Failed to save narration audio" };
 			}
 
-			// Non-Electron fallback (web preview): blob URL — playable, not muxable.
-			const blobUrl = URL.createObjectURL(new Blob([audio], { type: "audio/mpeg" }));
-			return { success: true, data: { audioUrl: blobUrl } };
+			if (window.electronAPI?.aiTtsSynthesize) {
+				const fallback = await window.electronAPI.aiTtsSynthesize(request.text, request.voice);
+				if (fallback.success && fallback.audioPath) {
+					return { success: true, data: { audioUrl: fallback.audioPath } };
+				}
+				return { success: false, error: fallback.error || "Local TTS failed" };
+			}
+
+			return { success: false, error: "No local text-to-speech provider is available" };
 		} catch (error) {
 			return {
 				success: false,
@@ -181,22 +214,36 @@ export class AIService {
 		}
 	}
 
-	// List available TTS voices
-	async listVoices(locale?: string): Promise<
+	// List the local TTS voices.
+	async listVoices(_locale?: string): Promise<
 		| {
 				success: true;
 				data: { voices: Array<{ id: string; name: string; locale: string; gender: string }> };
 		  }
 		| { success: false; error: string }
 	> {
-		const params = locale ? `?locale=${encodeURIComponent(locale)}` : "";
-		return apiClient.get(`${STUDIO_PREFIX}/tts/voices${params}`);
+		if (!window.electronAPI?.aiMinimaxVoices) {
+			return { success: false, error: "No local text-to-speech provider is available" };
+		}
+		const result = await window.electronAPI.aiMinimaxVoices();
+		return {
+			success: true,
+			data: {
+				voices: result.voices.map((voice) => ({
+					id: voice.id,
+					name: voice.name,
+					locale: "",
+					gender: voice.gender,
+				})),
+			},
+		};
 	}
 
-	// Speech-to-Text (Groq Whisper)
+	// Speech-to-text. There is no local STT behind this call — auto-captions
+	// run the in-app Whisper engine directly (`transcribeMono16kToSegments`).
 	async transcribe(
-		audioFile: File | Blob,
-		language?: string,
+		_audioFile: File | Blob,
+		_language?: string,
 	): Promise<
 		| {
 				success: true;
@@ -208,94 +255,75 @@ export class AIService {
 		  }
 		| { success: false; error: string }
 	> {
-		// STT endpoint expects multipart/form-data, not JSON. FormData sets its own
-		// multipart Content-Type/boundary, so we never set that header manually.
-		const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
-		const url = `${baseUrl}${STUDIO_PREFIX}/stt/transcribe`;
-		const apiKey = import.meta.env.VITE_API_KEY as string | undefined;
-
-		// A fresh FormData per attempt: a body stream can only be sent once, so the
-		// post-refresh retry below needs its own instance.
-		const buildForm = () => {
-			const form = new FormData();
-			form.append("audio", audioFile);
-			if (language) form.append("language", language);
-			return form;
-		};
-
-		const send = async (token: string | null): Promise<Response> => {
-			const headers: Record<string, string> = {};
-			if (token) headers.Authorization = `Bearer ${token}`;
-			if (apiKey) headers["X-API-Key"] = apiKey;
-			return fetch(url, { method: "POST", headers, body: buildForm() });
-		};
-
-		try {
-			let response = await send(apiClient.getAccessToken());
-
-			// Mirror apiClient.request: access tokens expire after ~30 min, so on a 401
-			// refresh once and retry. Without this the raw fetch fails on an expired
-			// token while every other AI call transparently recovers.
-			if (response.status === 401 && (await apiClient.refreshAccessToken())) {
-				response = await send(apiClient.getAccessToken());
-			}
-
-			if (!response.ok) {
-				const error = await response.json().catch(() => ({ detail: response.statusText }));
-				return { success: false, error: error.detail || `HTTP ${response.status}` };
-			}
-
-			const data = await response.json();
-			return { success: true, data };
-		} catch (error) {
-			return {
-				success: false,
-				error: error instanceof Error ? error.message : "Transcription failed",
-			};
-		}
+		return { success: false, error: "Transcription runs on the local caption engine" };
 	}
 
-	// Image Generation (Replicate SDXL/Flux)
+	// Image generation through the local image provider.
 	async generateImage(
 		request: ImageGenerationRequest,
 	): Promise<
 		{ success: true; data: { images: Array<{ url: string }> } } | { success: false; error: string }
 	> {
-		return apiClient.post(`${STUDIO_PREFIX}/image/generate`, request);
+		if (!window.electronAPI?.aiMinimaxImage) {
+			return { success: false, error: "No local image provider is available" };
+		}
+		const result = await window.electronAPI.aiMinimaxImage(request.prompt, {
+			count: request.num_outputs,
+		});
+		if (result.success && result.imagePaths?.length) {
+			return { success: true, data: { images: result.imagePaths.map((url) => ({ url })) } };
+		}
+		return { success: false, error: result.error || "Local image generation failed" };
 	}
 
-	// Music Generation (Replicate MusicGen)
-	// MusicGen render time scales with the requested duration, so callers asking
-	// for long tracks should pass a longer `timeoutMs` than the client default (30s).
+	// Music generation through the local music provider.
 	async generateMusic(
 		request: MusicGenerationRequest,
-		timeoutMs?: number,
+		_timeoutMs?: number,
 	): Promise<
 		| { success: true; data: { audioUrl: string; duration: number } }
 		| { success: false; error: string }
 	> {
-		return apiClient.post(`${STUDIO_PREFIX}/music/generate`, request, timeoutMs);
+		if (!window.electronAPI?.aiGenerateMusic) {
+			return { success: false, error: "No local music provider is available" };
+		}
+		const result = await window.electronAPI.aiGenerateMusic(
+			"custom",
+			request.prompt,
+			request.duration,
+		);
+		if (result.success && result.audioPath) {
+			return {
+				success: true,
+				data: { audioUrl: result.audioPath, duration: result.durationSec ?? request.duration ?? 0 },
+			};
+		}
+		return { success: false, error: result.error || "Local music generation failed" };
 	}
 
-	// SFX Generation (not yet implemented in backend)
+	// SFX generation through the local SFX provider.
 	async generateSFX(
 		prompt: string,
 		duration?: number,
 	): Promise<{ success: true; data: { audioUrl: string } } | { success: false; error: string }> {
-		return apiClient.post(`${STUDIO_PREFIX}/music/generate`, {
-			prompt: `sound effect: ${prompt}`,
-			duration: duration || 5,
-		});
+		if (!window.electronAPI?.aiElevenlabsSfx) {
+			return { success: false, error: "No local sound-effect provider is available" };
+		}
+		const result = await window.electronAPI.aiElevenlabsSfx(prompt, { durationSec: duration });
+		if (result.success && result.filePath) {
+			return { success: true, data: { audioUrl: result.filePath } };
+		}
+		return { success: false, error: result.error || "Local sound-effect generation failed" };
 	}
 
-	// Video Generation (not yet implemented in backend)
+	// Video Generation (no local provider)
 	async generateVideo(
 		_request: VideoGenerationRequest,
 	): Promise<
 		| { success: true; data: { videoUrl: string; jobId?: string } }
 		| { success: false; error: string }
 	> {
-		return { success: false, error: "Video generation is not yet available" };
+		return { success: false, error: "Video generation is not available" };
 	}
 
 	// Check video generation status
@@ -306,20 +334,20 @@ export class AIService {
 		  }
 		| { success: false; error: string }
 	> {
-		return { success: false, error: "Video generation is not yet available" };
+		return { success: false, error: "Video generation is not available" };
 	}
 
-	// Lottie Animation Search (not yet implemented in backend)
+	// Lottie Animation Search (served by the local Lottie search handlers)
 	async searchLottie(
 		_query: string,
 	): Promise<
 		| { success: true; data: { results: Array<{ id: string; url: string; preview: string }> } }
 		| { success: false; error: string }
 	> {
-		return { success: false, error: "Lottie search is not yet available" };
+		return { success: false, error: "Lottie search is not available here" };
 	}
 
-	// Auto-caption generation (uses STT transcription under the hood)
+	// Auto-caption generation (uses the local caption engine under the hood)
 	async generateCaptions(
 		_audioUrl: string,
 		_language?: string,
@@ -327,17 +355,17 @@ export class AIService {
 		| { success: true; data: { segments: Array<{ start: number; end: number; text: string }> } }
 		| { success: false; error: string }
 	> {
-		return { success: false, error: "Use the transcribe method with an audio file for captions" };
+		return { success: false, error: "Captions run on the local caption engine" };
 	}
 
-	// AI Video Analysis (not yet implemented in backend)
+	// AI Video Analysis (no local provider)
 	async analyzeVideo(
 		_videoUrl: string,
 	): Promise<
 		| { success: true; data: { scenes: unknown[]; keyframes: unknown[]; summary: string } }
 		| { success: false; error: string }
 	> {
-		return { success: false, error: "Video analysis is not yet available" };
+		return { success: false, error: "Video analysis is not available" };
 	}
 }
 
@@ -352,13 +380,10 @@ export interface TokenUsage {
 	timestamp: string;
 }
 
+/** Local usage tracking is reported by the main process, not an account. */
 export async function getTokenUsage(
-	startDate?: string,
-	endDate?: string,
+	_startDate?: string,
+	_endDate?: string,
 ): Promise<{ success: true; data: TokenUsage[] } | { success: false; error: string }> {
-	const params = new URLSearchParams();
-	if (startDate) params.set("start", startDate);
-	if (endDate) params.set("end", endDate);
-
-	return apiClient.get(`/usage?${params}`);
+	return { success: true, data: [] };
 }

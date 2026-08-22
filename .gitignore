@@ -68,3 +68,8 @@ result-*
 /caption-assets/
 dist-remotion
 /dist-remotion
+# Local render/probe output from AI video experiments
+/results/
+
+# Local scratch notes
+/permission_issue.txt

@@ -1,3 +1,9 @@
+import {
+	type CaptionStyle,
+	type CaptionTrack,
+	DEFAULT_CAPTION_STYLE,
+	type NarrationTrack,
+} from "@/lib/ai/types";
 import { normalizeTextAnimation } from "@/lib/annotationTextAnimation";
 import { normalizeBlurColor, normalizeBlurType } from "@/lib/blurEffects";
 import { normalizeCursorThemeId } from "@/lib/cursor/cursorThemes";
@@ -102,6 +108,15 @@ export interface ProjectEditorState {
 	cursorStyle?: string;
 	showClickRings?: boolean;
 	showCursor?: boolean;
+	// Local-first production data. These use the editor's existing caption and
+	// narration lanes, so agent-created projects stay fully editable after reload.
+	captionTrack: CaptionTrack | null;
+	captionStyle: CaptionStyle;
+	narrationTrack: NarrationTrack | null;
+	muteOriginalAudio: boolean;
+	backgroundMusic: string;
+	backgroundMusicVolume: number;
+	animatedBgSpeed: number;
 	// Multi-clip
 	videoClips: VideoClip[];
 	// Isolated intro clip
@@ -142,6 +157,127 @@ function computeNormalizedWebcamLayoutPreset(
 
 function clamp(value: number, min: number, max: number) {
 	return Math.min(max, Math.max(min, value));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function text(value: unknown, maximum: number) {
+	return typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, maximum) : "";
+}
+
+function localAudioPath(value: unknown) {
+	if (typeof value !== "string") return undefined;
+	const path = value.trim();
+	if (!path || path.length > 4_096 || /^(https?|blob|data):/i.test(path)) return undefined;
+	return path;
+}
+
+function normalizeCaptionTrack(value: unknown): CaptionTrack | null {
+	if (!isRecord(value) || !Array.isArray(value.lines)) return null;
+	const lines = value.lines.slice(0, 1_500).flatMap((line, index) => {
+		if (!isRecord(line)) return [];
+		const startMs = isFiniteNumber(line.startMs) ? Math.max(0, Math.round(line.startMs)) : 0;
+		const endMs = isFiniteNumber(line.endMs)
+			? Math.max(startMs + 1, Math.round(line.endMs))
+			: startMs + 1;
+		const words = Array.isArray(line.words)
+			? line.words.slice(0, 40).flatMap((word) => {
+					if (!isRecord(word)) return [];
+					const wordText = text(word.text, 160);
+					if (!wordText) return [];
+					const wordStart = isFiniteNumber(word.startMs)
+						? Math.max(startMs, Math.min(endMs - 1, Math.round(word.startMs)))
+						: startMs;
+					const wordEnd = isFiniteNumber(word.endMs)
+						? Math.max(wordStart + 1, Math.min(endMs, Math.round(word.endMs)))
+						: endMs;
+					return [
+						{
+							text: wordText,
+							startMs: wordStart,
+							endMs: wordEnd,
+							confidence: isFiniteNumber(word.confidence) ? clamp(word.confidence, 0, 1) : 0.65,
+						},
+					];
+				})
+			: [];
+		if (!words.length) return [];
+		return [
+			{
+				id: text(line.id, 120) || `caption-line-${index + 1}`,
+				startMs,
+				endMs,
+				words,
+			},
+		];
+	});
+	if (!lines.length) return null;
+	return {
+		id: text(value.id, 120) || "caption-track",
+		language: text(value.language, 24) || "en",
+		modelId: text(value.modelId, 120) || "local-guide-production",
+		createdAt: isFiniteNumber(value.createdAt) ? Math.max(0, Math.round(value.createdAt)) : 0,
+		lines,
+	};
+}
+
+function normalizeNarrationTrack(value: unknown): NarrationTrack | null {
+	if (!isRecord(value) || !Array.isArray(value.segments)) return null;
+	const segments = value.segments.slice(0, 200).flatMap((segment, index) => {
+		if (!isRecord(segment)) return [];
+		const narrationText = text(segment.text, 3_000);
+		if (!narrationText) return [];
+		const startMs = isFiniteNumber(segment.startMs) ? Math.max(0, Math.round(segment.startMs)) : 0;
+		const endMs = isFiniteNumber(segment.endMs)
+			? Math.max(startMs + 1, Math.round(segment.endMs))
+			: startMs + 1;
+		return [
+			{
+				id: text(segment.id, 120) || `narration-${index + 1}`,
+				text: narrationText,
+				startMs,
+				endMs,
+				...(localAudioPath(segment.audioPath)
+					? { audioPath: localAudioPath(segment.audioPath) }
+					: {}),
+			},
+		];
+	});
+	if (!segments.length) return null;
+	return {
+		segments,
+		...(text(value.voiceId, 120) ? { voiceId: text(value.voiceId, 120) } : {}),
+		...(text(value.language, 24) ? { language: text(value.language, 24) } : {}),
+		...(localAudioPath(value.audioPath) ? { audioPath: localAudioPath(value.audioPath) } : {}),
+	};
+}
+
+function normalizeCaptionStyle(value: unknown): CaptionStyle {
+	const style = isRecord(value) ? value : {};
+	return {
+		fontFamily: text(style.fontFamily, 160) || DEFAULT_CAPTION_STYLE.fontFamily,
+		fontSize: isFiniteNumber(style.fontSize)
+			? clamp(Math.round(style.fontSize), 12, 144)
+			: DEFAULT_CAPTION_STYLE.fontSize,
+		fontColor: text(style.fontColor, 32) || DEFAULT_CAPTION_STYLE.fontColor,
+		backgroundColor: text(style.backgroundColor, 32) || DEFAULT_CAPTION_STYLE.backgroundColor,
+		backgroundOpacity: isFiniteNumber(style.backgroundOpacity)
+			? clamp(style.backgroundOpacity, 0, 1)
+			: DEFAULT_CAPTION_STYLE.backgroundOpacity,
+		position:
+			style.position === "top" || style.position === "center" || style.position === "bottom"
+				? style.position
+				: DEFAULT_CAPTION_STYLE.position,
+		animation:
+			style.animation === "none" ||
+			style.animation === "word-highlight" ||
+			style.animation === "fade-in"
+				? style.animation
+				: DEFAULT_CAPTION_STYLE.animation,
+		activeWordColor: text(style.activeWordColor, 32) || DEFAULT_CAPTION_STYLE.activeWordColor,
+	};
 }
 
 function encodePathSegments(pathname: string, keepWindowsDrive = false): string {
@@ -251,6 +387,69 @@ function normalizeClipIntroConfig(raw: unknown): VideoClip["introConfig"] | unde
 	}
 
 	return undefined;
+}
+
+/**
+ * Repair the first generation of local-production overlays. Those projects
+ * stored their x coordinate as a centre point, while editor annotations have
+ * always used the top-left corner. The migration is deliberately limited to
+ * agent-owned ids so user-positioned annotations are never moved.
+ */
+function normalizeLegacyAgentAnnotation(region: AnnotationRegion): AnnotationRegion {
+	if (
+		region.id.startsWith("agent-caption-") &&
+		region.position.x === 50 &&
+		region.size.width === 84
+	) {
+		return {
+			...region,
+			position: { x: 8, y: region.position.y === 86 ? 82 : region.position.y },
+			size: { ...region.size, height: region.size.height === 12 ? 16 : region.size.height },
+			style: {
+				...region.style,
+				fontSize: region.style.fontSize === 42 ? 36 : region.style.fontSize,
+			},
+		};
+	}
+
+	if (region.id.startsWith("agent-overlay-") && region.position.x === 50) {
+		const deduplicateTitle = (value: string | undefined) => {
+			if (!value) return value;
+			const lines = value.split("\n");
+			return lines.length === 2 && lines[0]?.trim() === lines[1]?.trim() ? lines[0] : value;
+		};
+		const content = deduplicateTitle(region.content) ?? "";
+		const textContent = deduplicateTitle(region.textContent) ?? content;
+		const isWideOverlay = region.size.width >= 70;
+		const height = isWideOverlay && region.size.height === 18 ? 20 : region.size.height;
+		const y =
+			isWideOverlay && region.position.y === 50
+				? (100 - height) / 2
+				: isWideOverlay && region.position.y === 16
+					? 12
+					: region.position.y;
+
+		return {
+			...region,
+			content,
+			textContent,
+			position: { x: (100 - region.size.width) / 2, y },
+			size: { ...region.size, height },
+			style: {
+				...region.style,
+				fontSize:
+					region.style.fontSize === 52
+						? content.length > 42
+							? 36
+							: 48
+						: region.style.fontSize === 34
+							? 32
+							: region.style.fontSize,
+			},
+		};
+	}
+
+	return region;
 }
 
 export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): ProjectEditorState {
@@ -366,7 +565,7 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 					const blurType = normalizeBlurType(region.blurData?.type);
 					const blurColor = normalizeBlurColor(region.blurData?.color);
 
-					return {
+					const normalizedRegion: AnnotationRegion = {
 						id: region.id,
 						startMs,
 						endMs,
@@ -460,6 +659,7 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 									}
 								: undefined,
 					};
+					return normalizeLegacyAgentAnnotation(normalizedRegion);
 				})
 		: [];
 
@@ -593,6 +793,18 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 				: "default",
 		showClickRings: typeof editor.showClickRings === "boolean" ? editor.showClickRings : true,
 		showCursor: typeof editor.showCursor === "boolean" ? editor.showCursor : true,
+		captionTrack: normalizeCaptionTrack(editor.captionTrack),
+		captionStyle: normalizeCaptionStyle(editor.captionStyle),
+		narrationTrack: normalizeNarrationTrack(editor.narrationTrack),
+		muteOriginalAudio:
+			typeof editor.muteOriginalAudio === "boolean" ? editor.muteOriginalAudio : false,
+		backgroundMusic: localAudioPath(editor.backgroundMusic) ?? "none",
+		backgroundMusicVolume: isFiniteNumber(editor.backgroundMusicVolume)
+			? clamp(Math.round(editor.backgroundMusicVolume), 0, 100)
+			: 50,
+		animatedBgSpeed: isFiniteNumber(editor.animatedBgSpeed)
+			? clamp(editor.animatedBgSpeed, 0.1, 4)
+			: 1,
 		// Multi-clip
 		videoClips: (() => {
 			const clips = Array.isArray(editor.videoClips)

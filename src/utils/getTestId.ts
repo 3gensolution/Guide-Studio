@@ -4,7 +4,8 @@ export type TestId =
 	| "export-panel-button"
 	| "gif-format-button"
 	| "gif-video-only-switch"
-	| "mp4-format-button";
+	| "mp4-format-button"
+	| "return-to-welcome-button";
 
 export function getTestId(testId: TestId) {
 	return `testId-${testId}`;

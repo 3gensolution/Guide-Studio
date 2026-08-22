@@ -7,7 +7,7 @@
 // main process. Dev (http://localhost) never calls this — the worker fetches from the HF hub.
 
 import { createWriteStream } from "node:fs";
-import { mkdir, rename, stat } from "node:fs/promises";
+import { mkdir, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -45,6 +45,21 @@ async function fileExists(filePath: string): Promise<boolean> {
 	} catch {
 		return false;
 	}
+}
+
+export async function isCaptionModelInstalled(): Promise<boolean> {
+	const baseDir = path.join(app.getPath("userData"), "caption-models");
+	const modelDir = path.join(baseDir, ...MODEL_ID.split("/"));
+	return Promise.all([
+		fileExists(path.join(modelDir, "config.json")),
+		fileExists(path.join(modelDir, "onnx", "encoder_model_quantized.onnx")),
+		fileExists(path.join(modelDir, "onnx", "decoder_model_merged_quantized.onnx")),
+	]).then((files) => files.every(Boolean));
+}
+
+export async function removeCaptionModel(): Promise<void> {
+	const baseDir = path.join(app.getPath("userData"), "caption-models");
+	await rm(baseDir, { recursive: true, force: true });
 }
 
 function sleep(ms: number): Promise<void> {

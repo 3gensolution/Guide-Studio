@@ -38,6 +38,12 @@ interface UpdateEvent {
 	manual?: boolean;
 }
 
+type ClaudeSessionResult = {
+	success: boolean;
+	session?: import("./claude-runtime/creator").CreatorSession;
+	error?: string;
+};
+
 // Used in Renderer process, expose in `preload.ts`
 interface Window {
 	electronAPI: {
@@ -46,6 +52,7 @@ interface Window {
 		) => Promise<import("../src/native/contracts").NativeBridgeResponse<TData>>;
 		getSources: (opts: Electron.SourcesOptions) => Promise<ProcessedDesktopSource[]>;
 		switchToEditor: () => Promise<void>;
+		openAIVideoCreator: () => Promise<{ success: boolean; windowId?: number; error?: string }>;
 		switchToHud: () => Promise<void>;
 		startNewRecording: () => Promise<{ success: boolean; error?: string }>;
 		openSourceSelector: (options?: { skipPermissionCheck?: boolean }) => Promise<{
@@ -790,25 +797,42 @@ interface Window {
 			error?: string;
 		}>;
 
-		/** Fetch the Studio showcase manifest from DO Spaces. Returns the list of
-		 *  community-uploaded videos, used by the Studio TV arcade tab. */
-		showcaseFetchManifest: () => Promise<{
+		// ── AI Video Creator ──
+		claudeDetect: () => Promise<{
 			success: boolean;
-			entries?: Array<{
-				id: string;
-				title: string;
-				prompt?: string;
-				aesthetic?: string;
-				model?: string;
-				sceneCount?: number;
-				durationSec?: number;
-				videoUrl: string;
-				posterUrl: string;
-				author: string;
-				createdAt: string;
-			}>;
+			installation?: import("./claude-runtime/detect").ClaudeInstallation;
 			error?: string;
 		}>;
+		claudeSkills: () => Promise<{
+			success: boolean;
+			skills: Array<{ id: string; name: string; description: string }>;
+		}>;
+		claudePlan: (input: {
+			request: string;
+			format?: "landscape" | "vertical" | "square";
+			targetSeconds?: number;
+			model?: string;
+			look?: "motion" | "cards";
+		}) => Promise<ClaudeSessionResult>;
+		claudePreview: (sessionId: string) => Promise<ClaudeSessionResult>;
+		claudeRender: (sessionId: string) => Promise<ClaudeSessionResult>;
+		claudeSession: (sessionId: string) => Promise<ClaudeSessionResult>;
+		claudeSessions: () => Promise<{
+			success: boolean;
+			sessions: import("./claude-runtime/creator").CreatorSession[];
+		}>;
+		claudeCancel: (sessionId: string) => Promise<{ success: boolean }>;
+		claudeDiscard: (sessionId: string) => Promise<{ success: boolean }>;
+		claudeInsertIntoEditor: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
+		onClaudeActivity: (
+			callback: (activity: import("./claude-runtime/events").ClaudeActivity) => void,
+		) => () => void;
+		onClaudeRenderProgress: (
+			callback: (payload: { sessionId: string; percent: number }) => void,
+		) => () => void;
+		onClaudeInsertClip: (
+			callback: (payload: { videoPath: string; title: string }) => void,
+		) => () => void;
 
 		// Project browser
 		getRecentProjects: () => Promise<RecentProject[]>;
@@ -923,19 +947,6 @@ interface Window {
 				string,
 				{ calls: number; inputTokens: number; outputTokens: number; estimatedCostUsd: number }
 			>;
-		}>;
-
-		// Secure storage (OS-keychain-backed via Electron safeStorage)
-		secureStorageGet: (key: string) => Promise<string | null>;
-		secureStorageSet: (key: string, value: string) => Promise<{ success: boolean }>;
-		secureStorageDelete: (key: string) => Promise<{ success: boolean }>;
-
-		// Cross-window single-flight pro-token refresh -- main owns the
-		// lock so two Studio windows can't both consume the same
-		// single-use refresh token and revoke the session.
-		proRefreshToken: () => Promise<{
-			success: boolean;
-			accessToken: string | null;
 		}>;
 
 		// ─── Recordly export pipeline IPC stubs ───

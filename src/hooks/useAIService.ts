@@ -1,34 +1,38 @@
 // ── useAIService ─────────────────────────────────────────────────────────
 //
-// Routes AI calls to the backend (when available + authenticated) or falls
-// back to local Electron IPC. The backend is the "AI brain" — only chat,
-// image generation, and whisper/STT go through it.
+// Routes AI calls to the local Electron AI service. Guide Studio is
+// local-only: chat, JSON generation, and image generation all run through
+// the provider configured in Settings (Ollama or the user's own key).
 
 import { useCallback } from "react";
-import { useBackend } from "@/contexts/BackendContext";
-import { aiService } from "@/lib/api/ai";
+
+/** The local image provider takes a ratio, not pixels; pick the nearest one. */
+function aspectRatioFor(width?: number, height?: number) {
+	if (!width || !height) return "16:9" as const;
+	const ratio = width / height;
+	const options = [
+		["16:9", 16 / 9],
+		["4:3", 4 / 3],
+		["1:1", 1],
+		["3:4", 3 / 4],
+		["9:16", 9 / 16],
+	] as const;
+	let best: (typeof options)[number] = options[0];
+	for (const option of options) {
+		if (Math.abs(option[1] - ratio) < Math.abs(best[1] - ratio)) best = option;
+	}
+	return best[0];
+}
 
 export function useAIService() {
-	const { isBackendAvailable, isAuthenticated } = useBackend();
-
-	const useBackendAI = isBackendAvailable && isAuthenticated;
-
 	/** Send a prompt for AI analysis / chat completion. Returns the text response. */
 	const analyze = useCallback(
-		async (prompt: string, options?: { model?: string; temperature?: number }): Promise<string> => {
-			if (useBackendAI) {
-				const result = await aiService.chatCompletion({
-					messages: [{ role: "user", content: prompt }],
-					model: options?.model,
-					temperature: options?.temperature,
-				});
-				if (result.success) {
-					return result.data.content;
-				}
-				throw new Error(result.error);
-			}
-
-			// Fallback to local Electron AI
+		// Model/temperature stay in the signature for callers, but the local
+		// service picks them up from Settings rather than per-call overrides.
+		async (
+			prompt: string,
+			_options?: { model?: string; temperature?: number },
+		): Promise<string> => {
 			if (window.electronAPI?.aiAnalyze) {
 				const result = await window.electronAPI.aiAnalyze(prompt);
 				if (result.success && result.text) {
@@ -38,70 +42,44 @@ export function useAIService() {
 			}
 			throw new Error("No AI provider available");
 		},
-		[useBackendAI],
+		[],
 	);
 
 	/** Generate structured JSON from AI */
-	const generateJSON = useCallback(
-		async (prompt: string): Promise<unknown> => {
-			if (useBackendAI) {
-				const result = await aiService.chatCompletion({
-					messages: [
-						{
-							role: "system",
-							content: "You are a helpful assistant. Respond only with valid JSON.",
-						},
-						{ role: "user", content: prompt },
-					],
-				});
-				if (result.success) {
-					return JSON.parse(result.data.content);
-				}
-				throw new Error(result.error);
+	const generateJSON = useCallback(async (prompt: string): Promise<unknown> => {
+		if (window.electronAPI?.aiGenerateJSON) {
+			const result = await window.electronAPI.aiGenerateJSON(prompt);
+			if (result.success && result.data !== undefined) {
+				return result.data;
 			}
+			throw new Error(result.error || "JSON generation failed");
+		}
+		throw new Error("No AI provider available");
+	}, []);
 
-			if (window.electronAPI?.aiGenerateJSON) {
-				const result = await window.electronAPI.aiGenerateJSON(prompt);
-				if (result.success && result.data !== undefined) {
-					return result.data;
-				}
-				throw new Error(result.error || "JSON generation failed");
-			}
-			throw new Error("No AI provider available");
-		},
-		[useBackendAI],
-	);
-
-	/** Generate an image from a prompt (backend only) */
+	/** Generate an image from a prompt through the local image provider. */
 	const generateImage = useCallback(
 		async (prompt: string, options?: { width?: number; height?: number }): Promise<string> => {
-			if (useBackendAI) {
-				const result = await aiService.generateImage({
-					prompt,
-					width: options?.width,
-					height: options?.height,
-				});
-				if (result.success) {
-					// Backend returns { images: [{ url }] }
-					const firstImage = result.data.images?.[0];
-					if (firstImage?.url) {
-						return firstImage.url;
-					}
-					throw new Error("No image returned from backend");
-				}
-				throw new Error(result.error);
+			if (!window.electronAPI?.aiMinimaxImage) {
+				throw new Error("No local image provider is configured");
 			}
-
-			throw new Error("Image generation requires backend connection");
+			const result = await window.electronAPI.aiMinimaxImage(prompt, {
+				aspectRatio: aspectRatioFor(options?.width, options?.height),
+			});
+			const first = result.imagePaths?.[0];
+			if (result.success && first) {
+				return first;
+			}
+			throw new Error(result.error || "Image generation failed");
 		},
-		[useBackendAI],
+		[],
 	);
 
 	return {
 		analyze,
 		generateJSON,
 		generateImage,
-		/** Whether AI calls go through the backend */
-		isUsingBackend: useBackendAI,
+		/** Kept for callers that branched on transport; always false in local mode. */
+		isUsingBackend: false,
 	};
 }

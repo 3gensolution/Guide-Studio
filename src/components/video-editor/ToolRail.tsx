@@ -1,4 +1,5 @@
 import {
+	Clapperboard,
 	Crop,
 	Layers,
 	MessageSquare,
@@ -15,7 +16,7 @@ import { useScopedT } from "@/contexts/I18nContext";
 import { cn } from "@/lib/utils";
 import type { SettingsPanelMode } from "./SettingsPanel";
 
-export type ToolRailTool = SettingsPanelMode | "crop" | "polish" | "ai" | "chat";
+export type ToolRailTool = SettingsPanelMode | "crop" | "polish" | "ai" | "chat" | "creator";
 
 interface ToolRailProps {
 	/** Currently open inspector tool, or null when the inspector is collapsed. */
@@ -58,6 +59,10 @@ export function ToolRail({
 		{ id: "polish", label: "Magic Polish", icon: Wand2, disabled: polishDisabled, accent: true },
 		{ id: "ai", label: "AI Tools", icon: Sparkles, accent: true },
 		{ id: "chat", label: "AI Chat", icon: MessageSquare, accent: true },
+		// Opens the creator in its own window. The project stays loaded behind
+		// it, so a generated scene lands on this timeline rather than replacing
+		// what the user is already editing.
+		{ id: "creator", label: "AI Video Creator", icon: Clapperboard, accent: true },
 	];
 
 	const renderItem = (item: RailItem) => {

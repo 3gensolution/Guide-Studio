@@ -1,9 +1,7 @@
 import type { LucideIcon } from "lucide-react";
-import { Bot, Clapperboard, Film, FolderOpen, LogIn, PlayCircle } from "lucide-react";
+import { ArrowLeft, Bot, Clapperboard, Film, FolderOpen, PlayCircle } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import guideLogo from "@/assets/guide-logo.svg";
-import { ProBadge, useProGate } from "@/components/ui/ProGate";
-import { useBackend } from "@/contexts/BackendContext";
 import { useAIPreflight } from "@/hooks/useAIPreflight";
 
 interface WelcomeScreenProps {
@@ -12,6 +10,9 @@ interface WelcomeScreenProps {
 	onOpenProject: () => void;
 	onCreateVideo?: () => void;
 	onAiDemo?: () => void;
+	onAiVideoCreator?: () => void;
+	/** Returns to an already-open edit without changing its media or timeline. */
+	onReturnToEditor?: () => void;
 }
 
 function SidebarItem({
@@ -76,15 +77,13 @@ export function WelcomeScreen({
 	onOpenProject,
 	onCreateVideo,
 	onAiDemo,
+	onAiVideoCreator,
+	onReturnToEditor,
 }: WelcomeScreenProps) {
-	const { isPro, checkFeature, gateDialog } = useProGate();
 	const { requireChatProvider } = useAIPreflight();
-	const { isBackendAvailable, isAuthenticated, showLogin } = useBackend();
 
 	return (
 		<div className="flex h-screen bg-[#1C1917]">
-			{gateDialog}
-
 			{/* Left Sidebar */}
 			<aside className="w-[220px] flex-shrink-0 flex flex-col border-r border-white/[0.06]">
 				{/* Logo + Brand */}
@@ -102,24 +101,13 @@ export function WelcomeScreen({
 				<nav className="flex flex-col gap-1 px-3 mt-2">
 					<SidebarItem icon={Film} label="Open Video File" onClick={onOpenVideo} />
 					<SidebarItem icon={FolderOpen} label="Open Project" onClick={onOpenProject} />
+					{onReturnToEditor && (
+						<SidebarItem icon={ArrowLeft} label="Return to editor" onClick={onReturnToEditor} />
+					)}
 				</nav>
 
 				{/* Spacer */}
 				<div className="flex-1" />
-
-				{/* Login nudge */}
-				{isBackendAvailable && !isAuthenticated && (
-					<div className="px-3 pb-3">
-						<button
-							type="button"
-							onClick={showLogin}
-							className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-[#6E6BFF]/10 hover:bg-[#6E6BFF]/20 border border-[#6E6BFF]/30 hover:border-[#6E6BFF]/50 text-xs text-white/80 transition-colors"
-						>
-							<LogIn size={12} className="text-[#6E6BFF]" />
-							Sign in to unlock AI features
-						</button>
-					</div>
-				)}
 
 				{/* Attribution */}
 				<div className="px-4 pb-3 text-[10px] text-white/30">Guide Studio</div>
@@ -144,16 +132,22 @@ export function WelcomeScreen({
 							/>
 						</div>
 
+						{onAiVideoCreator && (
+							<ActionCard
+								icon={Bot}
+								title="AI Video Creator"
+								description="Describe a video — Claude designs the scenes"
+								onClick={onAiVideoCreator}
+							/>
+						)}
+
 						{/* Secondary actions */}
 						{onCreateVideo && (
 							<ActionCard
 								icon={Clapperboard}
 								title="Create Video"
 								description="Build from scenes"
-								onClick={() => {
-									if (checkFeature("scene-builder")) onCreateVideo();
-								}}
-								badge={!isPro ? <ProBadge /> : undefined}
+								onClick={onCreateVideo}
 							/>
 						)}
 
@@ -163,11 +157,9 @@ export function WelcomeScreen({
 								title="AI Video"
 								description="Generate with AI"
 								onClick={async () => {
-									if (!checkFeature("ai-demo-recorder")) return;
 									if (!(await requireChatProvider("Generate AI Video"))) return;
 									onAiDemo();
 								}}
-								badge={!isPro ? <ProBadge /> : undefined}
 							/>
 						)}
 					</div>

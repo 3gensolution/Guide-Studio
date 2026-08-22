@@ -1,17 +1,13 @@
 /**
  * transcribeAuto — engine routing for auto-captions.
  *
- * The in-browser WASM Whisper path (`transcribeMono16kToSegments`) is correct but
- * slow: single-threaded ONNX under `file://` with several retry passes. When the
- * user is signed in to their account we can transcribe far faster via the backend
- * speech-to-text endpoint (server-side Whisper). This module encodes the same
- * mono/16 kHz sample buffer the WASM path uses into a small WAV blob, sends it to
- * the account endpoint, and falls back to the local WASM engine on any failure so
- * offline use keeps working.
+ * Guide Studio transcribes locally: the in-browser WASM Whisper path
+ * (`transcribeMono16kToSegments`) is the only engine. The WAV encoder and the
+ * trim-region helper stay here because callers still use them to prepare the
+ * sample buffer.
  */
 import type { TrimRegion } from "@/components/video-editor/types";
 import type { CaptionTrack, CaptionWord } from "@/lib/ai/types";
-import { aiService } from "@/lib/api/ai";
 import type { CaptionSegment, TranscribeMono16kResult } from "./transcribe";
 import { transcribeMono16kToSegments } from "./transcribe";
 
@@ -52,80 +48,23 @@ export function encodeMono16kWav(samples: Float32Array): Blob {
 	return new Blob([buffer], { type: "audio/wav" });
 }
 
-/** Drop samples that fall inside trimmed-out regions before sending to the server. */
-function applyTrimRegions(samples: Float32Array, trimRegions: TrimRegion[]): Float32Array {
-	if (!trimRegions || trimRegions.length === 0) return samples;
-	const keep: Array<[number, number]> = [];
-	const sorted = [...trimRegions].sort((a, b) => a.startMs - b.startMs);
-	let cursor = 0;
-	const totalMs = (samples.length / SAMPLE_RATE) * 1000;
-	for (const region of sorted) {
-		const start = Math.max(cursor, region.startMs);
-		if (start > cursor) keep.push([cursor, start]);
-		cursor = Math.max(cursor, region.endMs);
-	}
-	if (cursor < totalMs) keep.push([cursor, totalMs]);
-	if (keep.length === 0) return samples;
-
-	const msToIdx = (ms: number) =>
-		Math.max(0, Math.min(samples.length, Math.round((ms / 1000) * SAMPLE_RATE)));
-	const chunks = keep.map(([a, b]) => samples.subarray(msToIdx(a), msToIdx(b)));
-	const total = chunks.reduce((n, c) => n + c.length, 0);
-	const out = new Float32Array(total);
-	let o = 0;
-	for (const c of chunks) {
-		out.set(c, o);
-		o += c.length;
-	}
-	return out;
-}
-
 export interface TranscribeAutoOptions {
 	trimRegions?: TrimRegion[];
 	onStatus?: (phase: "model" | "transcribe") => void;
 	signal?: AbortSignal;
-	/** When true and the account is reachable, prefer the fast server engine. */
+	/** Ignored; kept so existing callers compile. Transcription is always local. */
 	preferServer?: boolean;
-	/** Optional forced language hint for the server engine (e.g. "en"). */
+	/** Optional language hint (e.g. "en"). */
 	language?: string;
 }
 
-/**
- * Transcribe mono/16 kHz samples, preferring the fast account (server) engine when
- * available and falling back to the local WASM engine otherwise.
- */
+/** Transcribe mono/16 kHz samples with the local WASM Whisper engine. */
 export async function transcribeSegmentsAuto(
 	samples: Float32Array,
 	options?: TranscribeAutoOptions,
 ): Promise<TranscribeMono16kResult> {
 	if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
-	if (options?.preferServer) {
-		try {
-			options.onStatus?.("transcribe");
-			const trimmed = applyTrimRegions(samples, options.trimRegions ?? []);
-			if (trimmed.length >= 800) {
-				const wav = encodeMono16kWav(trimmed);
-				const result = await aiService.transcribe(wav, options.language);
-				if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
-				if (result.success && result.data.segments.length > 0) {
-					const segments: CaptionSegment[] = result.data.segments.map((s) => ({
-						startSec: s.start,
-						endSec: Math.max(s.end, s.start + 0.001),
-						text: s.text.trim(),
-					}));
-					// Server segments are phrase-level (start/end per utterance).
-					return { segments, granularity: "phrase" };
-				}
-			}
-		} catch (err) {
-			if (err instanceof DOMException && err.name === "AbortError") throw err;
-			// Fall through to the local engine on any server failure.
-			console.warn("[transcribeAuto] server transcription failed, using local engine:", err);
-		}
-	}
-
-	// Local WASM fallback (offline / not signed in / server error).
 	return transcribeMono16kToSegments(samples, {
 		trimRegions: options?.trimRegions,
 		onStatus: options?.onStatus,

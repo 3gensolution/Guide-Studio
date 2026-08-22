@@ -1,26 +1,17 @@
 import { useCallback } from "react";
-import { useBackend } from "@/contexts/BackendContext";
 
 // ── AI preflight ─────────────────────────────────────────────────────────
 //
-// Guard for AI-powered features. Checks backend authentication —
-// all AI services run through the Docker backend.
-// Consumers call `requireChatProvider("feature name")` before invoking an
-// AI-dependent action — if it returns false, the feature MUST not proceed.
+// Guard for AI-powered features. Guide Studio is local-only: AI runs through
+// the Electron AI service (Ollama or the user's own provider key), so there
+// is no account to check before a feature runs. The hook is kept so callers
+// keep their "check before invoking" shape — a provider that is missing or
+// misconfigured surfaces its own error from the IPC call itself.
 
 export function useAIPreflight() {
-	const { isBackendAvailable, isAuthenticated, showLogin } = useBackend();
-
-	const requireChatProvider = useCallback(
-		async (_featureLabel: string): Promise<boolean> => {
-			if (isBackendAvailable && isAuthenticated) return true;
-
-			// Not logged in or backend unavailable — show the login dialog
-			showLogin();
-			return false;
-		},
-		[isBackendAvailable, isAuthenticated, showLogin],
-	);
+	const requireChatProvider = useCallback(async (_featureLabel: string): Promise<boolean> => {
+		return true;
+	}, []);
 
 	return {
 		requireChatProvider,

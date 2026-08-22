@@ -38,7 +38,6 @@ interface PolishSetupDialogProps {
 	onRun: () => void;
 	isRunning: boolean;
 	/** Whether the user is signed in (AI stages need the backend). */
-	isAuthenticated: boolean;
 }
 
 function Row({
@@ -82,7 +81,6 @@ export function PolishSetupDialog({
 	onOptionsChange,
 	onRun,
 	isRunning,
-	isAuthenticated,
 }: PolishSetupDialogProps) {
 	const set = <K extends keyof PolishOptions>(key: K, value: PolishOptions[K]) =>
 		onOptionsChange({ ...options, [key]: value });
@@ -197,12 +195,6 @@ export function PolishSetupDialog({
 						</Select>
 					</Row>
 				</div>
-
-				{!isAuthenticated && (
-					<p className="text-xs text-amber-400">
-						Narration and music need your account — you'll be asked to sign in.
-					</p>
-				)}
 
 				<DialogFooter>
 					<button

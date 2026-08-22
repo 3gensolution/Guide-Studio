@@ -297,6 +297,54 @@ export function createEditorWindow(): BrowserWindow {
 }
 
 /**
+ * Dedicated AI Video Creator workspace. Kept separate from the timeline editor
+ * so a long Claude run and its activity log do not fight the editing controls
+ * for the same surface.
+ */
+export function createAIVideoCreatorWindow(): BrowserWindow {
+	const isMac = process.platform === "darwin";
+	const iconPath = path.join(APP_ROOT, "icons", "icons", "win", "icon.ico");
+
+	const win = new BrowserWindow({
+		width: 1240,
+		height: 840,
+		minWidth: 900,
+		minHeight: 620,
+		...(isMac && {
+			titleBarStyle: "hiddenInset",
+			trafficLightPosition: { x: 12, y: 12 },
+		}),
+		...(!isMac && { icon: iconPath }),
+		title: "Guide Studio — AI Video Creator",
+		backgroundColor: "#1C1917",
+		show: false,
+		webPreferences: {
+			preload: path.join(__dirname, "preload.mjs"),
+			additionalArguments: [ASSET_BASE_URL_ARG],
+			nodeIntegration: false,
+			contextIsolation: true,
+			webSecurity: false,
+			backgroundThrottling: false,
+			devTools: true,
+		},
+	});
+
+	win.once("ready-to-show", () => {
+		if (!HEADLESS) win.show();
+	});
+
+	if (VITE_DEV_SERVER_URL) {
+		win.loadURL(`${VITE_DEV_SERVER_URL}?windowType=ai-video-creator`);
+	} else {
+		win.loadFile(path.join(RENDERER_DIST, "index.html"), {
+			query: { windowType: "ai-video-creator" },
+		});
+	}
+
+	return win;
+}
+
+/**
  * Floating source-selector window for picking a screen or window to record.
  * Frameless, transparent, and follows the user across macOS Spaces.
  */

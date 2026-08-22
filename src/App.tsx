@@ -16,6 +16,11 @@ import { ShortcutsProvider } from "./contexts/ShortcutsContext";
 import { loadAllCustomFonts } from "./lib/customFonts";
 
 const VideoEditor = lazy(() => import("./components/video-editor/VideoEditor"));
+const AIVideoCreatorWorkspace = lazy(() =>
+	import("./components/recording/AIVideoCreatorWorkspace").then((module) => ({
+		default: module.AIVideoCreatorWorkspace,
+	})),
+);
 const ShortcutsConfigDialog = lazy(() =>
 	import("./components/video-editor/ShortcutsConfigDialog").then((module) => ({
 		default: module.ShortcutsConfigDialog,
@@ -104,6 +109,18 @@ export default function App() {
 				return <WebcamPreviewWindow />;
 			case "bench-render":
 				return <BenchRenderPage />;
+			case "ai-video-creator":
+				return (
+					<Suspense
+						fallback={
+							<div className="flex h-screen items-center justify-center bg-[#1C1917] text-sm text-white/50">
+								Loading AI Video Creator…
+							</div>
+						}
+					>
+						<AIVideoCreatorWorkspace onClose={() => window.close()} />
+					</Suspense>
+				);
 			case "editor":
 			default:
 				return (

@@ -42,7 +42,6 @@ import {
 } from "../ai/musicService";
 import { synthesize, type TTSVoice } from "../ai/ttsService";
 import { generateVideo, generateVideoBatch } from "../ai/videoService";
-import { authenticateGuideAI } from "../pro/proAuth";
 
 export function registerAIHandlers(): void {
 	ipcMain.handle(
@@ -239,11 +238,6 @@ export function registerAIHandlers(): void {
 			return generateVideo(prompt, options);
 		},
 	);
-
-	// Pro authentication via GuideAI OAuth
-	ipcMain.handle("pro-authenticate", async () => {
-		return authenticateGuideAI();
-	});
 
 	ipcMain.handle(
 		"ai-generate-video-batch",

@@ -1,5 +1,5 @@
-> [!WARNING]
-> This started as a side project that blew up; not production grade and you'll hit bugs, but hopefully it covers what you need. **This project will soon be archived.**
+> [!NOTE]
+> Actively developed, but not production grade — expect rough edges and bugs. Issues and pull requests are welcome.
 
 
 <p align="center">
@@ -183,6 +183,10 @@ Everything in the editor and export is the same on macOS, Windows, and Linux: zo
   - **Linux**: needs PipeWire (default on Ubuntu 22.04+, Fedora 34+). Older PulseAudio-only setups may not capture system audio (mic should still work).
 
 ---
+
+## Credits
+
+Guide Studio builds on the original open-source work of Siddharth Vaddem, whose MIT-licensed project this started from. That copyright notice is preserved in [LICENSE](./LICENSE).
 
 ## License
 

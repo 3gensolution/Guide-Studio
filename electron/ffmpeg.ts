@@ -43,6 +43,39 @@ export async function getFfmpegPath(): Promise<string | null> {
 }
 
 /**
+ * Production exports need standard video filters such as pad and fps. Prefer
+ * a full user-installed FFmpeg when present, then fall back to Remotion's
+ * deliberately minimal bundled binary.
+ */
+export async function getProductionFfmpegPath(): Promise<string | null> {
+	return (await findSystemFfmpeg()) ?? getFfmpegPath();
+}
+
+export function isRemotionBundledFfmpeg(ffmpegPath: string): boolean {
+	return path.resolve(ffmpegPath) === path.resolve(findRemotionFfmpeg());
+}
+
+/**
+ * Checks that the resolved renderer can actually start. A file-existence check
+ * is insufficient on macOS because Remotion's FFmpeg depends on sibling dylibs.
+ */
+export async function isProductionFfmpegUsable(): Promise<boolean> {
+	const ffmpegPath = await getProductionFfmpegPath();
+	if (!ffmpegPath) return false;
+	const { execFile } = await import("node:child_process");
+	const { promisify } = await import("node:util");
+	try {
+		await promisify(execFile)(ffmpegPath, ["-version"], {
+			env: getFfmpegEnv(ffmpegPath),
+			timeout: 10_000,
+		});
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
  * Resolve ffmpeg from the Remotion compositor package. This is the path used
  * everywhere the app needs ffmpeg (export post-process, music merge, audio
  * extraction, showcase poster). Centralized here so a missing binary can't

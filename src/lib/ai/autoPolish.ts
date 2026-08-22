@@ -6,7 +6,7 @@
  * `Partial<EditorState>` that is applied in one undoable step.
  *
  * All AI generation is routed through the backend account (chat / TTS / music);
- * the caller must be authenticated (see `apiClient.isAuthenticated()`). Each
+ * every stage runs on the local AI providers. Each
  * generation stage fails soft: if narration or music can't be produced, that
  * part is skipped with a warning and the rest of the polish still applies.
  */
@@ -14,7 +14,6 @@
 import type { CursorTelemetryPoint, VideoClip } from "@/components/video-editor/types";
 import type { EditorState } from "@/hooks/useEditorHistory";
 import { aiService, type ChatMessage } from "@/lib/api/ai";
-import { apiClient } from "@/lib/api/client";
 import type { IntroConfig } from "@/lib/intro/introTypes";
 import { detectGuideSteps } from "./guideSteps";
 import { generatePolishEdits } from "./oneClickPolish";
@@ -74,10 +73,13 @@ export interface AutoPolishResult {
 	warnings: string[];
 }
 
-/** Thrown when Auto-Polish is invoked without an authenticated backend session. */
+/**
+ * Kept so callers can keep their catch-arm; local mode never throws it, since
+ * narration and music run on the local providers with no account involved.
+ */
 export class AutoPolishAuthError extends Error {
 	constructor() {
-		super("Auto-Polish requires you to be signed in to your account.");
+		super("No local AI provider is configured.");
 		this.name = "AutoPolishAuthError";
 	}
 }
@@ -226,14 +228,10 @@ async function generateMusic(input: AutoPolishInput): Promise<string | null> {
 }
 
 /**
- * Run the full Auto-Polish pass. Requires an authenticated backend session.
+ * Run the full Auto-Polish pass. Every stage runs locally.
  */
 export async function runAutoPolish(input: AutoPolishInput): Promise<AutoPolishResult> {
 	const { currentState, template, options, onProgress, signal } = input;
-
-	// Only the AI stages (narration/music) need the backend account.
-	const needsBackend = options.narration || options.music;
-	if (needsBackend && !apiClient.isAuthenticated()) throw new AutoPolishAuthError();
 
 	const { style } = template;
 	const warnings: string[] = [];

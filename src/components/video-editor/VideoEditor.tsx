@@ -5,6 +5,7 @@ import {
 	FilePlus2,
 	FolderOpen,
 	HelpCircle,
+	House,
 	Languages,
 	Save,
 	Video,
@@ -24,7 +25,6 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { ProGateDialog, useProGate } from "@/components/ui/ProGate";
 import {
 	Select,
 	SelectContent,
@@ -32,7 +32,6 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { useBackend } from "@/contexts/BackendContext";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
 import type { EditorState } from "@/hooks/useEditorHistory";
@@ -374,10 +373,7 @@ export default function VideoEditor() {
 		...loadPolishOptions(),
 		music: false,
 	}));
-	const { isAuthenticated: isBackendAuthed, showLogin } = useBackend();
 	// Video (export) is gated to paid plans — free = AI chat only, no video.
-	const { isPro: hasActivePlan } = useProGate();
-	const [showPublishGate, setShowPublishGate] = useState(false);
 
 	// Persist polish selections so the setup dialog opens pre-filled next time.
 	const updatePolishOptions = useCallback((next: PolishOptions) => {
@@ -394,6 +390,9 @@ export default function VideoEditor() {
 	// Fresh-boot Welcome dashboard: shown when the editor opens with nothing to
 	// edit. Dismissed by New Project so that flow keeps its in-editor empty state.
 	const [welcomeDismissed, setWelcomeDismissed] = useState(false);
+	// This is navigation only: unlike New Project it does not clear the current
+	// media, timeline, or undo history, so an edit can be resumed safely.
+	const [showWelcomeScreen, setShowWelcomeScreen] = useState(false);
 	const playerContainerRef = useRef<HTMLDivElement | null>(null);
 	const cursorTelemetrySourcePath = videoSourcePath ?? (videoPath ? fromFileUrl(videoPath) : null);
 	const { samples: cursorTelemetry, error: cursorTelemetryError } =
@@ -478,7 +477,6 @@ export default function VideoEditor() {
 	const [captionWordsMax, setCaptionWordsMax] = useState(7);
 	// Which transcription engine to use: the fast online (account) engine or the
 	// free on-device WASM engine. Defaults to online when signed in, else free.
-	const [captionEngine, setCaptionEngine] = useState<"online" | "free">("free");
 	const exporterRef = useRef<VideoExporter | null>(null);
 
 	const annotationOnlyRegions = useMemo(
@@ -577,6 +575,13 @@ export default function VideoEditor() {
 				webcamReactiveZoom: normalizedEditor.webcamReactiveZoom,
 				webcamSizePreset: normalizedEditor.webcamSizePreset,
 				webcamPosition: normalizedEditor.webcamPosition,
+				captionTrack: normalizedEditor.captionTrack,
+				captionStyle: normalizedEditor.captionStyle,
+				narrationTrack: normalizedEditor.narrationTrack,
+				muteOriginalAudio: normalizedEditor.muteOriginalAudio,
+				backgroundMusic: normalizedEditor.backgroundMusic,
+				backgroundMusicVolume: normalizedEditor.backgroundMusicVolume,
+				animatedBgSpeed: normalizedEditor.animatedBgSpeed,
 				videoClips: normalizedEditor.videoClips,
 				introClip: normalizedEditor.introClip,
 			});
@@ -672,6 +677,13 @@ export default function VideoEditor() {
 			gifSizePreset,
 			gifVideoOnly,
 			cursorTheme,
+			captionTrack: editorState.captionTrack,
+			captionStyle: editorState.captionStyle,
+			narrationTrack: editorState.narrationTrack,
+			muteOriginalAudio: editorState.muteOriginalAudio,
+			backgroundMusic: editorState.backgroundMusic,
+			backgroundMusicVolume: editorState.backgroundMusicVolume,
+			animatedBgSpeed: editorState.animatedBgSpeed,
 			videoClips: editorState.videoClips,
 			introClip: editorState.introClip,
 		});
@@ -707,6 +719,13 @@ export default function VideoEditor() {
 		gifLoop,
 		gifSizePreset,
 		gifVideoOnly,
+		editorState.captionTrack,
+		editorState.captionStyle,
+		editorState.narrationTrack,
+		editorState.muteOriginalAudio,
+		editorState.backgroundMusic,
+		editorState.backgroundMusicVolume,
+		editorState.animatedBgSpeed,
 		editorState.videoClips,
 		editorState.introClip,
 	]);
@@ -841,6 +860,13 @@ export default function VideoEditor() {
 				gifSizePreset,
 				gifVideoOnly,
 				cursorTheme,
+				captionTrack: editorState.captionTrack,
+				captionStyle: editorState.captionStyle,
+				narrationTrack: editorState.narrationTrack,
+				muteOriginalAudio: editorState.muteOriginalAudio,
+				backgroundMusic: editorState.backgroundMusic,
+				backgroundMusicVolume: editorState.backgroundMusicVolume,
+				animatedBgSpeed: editorState.animatedBgSpeed,
 				videoClips: editorState.videoClips,
 				introClip: editorState.introClip,
 			};
@@ -972,22 +998,22 @@ export default function VideoEditor() {
 		}
 	}, []);
 
-	const doLoadProject = useCallback(async () => {
+	const doLoadProject = useCallback(async (): Promise<boolean> => {
 		const result = await nativeBridgeClient.project.loadProjectFile(getProjectFolder());
 
 		if (result.canceled) {
-			return;
+			return false;
 		}
 
 		if (!result.success) {
 			toast.error(result.message || t("project.failedToLoad"));
-			return;
+			return false;
 		}
 
 		const restored = await applyLoadedProject(result.project, result.path ?? null);
 		if (!restored) {
 			toast.error(t("project.invalidFormat"));
-			return;
+			return false;
 		}
 
 		if (result.path) {
@@ -998,6 +1024,7 @@ export default function VideoEditor() {
 		}
 
 		toast.success(t("project.loadedFrom", { path: result.path ?? "" }));
+		return true;
 	}, [applyLoadedProject, t]);
 
 	// Video import via file picker: shared by the Welcome screen and the AI
@@ -1025,8 +1052,23 @@ export default function VideoEditor() {
 	}, []);
 
 	const handleWelcomeOpenVideo = useCallback(async () => {
-		await importVideoFromPicker();
+		const result = await importVideoFromPicker();
+		if (result.success) {
+			setWelcomeDismissed(true);
+			setShowWelcomeScreen(false);
+		}
 	}, [importVideoFromPicker]);
+
+	const handleWelcomeOpenProject = useCallback(async () => {
+		if (await doLoadProject()) {
+			setWelcomeDismissed(true);
+			setShowWelcomeScreen(false);
+		}
+	}, [doLoadProject]);
+
+	const handleReturnToWelcome = useCallback(() => {
+		setShowWelcomeScreen(true);
+	}, []);
 
 	const handleLoadProject = useCallback(async () => {
 		if (hasUnsavedChanges) {
@@ -1053,6 +1095,7 @@ export default function VideoEditor() {
 	// Studio dashboard. Prompts to save first when there are unsaved changes.
 	const doNewProject = useCallback(async () => {
 		setWelcomeDismissed(true);
+		setShowWelcomeScreen(false);
 		await nativeBridgeClient.project.clearCurrentVideoPath();
 		setVideoPath(null);
 		setVideoSourcePath(null);
@@ -1646,13 +1689,15 @@ export default function VideoEditor() {
 
 	// ── Multi-clip handlers ──
 
-	const handleAddVideoClip = useCallback(async () => {
-		try {
-			const result = await window.electronAPI.openVideoFilePicker?.();
-			if (!result?.success || !result.path) return;
-
+	/**
+	 * Append one video file to the end of the timeline. Shared by the "add
+	 * clip" picker and by scenes handed over from the AI Video Creator, so a
+	 * generated scene lands on the timeline exactly like an imported one.
+	 */
+	const appendVideoClipFromPath = useCallback(
+		async (filePath: string, label?: string) => {
 			// Probe video duration via temporary video element
-			const clipUrl = toFileUrl(result.path);
+			const clipUrl = toFileUrl(filePath);
 			const probeDurationMs = await new Promise<number>((resolve) => {
 				const tempVideo = document.createElement("video");
 				tempVideo.preload = "metadata";
@@ -1694,21 +1739,57 @@ export default function VideoEditor() {
 
 			const newClip: VideoClip = {
 				id: `clip-${Date.now()}`,
-				sourceVideoPath: result.path,
+				sourceVideoPath: filePath,
 				startMs: 0,
 				endMs: probeDurationMs,
 				offsetMs: masterEnd,
 				durationMs: probeDurationMs,
-				label: result.path.split(/[\\/]/).pop() || "Untitled Clip",
+				label: label || filePath.split(/[\\/]/).pop() || "Untitled Clip",
 				sourceType: "imported",
 			};
 
 			pushState({ videoClips: [...clips, newClip] });
+		},
+		[editorState.videoClips, duration, videoSourcePath, videoPath, pushState],
+	);
+
+	const handleAddVideoClip = useCallback(async () => {
+		try {
+			const result = await window.electronAPI.openVideoFilePicker?.();
+			if (!result?.success || !result.path) return;
+			await appendVideoClipFromPath(result.path);
 			toast.success("Video clip added to timeline");
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : "Failed to add video clip");
 		}
-	}, [editorState.videoClips, duration, videoSourcePath, videoPath, pushState]);
+	}, [appendVideoClipFromPath]);
+
+	// A scene finished in the AI Video Creator arrives here as a rendered file.
+	//
+	// With nothing loaded yet the scene becomes the project's own video rather
+	// than a second clip. The editor body is gated on `videoPath`, so appending
+	// to an empty project would leave the user looking at the import prompt
+	// with their generated scene sitting invisible in state.
+	useEffect(() => {
+		if (!window.electronAPI?.onClaudeInsertClip) return;
+		return window.electronAPI.onClaudeInsertClip(async ({ videoPath: scenePath, title }) => {
+			try {
+				if (videoPath) {
+					await appendVideoClipFromPath(scenePath, title);
+				} else {
+					setVideoPath(toFileUrl(scenePath));
+					setVideoSourcePath(scenePath);
+					setWebcamVideoPath(null);
+					setWebcamVideoSourcePath(null);
+				}
+				setWelcomeDismissed(true);
+				setShowWelcomeScreen(false);
+				toast.success(`"${title}" added to the timeline`);
+			} catch (err) {
+				toast.error(err instanceof Error ? err.message : "Could not add the generated scene");
+			}
+		});
+	}, [appendVideoClipFromPath, videoPath]);
 
 	const handleClipSpanChange = useCallback(
 		(id: string, span: { start: number; end: number }) => {
@@ -2383,19 +2464,6 @@ export default function VideoEditor() {
 		}
 	}, [unsavedExport, handleExportSaved, gifLoop, gifSizePreset]);
 
-	// Video export is a paid feature gated by the Studio Pro license only.
-	// It does NOT require a backend account sign-in — the Pro gate dialog has
-	// its own "Connect to GuideAI" flow for users who need to upgrade. AI usage
-	// inside the editor is metered separately by the backend (per-plan / credits).
-	const ensurePublishAllowed = useCallback((): boolean => {
-		if (!hasActivePlan) {
-			// Not Pro — the gate dialog handles connecting / subscribing.
-			setShowPublishGate(true);
-			return false;
-		}
-		return true;
-	}, [hasActivePlan]);
-
 	const handleExport = useCallback(
 		async (settings: ExportSettings) => {
 			if (!videoPath) {
@@ -2412,12 +2480,6 @@ export default function VideoEditor() {
 			// Pick the save path before exporting, otherwise the save dialog can end up
 			// hidden behind other windows after a long-running export.
 			const isGifFormat = settings.format === "gif";
-
-			// Video export is a paid feature (GIFs are exempt).
-			if (!isGifFormat && !ensurePublishAllowed()) {
-				setShowExportDialog(false);
-				return;
-			}
 
 			const targetFileName = `export-${Date.now()}.${isGifFormat ? "gif" : "mp4"}`;
 			const pickResult = await window.electronAPI.pickExportSavePath(
@@ -3169,7 +3231,6 @@ export default function VideoEditor() {
 			editorState.introClip,
 			editorState.videoClips,
 			duration,
-			ensurePublishAllowed,
 		],
 	);
 
@@ -3247,7 +3308,7 @@ export default function VideoEditor() {
 	}, []);
 
 	const generateAutoCaptions = useCallback(
-		async (minWords: number, maxWords: number, preferServer: boolean) => {
+		async (minWords: number, maxWords: number) => {
 			if (!videoPath) {
 				toast.error(t("errors.noVideoLoaded"));
 				return;
@@ -3264,10 +3325,7 @@ export default function VideoEditor() {
 			toast.loading(t("autoCaptions.generating"), { id: AUTO_CAPTION_PROGRESS_TOAST_ID });
 			try {
 				const transcribeOptions = {
-					// The user picks the engine in the dialog: online (account) or free
-					// on-device. Online still falls back to the local WASM engine on any
-					// server failure so a chosen-online run never dead-ends offline.
-					preferServer,
+					// Captions transcribe on-device; there is no server engine.
 					onStatus: (phase: "model" | "transcribe") => {
 						if (phase === "model") {
 							toast.loading(t("autoCaptions.loadingModel"), {
@@ -3471,7 +3529,7 @@ export default function VideoEditor() {
 						? captionSegmentsToTrack(
 								sortedSegments,
 								trackGranularity,
-								preferServer ? "server-whisper" : "whisper-tiny",
+								"whisper-tiny",
 								"en",
 								Date.now(),
 							)
@@ -3536,14 +3594,6 @@ export default function VideoEditor() {
 			toast.error("Record a screen with cursor activity first.");
 			return;
 		}
-		// Only the AI stages need the account; framing/cursor/intro are local.
-		const needsBackend = polishOptions.narration || polishOptions.music;
-		if (needsBackend && !isBackendAuthed) {
-			toast.info("Sign in to your account to use narration and music.");
-			showLogin();
-			return;
-		}
-
 		setShowPolishSetup(false);
 		setIsAutoPolishing(true);
 		const toastId = toast.loading("Polish: starting…");
@@ -3583,8 +3633,7 @@ export default function VideoEditor() {
 		} catch (err) {
 			if (err instanceof AutoPolishAuthError) {
 				toast.dismiss(toastId);
-				toast.info("Sign in to your account to use narration and music.");
-				showLogin();
+				toast.info("Set up a local AI provider in Settings to use narration and music.");
 			} else if (err instanceof DOMException && err.name === "AbortError") {
 				toast.dismiss(toastId);
 			} else {
@@ -3598,8 +3647,6 @@ export default function VideoEditor() {
 		cursorTelemetry,
 		duration,
 		polishOptions,
-		isBackendAuthed,
-		showLogin,
 		editorState,
 		currentProjectPath,
 		buildIntroClip,
@@ -3848,14 +3895,18 @@ export default function VideoEditor() {
 	// Fresh launch with nothing to edit: show the Welcome dashboard until the
 	// user picks an entry point. Recording is summoned in the HUD; media and
 	// projects load into this window.
-	if (!videoPath && !welcomeDismissed && !error) {
+	if ((showWelcomeScreen || (!videoPath && !welcomeDismissed)) && !error) {
 		return (
 			<WelcomeScreen
 				onNewRecording={() => {
 					void window.electronAPI.startNewRecording();
 				}}
 				onOpenVideo={handleWelcomeOpenVideo}
-				onOpenProject={doLoadProject}
+				onOpenProject={handleWelcomeOpenProject}
+				onAiVideoCreator={() => {
+					void window.electronAPI.openAIVideoCreator();
+				}}
+				onReturnToEditor={videoPath ? () => setShowWelcomeScreen(false) : undefined}
 			/>
 		);
 	}
@@ -3907,15 +3958,7 @@ export default function VideoEditor() {
 				</DialogContent>
 			</Dialog>
 
-			<Dialog
-				open={showAutoCaptionsDialog}
-				onOpenChange={(open) => {
-					// When opening, default to the online engine if the user is signed in,
-					// otherwise the free on-device engine (online would just fall back).
-					if (open) setCaptionEngine(isBackendAuthed ? "online" : "free");
-					setShowAutoCaptionsDialog(open);
-				}}
-			>
+			<Dialog open={showAutoCaptionsDialog} onOpenChange={setShowAutoCaptionsDialog}>
 				<DialogContent
 					className="sm:max-w-md"
 					style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
@@ -3925,26 +3968,6 @@ export default function VideoEditor() {
 						<DialogDescription>{t("autoCaptions.dialogDescription")}</DialogDescription>
 					</DialogHeader>
 					<div className="grid gap-4 py-2">
-						<div className="grid gap-2">
-							<Label htmlFor="caption-engine">{t("autoCaptions.engineLabel")}</Label>
-							<Select
-								value={captionEngine}
-								onValueChange={(v) => setCaptionEngine(v as "online" | "free")}
-							>
-								<SelectTrigger id="caption-engine" className="h-9">
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="online" disabled={!isBackendAuthed}>
-										{t("autoCaptions.engineOnline")}
-									</SelectItem>
-									<SelectItem value="free">{t("autoCaptions.engineFree")}</SelectItem>
-								</SelectContent>
-							</Select>
-							{!isBackendAuthed && (
-								<p className="text-[11px] text-white/40">{t("autoCaptions.engineOnlineSignIn")}</p>
-							)}
-						</div>
 						<div className="grid gap-2">
 							<Label htmlFor="caption-min-words">{t("autoCaptions.minWords")}</Label>
 							<Select
@@ -4004,11 +4027,7 @@ export default function VideoEditor() {
 							disabled={isAutoCaptioning}
 							onClick={() => {
 								setShowAutoCaptionsDialog(false);
-								void generateAutoCaptions(
-									captionWordsMin,
-									captionWordsMax,
-									captionEngine === "online" && isBackendAuthed,
-								);
+								void generateAutoCaptions(captionWordsMin, captionWordsMax);
 							}}
 							className="bg-[#6E6BFF] text-white hover:bg-[#6E6BFF]/90"
 						>
@@ -4030,6 +4049,22 @@ export default function VideoEditor() {
 					className={`flex items-center gap-1.5 ${isMac ? "ml-16" : "ml-0"}`}
 					style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
 				>
+					<button
+						type="button"
+						data-testid={getTestId("return-to-welcome-button")}
+						onClick={handleReturnToWelcome}
+						className="group flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-white/[0.06] transition-all duration-150"
+						title="Return to Welcome"
+					>
+						<House
+							size={14}
+							className="text-white/50 group-hover:text-[#8B89FF] transition-colors"
+						/>
+						<span className="text-[11px] font-medium text-white/50 group-hover:text-white/80">
+							Welcome
+						</span>
+					</button>
+					{videoPath && <div className="w-px h-4 bg-white/[0.08] mx-0.5" />}
 					{videoPath && (
 						<>
 							<button
@@ -4202,6 +4237,10 @@ export default function VideoEditor() {
 									return;
 								}
 								setShowPolishSetup(true);
+								return;
+							}
+							if (tool === "creator") {
+								void window.electronAPI.openAIVideoCreator();
 								return;
 							}
 							if (tool === "crop") {
@@ -4732,13 +4771,6 @@ export default function VideoEditor() {
 				onOptionsChange={updatePolishOptions}
 				onRun={handleAutoPolish}
 				isRunning={isAutoPolishing}
-				isAuthenticated={isBackendAuthed}
-			/>
-
-			<ProGateDialog
-				open={showPublishGate}
-				onOpenChange={setShowPublishGate}
-				feature="unlimited-publishing"
 			/>
 
 			<ExportDialog

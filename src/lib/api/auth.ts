@@ -1,3 +1,7 @@
+// DORMANT — Guide Studio runs local-only. Nothing in the app constructs a
+// request through this module any more: AI goes over Electron IPC to the
+// local provider (see `src/lib/api/ai.ts`), and there is no account session.
+// Kept for reference only.
 // ── Authentication Service ──────────────────────────────────────────────
 //
 // Handles user authentication and session management

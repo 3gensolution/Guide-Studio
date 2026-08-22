@@ -10,8 +10,6 @@ import {
 	ChevronRight,
 	Clapperboard,
 	Film,
-	LogIn,
-	LogOut,
 	Megaphone,
 	Mic,
 	MonitorPlay,
@@ -27,7 +25,6 @@ import {
 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { useBackend } from "@/contexts/BackendContext";
 import { useAIPreflight } from "@/hooks/useAIPreflight";
 import { useAIService } from "@/hooks/useAIService";
 import type { EditorState } from "@/hooks/useEditorHistory";
@@ -112,23 +109,13 @@ export function AIPanelSidebar({
 	captionTrack = null,
 	videoPath = null,
 }: AIPanelSidebarProps) {
-	// ── Backend + AI service ──
-	const { isBackendAvailable, isAuthenticated, user, showLogin, logout } = useBackend();
+	// ── Local AI service ──
 	const { analyze } = useAIService();
-
-	// ── AI preflight (backend auth check) ──
 	const { requireChatProvider } = useAIPreflight();
 
 	// ── Video Guide — apply detected steps to the timeline as a produced guide ──
 	const handleCreateVideoGuide = useCallback(
 		async (steps: GuideStep[], guideTitle: string, options: VideoGuideOptions) => {
-			// Voiceover is the only stage that needs the account
-			if (options.voiceover && !(isBackendAvailable && isAuthenticated)) {
-				toast.info("Sign in to add a voiceover, or turn the Voiceover option off.");
-				showLogin();
-				return;
-			}
-
 			const toastId = toast.loading("Creating video guide…");
 			try {
 				const { edits, summary, warnings } = await createVideoGuide({
@@ -161,8 +148,7 @@ export function AIPanelSidebar({
 			} catch (err) {
 				if (err instanceof VideoGuideAuthError) {
 					toast.dismiss(toastId);
-					toast.info("Sign in to add a voiceover, or turn the Voiceover option off.");
-					showLogin();
+					toast.info("Set up a local voice provider in Settings, or turn Voiceover off.");
 				} else {
 					toast.error(err instanceof Error ? err.message : "Failed to create video guide", {
 						id: toastId,
@@ -170,15 +156,7 @@ export function AIPanelSidebar({
 				}
 			}
 		},
-		[
-			videoDurationMs,
-			editorState,
-			captionTrack,
-			onApplyEdits,
-			isBackendAvailable,
-			isAuthenticated,
-			showLogin,
-		],
+		[videoDurationMs, editorState, captionTrack, onApplyEdits],
 	);
 
 	// ── Magic Polish ──
@@ -278,14 +256,8 @@ export function AIPanelSidebar({
 			<div className="flex items-center gap-2 px-3 py-2.5 border-b border-white/5">
 				<Sparkles size={14} className="text-[#2563eb]" />
 				<span className="text-xs font-semibold text-white/90">AI Features</span>
-				<span
-					className={`ml-auto text-[9px] px-1.5 py-0.5 rounded ${
-						isBackendAvailable && isAuthenticated
-							? "bg-[#2563eb]/20 text-[#2563eb]"
-							: "bg-white/10 text-white/40"
-					}`}
-				>
-					{isBackendAvailable && isAuthenticated ? "Connected" : "Offline"}
+				<span className="ml-auto text-[9px] px-1.5 py-0.5 rounded bg-[#2563eb]/20 text-[#2563eb]">
+					Local
 				</span>
 			</div>
 
@@ -382,7 +354,7 @@ export function AIPanelSidebar({
 					<NarrationSection
 						editorState={editorState}
 						onApplyEdits={onApplyEdits}
-						isBackendReady={isBackendAvailable && isAuthenticated}
+						isBackendReady
 						cursorTelemetry={cursorTelemetry}
 						videoDurationMs={videoDurationMs}
 						captionTrack={captionTrack}
@@ -392,11 +364,7 @@ export function AIPanelSidebar({
 
 				{/* Background Music */}
 				<Section title="Background Music" icon={Music2}>
-					<MusicSection
-						editorState={editorState}
-						onApplyEdits={onApplyEdits}
-						isBackendReady={isBackendAvailable && isAuthenticated}
-					/>
+					<MusicSection editorState={editorState} onApplyEdits={onApplyEdits} isBackendReady />
 				</Section>
 
 				{/* Magic Polish */}
@@ -505,46 +473,10 @@ export function AIPanelSidebar({
 					/>
 				</Section>
 
-				{/* Account */}
-				<Section title="Account" icon={Settings2}>
-					<div className="flex flex-col gap-2">
-						{/* Backend auth status */}
-						{isBackendAvailable && isAuthenticated && user && (
-							<div className="flex items-center gap-2 px-2 py-1.5 rounded bg-[#2563eb]/10 border border-[#2563eb]/20">
-								<div className="w-5 h-5 rounded-full bg-[#2563eb]/30 flex items-center justify-center text-[9px] text-[#2563eb] font-bold">
-									{user.name?.charAt(0).toUpperCase() || user.email.charAt(0).toUpperCase()}
-								</div>
-								<div className="flex-1 min-w-0">
-									<div className="text-[10px] text-white/80 truncate">{user.email}</div>
-									<div className="text-[9px] text-[#2563eb]">Connected</div>
-								</div>
-								<button
-									type="button"
-									onClick={logout}
-									className="p-1 rounded hover:bg-white/10 text-white/40 hover:text-white/80 transition-colors"
-									title="Logout"
-								>
-									<LogOut size={12} />
-								</button>
-							</div>
-						)}
-
-						{isBackendAvailable && !isAuthenticated && (
-							<button
-								type="button"
-								onClick={showLogin}
-								className="flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-medium bg-gradient-to-r from-[#2563eb]/20 to-purple-500/20 hover:from-[#2563eb]/30 hover:to-purple-500/30 text-white/80 transition-all"
-							>
-								<LogIn size={14} />
-								Sign in to use AI
-							</button>
-						)}
-
-						{!isBackendAvailable && (
-							<div className="text-[10px] text-white/40">
-								Backend not available. Start the Docker backend to use AI features.
-							</div>
-						)}
+				{/* AI provider */}
+				<Section title="AI Provider" icon={Settings2}>
+					<div className="text-[10px] text-white/40">
+						AI runs locally on this machine. Pick the provider and model in Settings.
 					</div>
 				</Section>
 			</div>

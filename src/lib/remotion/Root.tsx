@@ -7,6 +7,19 @@ import React, { useMemo } from "react";
 import { AbsoluteFill, Composition } from "remotion";
 import type { SceneProject } from "@/lib/scene-renderer/types";
 import { compileCode, estimateAiDuration } from "./compileCode";
+import {
+	calculateHyperFrameDuration,
+	HYPERFRAME_FORMATS,
+	HyperFrameComposition,
+	type HyperFrameCompositionProps,
+} from "./HyperFrameComposition";
+import {
+	calculateMotionDuration,
+	MOTION_FORMATS,
+	type MotionCompositionProps,
+	MotionGraphicsComposition,
+} from "./MotionGraphicsComposition";
+import { CatalogSheet } from "./motion/CatalogSheet";
 import { calculateProjectDuration, SceneProjectComposition } from "./SceneProjectComposition";
 
 // Remotion requires Record<string, unknown> compatible props
@@ -89,6 +102,10 @@ const DynamicVideoComponent = DynamicVideoComposition as unknown as React.FC<
 	Record<string, unknown>
 >;
 
+const HyperFrameComponent = HyperFrameComposition as unknown as React.FC<Record<string, unknown>>;
+const MotionComponent = MotionGraphicsComposition as unknown as React.FC<Record<string, unknown>>;
+const CatalogSheetComponent = CatalogSheet as unknown as React.FC<Record<string, unknown>>;
+
 export const RemotionRoot: React.FC = () => {
 	return (
 		<>
@@ -123,6 +140,74 @@ export const RemotionRoot: React.FC = () => {
 					const duration = code ? estimateAiDuration(code, 30) : 900;
 					return { durationInFrames: duration };
 				}}
+			/>
+			{/* One composition per output shape. The component lays out in a fixed
+			    1920-wide design space and scales itself, so these differ only in
+			    the frame they are drawn into. */}
+			{HYPERFRAME_FORMATS.map((format) => (
+				<Composition
+					key={format.id}
+					id={format.id}
+					component={HyperFrameComponent}
+					durationInFrames={30 * 45}
+					fps={30}
+					width={format.width}
+					height={format.height}
+					defaultProps={
+						{
+							title: "Product demo",
+							accent: "indigo",
+							frames: [],
+						} satisfies HyperFrameCompositionProps
+					}
+					calculateMetadata={({ props }) => {
+						const input = props as unknown as HyperFrameCompositionProps;
+						return {
+							durationInFrames: calculateHyperFrameDuration(input.frames ?? [], 30),
+							fps: 30,
+							width: format.width,
+							height: format.height,
+						};
+					}}
+				/>
+			))}
+			{/* Animated motion-graphics library: one composition per output shape. */}
+			{MOTION_FORMATS.map((format) => (
+				<Composition
+					key={format.id}
+					id={format.id}
+					component={MotionComponent}
+					durationInFrames={30 * 45}
+					fps={30}
+					width={format.width}
+					height={format.height}
+					defaultProps={
+						{
+							title: "Motion demo",
+							accent: "indigo",
+							scenes: [],
+						} satisfies MotionCompositionProps
+					}
+					calculateMetadata={({ props }) => {
+						const input = props as unknown as MotionCompositionProps;
+						return {
+							durationInFrames: calculateMotionDuration(input.scenes ?? [], 30),
+							fps: 30,
+							width: format.width,
+							height: format.height,
+						};
+					}}
+				/>
+			))}
+			{/* Internal audit sheet — see motion/CatalogSheet.tsx. */}
+			<Composition
+				id="MotionCatalogSheet"
+				component={CatalogSheetComponent}
+				durationInFrames={60}
+				fps={30}
+				width={1920}
+				height={1080}
+				defaultProps={{ offset: 0, count: 9, columns: 3 }}
 			/>
 		</>
 	);

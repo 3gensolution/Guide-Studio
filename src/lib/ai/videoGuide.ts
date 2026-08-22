@@ -35,7 +35,6 @@ import {
 } from "@/components/video-editor/types";
 import type { EditorState } from "@/hooks/useEditorHistory";
 import { aiService, type ChatMessage } from "@/lib/api/ai";
-import { apiClient } from "@/lib/api/client";
 import { parseNarrationLines } from "./autoPolish";
 import { VOICE_OPTIONS } from "./polishTemplates";
 import type { CaptionTrack, GuideStep, NarrationSegment, NarrationTrack } from "./types";
@@ -121,10 +120,13 @@ export interface VideoGuideSummary {
 	narrationLineCount: number;
 }
 
-/** Thrown when voiceover is requested without an authenticated backend session. */
+/**
+ * Kept so callers can keep their catch-arm; local mode never throws it, since
+ * narration runs on the local TTS provider with no account involved.
+ */
 export class VideoGuideAuthError extends Error {
 	constructor() {
-		super("Voiceover requires you to be signed in to your account.");
+		super("No local voice provider is configured.");
 		this.name = "VideoGuideAuthError";
 	}
 }
@@ -623,7 +625,6 @@ export async function createVideoGuide(
 	input: CreateVideoGuideInput,
 ): Promise<CreateVideoGuideResult> {
 	const options = { ...DEFAULT_VIDEO_GUIDE_OPTIONS, ...input.options };
-	if (options.voiceover && !apiClient.isAuthenticated()) throw new VideoGuideAuthError();
 
 	input.onProgress?.("Building click highlights and trims…");
 	const base = buildVideoGuideEdits(input);
