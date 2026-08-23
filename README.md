@@ -10,38 +10,56 @@
 
 # <p align="center">Guide Studio</p>
 
-<p align="center"><strong>Guide Studio is your free, open-source alternative to Screen Studio.</strong></p>
+<p align="center"><strong>Record your screen, polish it in the editor, and let AI do the tedious parts — all on your own machine.</strong></p>
 
-If you don't want to pay $29/month for Screen Studio but want a version that does what most people seem to need - quick, polished product demos and walkthroughs you'd post on X, Reddit or Youtube. Guide Studio does not offer every Screen Studio feature, but covers a lot of the core functionality.
+Guide Studio is a free, open-source screen recorder and video editor for product demos, walkthroughs, and tutorials. Record a window or your whole screen, then shape the result with zooms, backgrounds, cursor effects, captions, and annotations — and hand the repetitive work to a set of AI tools that run locally.
 
-Screen Studio is an awesome product and this is definitely not a 1:1 clone. If you just want something fully free and open source, this project should cover most of your needs.
-
-**100% free** for both **personal** and **commercial** use. Use it, modify it, distribute it. Please respect the License. 
+**100% free** for both **personal** and **commercial** use. Use it, modify it, distribute it. Please respect the License.
 
 > [!NOTE]
->Software should be accessible. Guide Studio has no paid tiers, premium features, upsells, or functionality locked behind a paywall.
+> Software should be accessible. Guide Studio has no paid tiers, premium features, upsells, or functionality locked behind a paywall.
 
-<p align="center">
-	<img src="public/demo.png" alt="" style="height: 0.2467; margin-right: 12px;" />
-  <img src="public/sample.png" alt="" style="height: 0.2467; margin-right: 12px;" />
-</p>
+## Recording
 
-## Core Features
 - Record a specific window, or your whole screen.
 - Record microphone and system audio.
-- Webcam overlay with picture-in-picture, drag-to-position, mirroring, and shape options.
-- Auto or manual zooms with adjustable depth, duration, easing, and pixel-precise position; auto-zoom follows your cursor as you work.
+- Webcam overlay with picture-in-picture, drag-to-position, mirroring, and shape options, plus a live self-view bubble while you record.
 - Custom cursor size, smoothing, and click effects, with cursor themes and post-recording path smoothing.
-- Automatic captions for voiceovers, generated on-device with no upload (works offline).
+- Click and interaction telemetry captured alongside the video, so the editor knows where the action happened.
+
+## Editing
+
+- Auto or manual zooms with adjustable depth, duration, easing, and pixel-precise position; auto-zoom follows your cursor as you work.
 - Wallpapers, solid colors, gradients, or your own background image.
 - Motion blur.
 - Crop, trim, and per-segment speed control on the timeline.
 - Text, arrow, and image annotations, with text animation presets.
+- Blur regions for anything on screen you'd rather not publish.
 - Timeline snapping guides and an audio waveform to make trimming easier.
 - Customizable keyboard shortcuts.
 - Export to MP4 or GIF in multiple aspect ratios and resolutions.
-- Languages supported: Arabic, English, Spanish, French, Italian, Japanese, Korean, Portuguese (Brazil), Russian, Turkish, Vietnamese, Simplified Chinese, and Traditional Chinese.
 
+## AI features
+
+Every AI tool in the editor runs on this machine. There is no account, no upload, and no backend service — recordings and transcripts never leave your computer.
+
+- **Video Guide** — turns a raw recording into a finished walkthrough from your click telemetry: paced zooms, ring and arrow highlights, idle trims, and an optional voiceover, in either a tutorial or a screen-share style.
+- **Step Guide** — the same recording as a written, step-by-step document with screenshots, for docs and support articles.
+- **Auto-Zoom / Auto-Focus** — places zoom and focus moves on the parts of the frame that actually matter.
+- **Captions** — automatic captions for voiceovers, generated on-device with no upload (works offline).
+- **Transcript Edit** — edit the transcript and the timeline follows; delete a sentence, delete the footage.
+- **Smart Trim** — analyzes the recording and proposes cuts for dead air and fumbles.
+- **AI Narration** — generates a voiceover track that is mixed into the exported file.
+- **Background Music** — a music bed under the narration.
+- **Magic Polish** — one click that applies the whole pass: zooms, trims, captions, and cleanup.
+- **Extract Clips** — pulls short, shareable cuts out of a long recording.
+- **AI Chat** — an assistant inside the editor that drives the editing tools for you: "add captions", "polish this recording", "open the background settings".
+
+### AI Video Creator
+
+Describe a video and Guide Studio designs and renders the scenes for you — no recording required. Pick a look (motion graphics or clean cards), a shape (16:9, 9:16, or 1:1), and a target length, and you get a storyboard to review before anything renders.
+
+This runs through **your own Claude Code install**, on your existing Claude subscription — Guide Studio does not proxy your prompts through a server of ours. Install [Claude Code](https://claude.com/claude-code) and sign in, and the AI Video Creator picks it up automatically.
 
 ## Installation
 
@@ -170,9 +188,13 @@ You may need to grant screen recording permissions depending on your desktop env
 ./GuideStudio-Linux-*.AppImage --no-sandbox
 ```
 
-### Platform differences
+## Languages
 
-Everything in the editor and export is the same on macOS, Windows, and Linux: zooms, backgrounds, motion blur, crop/trim/speed, blur regions, annotations, auto-captions, projects, export, and all languages. The differences are in **capture**, where macOS and Windows use a native pipeline that Linux doesn't have:
+Arabic, English, Spanish, French, Italian, Japanese, Korean, Portuguese (Brazil), Russian, Turkish, Vietnamese, Simplified Chinese, and Traditional Chinese.
+
+## Platform differences
+
+Everything in the editor and export is the same on macOS, Windows, and Linux: zooms, backgrounds, motion blur, crop/trim/speed, blur regions, annotations, auto-captions, projects, export, the AI features, and all languages. The differences are in **capture**, where macOS and Windows use a native pipeline that Linux doesn't have:
 
 - **Native recording**: macOS (ScreenCaptureKit) and Windows (Windows Graphics Capture) record through a native pipeline for higher quality and clean window-level capture. Linux records through the browser pipeline instead.
 - **Custom cursors**: on macOS and Windows the real cursor is captured (shape, type, and clicks), which powers the cursor themes, click effects, and editable cursor overlay. On Linux only the cursor position is captured (used for auto-zoom), so those cursor options aren't available.
@@ -182,11 +204,9 @@ Everything in the editor and export is the same on macOS, Windows, and Linux: zo
   - **Windows**: works out of the box.
   - **Linux**: needs PipeWire (default on Ubuntu 22.04+, Fedora 34+). Older PulseAudio-only setups may not capture system audio (mic should still work).
 
----
+## Contributing
 
-## Credits
-
-Guide Studio builds on the original open-source work of Siddharth Vaddem, whose MIT-licensed project this started from. That copyright notice is preserved in [LICENSE](./LICENSE).
+See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## License
 
