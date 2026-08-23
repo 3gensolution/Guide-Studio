@@ -19,6 +19,10 @@ Guide Studio is a free, open-source screen recorder and video editor for product
 > [!NOTE]
 > Software should be accessible. Guide Studio has no paid tiers, premium features, upsells, or functionality locked behind a paywall.
 
+<p align="center">
+  <img src="public/screenshots/welcome.png" alt="The Guide Studio welcome screen: New Recording or AI Video Creator" width="900" />
+</p>
+
 ## Recording
 
 - Record a specific window, or your whole screen.
@@ -41,6 +45,10 @@ Guide Studio is a free, open-source screen recorder and video editor for product
 
 ## AI features
 
+<p align="center">
+  <img src="public/screenshots/editor-ai-features.png" alt="The Guide Studio editor with the AI Features panel open" width="900" />
+</p>
+
 Every AI tool in the editor runs on this machine. There is no account, no upload, and no backend service — recordings and transcripts never leave your computer.
 
 - **Video Guide** — turns a raw recording into a finished walkthrough from your click telemetry: paced zooms, ring and arrow highlights, idle trims, and an optional voiceover, in either a tutorial or a screen-share style.
@@ -60,6 +68,10 @@ Every AI tool in the editor runs on this machine. There is no account, no upload
 Describe a video and Guide Studio designs and renders the scenes for you — no recording required. Pick a look (motion graphics or clean cards), a shape (16:9, 9:16, or 1:1), and a target length, and you get a storyboard to review before anything renders.
 
 This runs through **your own Claude Code install**, on your existing Claude subscription — Guide Studio does not proxy your prompts through a server of ours. Install [Claude Code](https://claude.com/claude-code) and sign in, and the AI Video Creator picks it up automatically.
+
+<p align="center">
+  <img src="public/screenshots/ai-video-creator.png" alt="The AI Video Creator panel: prompt, look, shape, target length, and model" width="900" />
+</p>
 
 ## Installation
 
