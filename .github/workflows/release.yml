@@ -199,7 +199,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: release-windows
-          path: release/**/*.exe
+          # Only the NSIS installer. A bare release/**/*.exe also matches the
+          # helper binaries and the raw app exe inside win-unpacked/.
+          path: release/**/*-Setup.exe
           if-no-files-found: error
           retention-days: 7
 
@@ -268,7 +270,7 @@ jobs:
           # download-artifact preserves the release/<version>/ nesting from the
           # build jobs, so flatten everything into one directory for upload.
           find artifacts -type f \
-            \( -name "*.dmg" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.pacman" \) \
+            \( -name "*.dmg" -o -name "*-Setup.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.pacman" \) \
             -exec cp {} dist/ \;
           echo "=== Release assets ==="
           ls -lh dist
