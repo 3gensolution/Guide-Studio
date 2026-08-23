@@ -121,7 +121,7 @@
       }
     ],
     "icon": "icons/icons/mac/icon.icns",
-    "artifactName": "${productName}-Mac-${arch}-${version}-Installer.${ext}",
+    "artifactName": "Guide-Studio-macOS-${arch}-${version}.${ext}",
     "extraResources": [
       {
         "from": "electron/native/bin",
@@ -146,13 +146,14 @@
     ],
     "maintainer": "3guide <abiola@3guideai.com>",
     "icon": "icons/icons/png",
-    "artifactName": "${productName}-Linux-${version}.${ext}",
+    "artifactName": "Guide-Studio-Linux-${version}.${ext}",
     "category": "AudioVideo"
   },
   "win": {
     "target": [
       "nsis"
     ],
+    "artifactName": "Guide-Studio-Windows-${version}-Setup.${ext}",
     "icon": "icons/icons/win/icon.ico",
     "extraResources": [
       {

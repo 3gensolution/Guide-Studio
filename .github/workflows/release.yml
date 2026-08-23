@@ -1,0 +1,331 @@
+name: Release
+
+# Cuts a public GitHub Release with installers for macOS, Windows, and Linux.
+#
+#   git tag v0.1.3 && git push origin v0.1.3
+#
+# or run this workflow manually and pass the tag. Manual runs create the tag
+# from the commit the workflow runs on.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and publish (e.g. v0.1.3)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
+      prerelease: ${{ steps.resolve.outputs.prerelease }}
+    steps:
+      - name: Resolve tag and version
+        id: resolve
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          case "$TAG" in
+            v*) ;;
+            *) echo "::error::Tag must start with 'v' (got '$TAG')"; exit 1 ;;
+          esac
+          VERSION="${TAG#v}"
+          # A hyphen marks a pre-release version (v0.2.0-beta.1).
+          case "$VERSION" in
+            *-*) PRERELEASE=true ;;
+            *) PRERELEASE=false ;;
+          esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "Building $TAG (version $VERSION, prerelease=$PRERELEASE)"
+
+  macos:
+    name: macOS (${{ matrix.arch }})
+    needs: prepare
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Some native deps still shell out to python during rebuild.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: npm ci
+
+      # `npm ci` can leave sharp without its prebuilt binary/vendored libvips,
+      # which makes electron-builder's native rebuild fail ("vips-cpp.42 not
+      # found"). Re-fetch the prebuilt; never compile from source.
+      - name: Ensure sharp prebuilt
+        run: npm rebuild sharp
+        env:
+          npm_config_build_from_source: "false"
+
+      - name: Stamp version from tag
+        run: npm version "${{ needs.prepare.outputs.version }}" --no-git-tag-version --allow-same-version
+
+      # Avoid re-fetching the Whisper model from HuggingFace on every run
+      # (and 429s when the platform matrix hits it at once).
+      - name: Cache caption assets
+        uses: actions/cache@v4
+        with:
+          path: caption-assets
+          key: caption-assets-${{ hashFiles('scripts/fetch-caption-model.mjs') }}
+
+      - name: Build renderer + main
+        run: npx tsc && npx vite build
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+
+      # Packaged builds render from this pre-bundled Remotion bundle
+      # (electron/export/remotionExport.ts resolveServeUrl), and
+      # electron-builder ships it as the remotion-bundle extraResource.
+      - name: Bundle Remotion compositions
+        run: node scripts/bundle-remotion.mjs
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+
+      # The Swift ScreenCaptureKit + cursor helpers must exist before packaging
+      # or the app ships without them (no recording, missing cursor helper).
+      - name: Build native macOS helpers
+        run: npm run build:native:mac
+        env:
+          GUIDE_MAC_HELPER_ARCHS: ${{ matrix.arch }}
+
+      # No Apple Developer ID is configured, so package unsigned.
+      # CSC_IDENTITY_AUTO_DISCOVERY=false stops electron-builder searching the
+      # keychain for a certificate and failing when it finds none.
+      - name: Package .app bundle
+        run: npx electron-builder --mac --${{ matrix.arch }} --dir
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Create DMG
+        id: dmg
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.prepare.outputs.version }}"
+          ARCH="${{ matrix.arch }}"
+          RELEASE_DIR="release/${VERSION}"
+
+          APP_BUNDLE=$(find "$RELEASE_DIR" -maxdepth 4 -name "*.app" -type d | head -n1)
+          if [ -z "$APP_BUNDLE" ]; then
+            echo "::error::No .app bundle found under $RELEASE_DIR"
+            ls -laR "$RELEASE_DIR" || true
+            exit 1
+          fi
+
+          DMG_NAME="Guide-Studio-macOS-${ARCH}-${VERSION}.dmg"
+          DMG_PATH="${RELEASE_DIR}/${DMG_NAME}"
+          STAGING="${RELEASE_DIR}/dmg-staging"
+
+          mkdir -p "$STAGING"
+          cp -R "$APP_BUNDLE" "$STAGING/"
+          ln -s /Applications "$STAGING/Applications"
+
+          hdiutil create \
+            -srcfolder "$STAGING" \
+            -volname "Guide Studio" \
+            -fs HFS+ \
+            -fsargs "-c c=64,a=16,e=16" \
+            -format UDBZ \
+            "$DMG_PATH"
+
+          rm -rf "$STAGING"
+          echo "path=$DMG_PATH" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macos-${{ matrix.arch }}
+          path: ${{ steps.dmg.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7
+
+  windows:
+    name: Windows
+    needs: prepare
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Stamp version from tag
+        run: npm version "${{ needs.prepare.outputs.version }}" --no-git-tag-version --allow-same-version
+
+      # The WGC native helper builds with cl/cmake/ninja and needs the MSVC C++
+      # toolchain on PATH. This exports the VS env (incl. VSINSTALLDIR) so
+      # build-windows-wgc-helper.mjs can locate vcvarsall.bat.
+      - name: Set up MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Cache caption assets
+        uses: actions/cache@v4
+        with:
+          path: caption-assets
+          key: caption-assets-${{ hashFiles('scripts/fetch-caption-model.mjs') }}
+
+      - name: Build Windows installer
+        run: npm run build:win
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: release/**/*.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  linux:
+    name: Linux
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # bsdtar (libarchive-tools) is required by fpm to build pacman packages.
+      # AppImage and deb don't need it; ubuntu-latest doesn't ship it.
+      - name: Install pacman build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libarchive-tools
+
+      - name: Stamp version from tag
+        run: npm version "${{ needs.prepare.outputs.version }}" --no-git-tag-version --allow-same-version
+
+      - name: Cache caption assets
+        uses: actions/cache@v4
+        with:
+          path: caption-assets
+          key: caption-assets-${{ hashFiles('scripts/fetch-caption-model.mjs') }}
+
+      - name: Build Linux packages
+        run: npm run build:linux
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: |
+            release/**/*.AppImage
+            release/**/*.deb
+            release/**/*.pacman
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish release
+    needs: [prepare, macos, windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: release-*
+          merge-multiple: true
+
+      - name: Collect assets
+        id: assets
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          # download-artifact preserves the release/<version>/ nesting from the
+          # build jobs, so flatten everything into one directory for upload.
+          find artifacts -type f \
+            \( -name "*.dmg" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.pacman" \) \
+            -exec cp {} dist/ \;
+          echo "=== Release assets ==="
+          ls -lh dist
+          if [ -z "$(ls -A dist)" ]; then
+            echo "::error::No installers were produced"
+            exit 1
+          fi
+          ( cd dist && sha256sum * > SHA256SUMS.txt )
+
+      - name: Write release notes
+        run: |
+          cat > notes.md <<'EOF'
+          ## Downloads
+
+          | Platform | File |
+          | --- | --- |
+          | macOS (Apple Silicon) | `Guide-Studio-macOS-arm64-*.dmg` |
+          | macOS (Intel) | `Guide-Studio-macOS-x64-*.dmg` |
+          | Windows | `*.exe` |
+          | Linux | `*.AppImage`, `*.deb`, `*.pacman` |
+
+          `SHA256SUMS.txt` lists the checksum for every file.
+
+          ### These builds are unsigned
+
+          There is no Apple Developer ID or Windows code-signing certificate
+          behind this project, so the OS will warn you on first launch.
+
+          **macOS** — after dragging the app to `/Applications`:
+
+          ```bash
+          xattr -rd com.apple.quarantine "/Applications/Guide Studio.app"
+          ```
+
+          Then grant **Screen Recording** and **Accessibility** in
+          System Settings → Privacy & Security.
+
+          **Windows** — SmartScreen shows "Windows protected your PC".
+          Choose **More info → Run anyway**.
+
+          **Linux** — if the AppImage fails with a sandbox error, run it with
+          `--no-sandbox`.
+          EOF
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists — replacing its assets"
+            gh release upload "$TAG" dist/* --clobber
+          else
+            FLAGS=(--title "Guide Studio $TAG" --notes-file notes.md --generate-notes --target "$GITHUB_SHA")
+            if [ "$PRERELEASE" = "true" ]; then FLAGS+=(--prerelease); fi
+            gh release create "$TAG" dist/* "${FLAGS[@]}"
+          fi
+          gh release view "$TAG" --json url --jq .url

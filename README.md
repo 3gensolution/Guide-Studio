@@ -75,24 +75,13 @@ This runs through **your own Claude Code install**, on your existing Claude subs
 
 ## Installation
 
-Download the latest installer for your platform from the [GitHub Releases](https://github.com/guidestudio/guide-studio/releases) page.
+Download the latest installer for your platform from the [GitHub Releases](https://github.com/3gensolution/Guide-Studio/releases) page.
 
 ### macOS
 
-The easiest way to install on macOS is via [Homebrew](https://brew.sh):
+Grab the `.dmg` that matches your Mac from the [Releases page](https://github.com/3gensolution/Guide-Studio/releases) — `arm64` for Apple Silicon, `x64` for Intel — and drag Guide Studio into `/Applications`.
 
-```bash
-brew install --cask guidestudio/tap/guide-studio
-```
-
-Brew automatically picks the right build for Apple Silicon or Intel, and verifies the download against a notarized signature so Gatekeeper won't block it.
-
-To update later: `brew upgrade --cask guide-studio`
-To uninstall: `brew uninstall --cask guide-studio` (add `--zap` to also remove app data)
-
-#### Manual install (if you prefer)
-
-If you'd rather grab the `.dmg` directly from the [Releases page](https://github.com/guidestudio/guide-studio/releases) and encounter Gatekeeper blocking the app, you can bypass it by running the following command in your terminal after installation:
+The build is unsigned, so Gatekeeper will block the first launch. Clear the quarantine flag after installing:
 
 ```bash
 xattr -rd com.apple.quarantine /Applications/Guide\ Studio.app
@@ -132,53 +121,46 @@ This keeps a stable local signing identity, so Screen Recording approval survive
 
 ### Windows
 
-Install via [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/):
+Download the `-Setup.exe` installer from the [Releases page](https://github.com/3gensolution/Guide-Studio/releases) and run it.
 
-```bash
-winget install GuideStudio.GuideStudio
-```
-
-To update later: `winget upgrade GuideStudio.GuideStudio`
-To uninstall: `winget uninstall GuideStudio.GuideStudio`
-
-If you'd rather grab the `.exe` installer directly, download it from the [Releases page](https://github.com/guidestudio/guide-studio/releases).
+The installer is unsigned, so SmartScreen shows "Windows protected your PC" on first run. Choose **More info → Run anyway**.
 
 ### Linux
 
-Three packages are published to the [Releases page](https://github.com/guidestudio/guide-studio/releases) for each version. Pick the one that matches your distro:
+Three packages are published to the [Releases page](https://github.com/3gensolution/Guide-Studio/releases) for each version. Pick the one that matches your distro:
 
 **Debian / Ubuntu / Pop!_OS (`.deb`)**
 ```bash
-sudo apt install ./GuideStudio-Linux-latest.deb
+sudo apt install ./Guide-Studio-Linux-*.deb
 ```
 
 **Arch / Manjaro (`.pacman`)**
 ```bash
-sudo pacman -U GuideStudio-Linux-latest.pacman
+sudo pacman -U Guide-Studio-Linux-*.pacman
 ```
 
 **Any distro (`.AppImage`)**
 ```bash
-chmod +x GuideStudio-Linux-*.AppImage
-./GuideStudio-Linux-*.AppImage
+chmod +x Guide-Studio-Linux-*.AppImage
+./Guide-Studio-Linux-*.AppImage
 ```
 
 **NixOS / Nix (flake)**
 
 Try without installing:
 ```bash
-nix run github:guidestudio/guide-studio
+nix run github:3gensolution/Guide-Studio
 ```
 
 Install into your user profile:
 ```bash
-nix profile install github:guidestudio/guide-studio
+nix profile install github:3gensolution/Guide-Studio
 ```
 
 For a NixOS system config (flake):
 ```nix
 {
-  inputs.guide-studio.url = "github:guidestudio/guide-studio";
+  inputs.guide-studio.url = "github:3gensolution/Guide-Studio";
 
   outputs = { nixpkgs, guide-studio, ... }: {
     nixosConfigurations.<host> = nixpkgs.lib.nixosSystem {
@@ -197,7 +179,7 @@ You may need to grant screen recording permissions depending on your desktop env
 
 **Sandbox error:** If the AppImage fails to launch with a "sandbox" error, run it with `--no-sandbox`:
 ```bash
-./GuideStudio-Linux-*.AppImage --no-sandbox
+./Guide-Studio-Linux-*.AppImage --no-sandbox
 ```
 
 ## Languages
