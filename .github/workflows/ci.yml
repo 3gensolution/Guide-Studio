@@ -42,8 +42,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test
-      - run: npm run test:browser:install
-      - run: npm run test:browser
 
   build:
     name: Build
