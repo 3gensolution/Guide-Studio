@@ -202,6 +202,12 @@ Everything in the editor and export is the same on macOS, Windows, and Linux: zo
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
+## Acknowledgements
+
+Guide Studio is built on [OpenScreen](https://github.com/siddharthvaddem/openscreen) by Siddharth Vaddem, used under the MIT License.
+
+Guide Studio is an independent project and is not affiliated with OpenScreen. The OpenScreen authors and contributors are not involved in Guide Studio's development, do not endorse it, and bear no responsibility for it.
+
 ## License
 
 This project is licensed under the [MIT License](./LICENSE). By using this software, you agree that the authors are not liable for any issues, damages, or claims arising from its use.
