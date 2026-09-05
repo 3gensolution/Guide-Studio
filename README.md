@@ -206,7 +206,6 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 Guide Studio is built on [OpenScreen](https://github.com/siddharthvaddem/openscreen) by Siddharth Vaddem, used under the MIT License.
 
-Guide Studio is an independent project and is not affiliated with OpenScreen. The OpenScreen authors and contributors are not involved in Guide Studio's development, do not endorse it, and bear no responsibility for it.
 
 ## License
 

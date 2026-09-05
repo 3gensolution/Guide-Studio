@@ -798,9 +798,13 @@ interface Window {
 		}>;
 
 		// ── AI Video Creator ──
-		claudeDetect: () => Promise<{
+		/** Every supported agent CLI at once, so the picker can show both. */
+		agentDetect: () => Promise<{
 			success: boolean;
-			installation?: import("./claude-runtime/detect").ClaudeInstallation;
+			agents?: Record<
+				import("./claude-runtime/agents").AgentId,
+				import("./claude-runtime/detect").AgentInstallation
+			>;
 			error?: string;
 		}>;
 		claudeSkills: () => Promise<{
@@ -809,6 +813,7 @@ interface Window {
 		}>;
 		claudePlan: (input: {
 			request: string;
+			agent?: import("./claude-runtime/agents").AgentId;
 			format?: "landscape" | "vertical" | "square";
 			targetSeconds?: number;
 			model?: string;

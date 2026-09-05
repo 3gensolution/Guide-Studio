@@ -1,11 +1,16 @@
-// ── Claude session runner ────────────────────────────────────────────────
+// ── Agent session runner ─────────────────────────────────────────────────
 //
-// Spawns the user's Claude Code in headless mode against a session workspace
-// and streams its activity back. Guide Studio is the orchestrator here: it
-// owns the brief, the sandbox, the tool allowlist, and the validation of what
-// comes back. Claude owns the thinking.
+// Spawns an agent CLI in headless mode against a session workspace and
+// streams its activity back. Guide Studio is the orchestrator here: it owns
+// the brief, the sandbox, the tool policy, and the validation of what comes
+// back. The agent owns the thinking.
 //
-// The run is deliberately constrained:
+// `runAgentProcess` is the part both agents share — spawn, stream, timeout,
+// cancel, settle — parameterised by the two things that actually differ: the
+// argument list and the line parser. Claude's run is below; Codex's lives in
+// `codexSession.ts`.
+//
+// The Claude run is deliberately constrained:
 //   * cwd and `--add-dir` are the session folder, so file tools cannot reach
 //     the user's projects
 //   * Bash, WebSearch, WebFetch, and Task are denied outright
@@ -16,6 +21,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
+import { type AgentId, agentLabel } from "./agents";
 import { augmentedPathEnv } from "./detect";
 import { type ClaudeActivity, consumeChunk } from "./events";
 import type { WorkspacePaths } from "./workspace";
@@ -35,6 +41,25 @@ export interface RunClaudeOptions {
 	timeoutMs?: number;
 	signal?: AbortSignal;
 	onActivity?: (activity: ClaudeActivity) => void;
+}
+
+/** What a parser does with a chunk: emit activities, keep the partial line. */
+export type ChunkConsumer = (
+	buffer: string,
+	chunk: string,
+) => { activities: ClaudeActivity[]; buffer: string };
+
+export interface RunAgentProcessOptions {
+	agent: AgentId;
+	binaryPath: string;
+	args: string[];
+	cwd: string;
+	consume: ChunkConsumer;
+	timeoutMs: number;
+	signal?: AbortSignal;
+	onActivity?: (activity: ClaudeActivity) => void;
+	/** Last chance to make a raw CLI failure actionable. */
+	explainError?: (message: string | undefined) => string | undefined;
 }
 
 export interface RunClaudeResult {
@@ -87,18 +112,21 @@ export function childEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessE
 	return env;
 }
 
-export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeResult> {
-	const model = options.model ?? DEFAULT_MODEL;
-	const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-	const args = buildArgs(options.prompt, options.workspace.root, model);
+/**
+ * Spawn an agent CLI, stream its stdout through `consume`, and settle once it
+ * closes, is cancelled, or runs out of wall clock. Everything agent-specific
+ * arrives as an argument; nothing in here knows which CLI it is running.
+ */
+export async function runAgentProcess(options: RunAgentProcessOptions): Promise<RunClaudeResult> {
+	const label = agentLabel(options.agent);
 
 	return await new Promise<RunClaudeResult>((resolve) => {
-		const child = spawn(options.binaryPath, args, {
-			cwd: options.workspace.root,
+		const child = spawn(options.binaryPath, options.args, {
+			cwd: options.cwd,
 			env: childEnv(),
 			windowsHide: true,
-			// stdin MUST be closed, not piped. In print mode Claude Code reads
-			// stdin for piped input and waits for EOF before it starts; Node's
+			// stdin MUST be closed, not piped. In headless mode both CLIs read
+			// stdin for piped input and wait for EOF before they start; Node's
 			// default "pipe" stdin never closes on its own, so the run hangs
 			// silently — no output, no error, until the timeout fires.
 			stdio: ["ignore", "pipe", "pipe"],
@@ -134,7 +162,7 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
 		const timer = setTimeout(() => {
 			timedOut = true;
 			stop();
-		}, timeoutMs);
+		}, options.timeoutMs);
 
 		const onAbort = () => {
 			cancelled = true;
@@ -142,19 +170,23 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
 		};
 		options.signal?.addEventListener("abort", onAbort, { once: true });
 
-		child.stdout.setEncoding("utf8");
-		child.stdout.on("data", (chunk: string) => {
-			const { activities, buffer } = consumeChunk(stdoutBuffer, chunk);
-			stdoutBuffer = buffer;
+		const absorb = (activities: ClaudeActivity[]) => {
 			for (const activity of activities) {
 				if (activity.kind === "finished") {
 					summary = activity.summary;
-					costUsd = activity.costUsd;
-					durationMs = activity.durationMs;
+					if (activity.costUsd !== undefined) costUsd = activity.costUsd;
+					if (activity.durationMs !== undefined) durationMs = activity.durationMs;
 					if (!activity.ok) sawFailure = true;
 				}
 				options.onActivity?.(activity);
 			}
+		};
+
+		child.stdout.setEncoding("utf8");
+		child.stdout.on("data", (chunk: string) => {
+			const { activities, buffer } = options.consume(stdoutBuffer, chunk);
+			stdoutBuffer = buffer;
+			absorb(activities);
 		});
 
 		child.stderr.setEncoding("utf8");
@@ -168,7 +200,7 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
 			finish({
 				ok: false,
 				exitCode: null,
-				error: `Could not start Claude Code: ${error.message}`,
+				error: `Could not start ${label}: ${error.message}`,
 				cancelled,
 				timedOut,
 			});
@@ -177,33 +209,22 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
 		child.on("close", (code) => {
 			// A trailing line with no newline still carries the result envelope.
 			if (stdoutBuffer.trim()) {
-				const { activities } = consumeChunk(stdoutBuffer, "\n");
-				for (const activity of activities) {
-					if (activity.kind === "finished") {
-						summary = activity.summary;
-						costUsd = activity.costUsd;
-						if (!activity.ok) sawFailure = true;
-					}
-					options.onActivity?.(activity);
-				}
+				absorb(options.consume(stdoutBuffer, "\n").activities);
 			}
 
 			const ok = code === 0 && !sawFailure && !cancelled && !timedOut;
+			const rawError = timedOut
+				? `${label} did not finish within ${Math.round(options.timeoutMs / 60000)} minutes.`
+				: cancelled
+					? "Cancelled."
+					: (summary ?? stderrTail.trim() ?? `${label} exited with code ${code}.`);
 			finish({
 				ok,
 				exitCode: code,
 				...(summary ? { summary } : {}),
 				...(costUsd !== undefined ? { costUsd } : {}),
 				...(durationMs !== undefined ? { durationMs } : {}),
-				...(ok
-					? {}
-					: {
-							error: timedOut
-								? `Claude Code did not finish within ${Math.round(timeoutMs / 60000)} minutes.`
-								: cancelled
-									? "Cancelled."
-									: (summary ?? stderrTail.trim() ?? `Claude Code exited with code ${code}.`),
-						}),
+				...(ok ? {} : { error: options.explainError?.(rawError) ?? rawError }),
 				cancelled,
 				timedOut,
 			});
@@ -211,10 +232,27 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
 	});
 }
 
-/** Read the storyboard Claude was asked to write. Missing file is a normal failure. */
-export function readStoryboardFile(paths: WorkspacePaths): { raw?: unknown; error?: string } {
+export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeResult> {
+	const model = options.model || DEFAULT_MODEL;
+	return await runAgentProcess({
+		agent: "claude",
+		binaryPath: options.binaryPath,
+		args: buildArgs(options.prompt, options.workspace.root, model),
+		cwd: options.workspace.root,
+		consume: consumeChunk,
+		timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+		...(options.signal ? { signal: options.signal } : {}),
+		...(options.onActivity ? { onActivity: options.onActivity } : {}),
+	});
+}
+
+/** Read the storyboard the agent was asked to write. Missing file is a normal failure. */
+export function readStoryboardFile(
+	paths: WorkspacePaths,
+	agent: AgentId = "claude",
+): { raw?: unknown; error?: string } {
 	if (!fs.existsSync(paths.storyboardPath)) {
-		return { error: "Claude finished without writing output/storyboard.json." };
+		return { error: `${agentLabel(agent)} finished without writing output/storyboard.json.` };
 	}
 	let text: string;
 	try {

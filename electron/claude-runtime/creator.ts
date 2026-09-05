@@ -2,13 +2,17 @@
 //
 // Guide Studio's side of the loop. It owns everything except the thinking:
 //
-//   plan()    build the workspace, brief Claude, validate what it wrote
+//   plan()    build the workspace, brief the agent, validate what it wrote
 //   preview() render stills so the user can judge the plan cheaply
 //   render()  render the approved storyboard to an MP4
 //
 // The stages are separate because they cost different things. Planning spends
-// the user's Claude quota; rendering spends minutes of CPU. Neither should be
+// the user's agent quota; rendering spends minutes of CPU. Neither should be
 // triggered by the other without the user seeing what happened in between.
+//
+// Which agent does the thinking — Claude Code or Codex — is chosen per
+// session and changes nothing after `plan()` returns: both write the same
+// validated storyboard, and preview and render never learn which one ran.
 
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -20,8 +24,10 @@ import {
 	renderMotionDemo,
 	renderMotionStills,
 } from "../export/remotionExport";
+import { AGENTS, type AgentId } from "./agents";
 import { type ResolvedAsset, resolveAssetQueries } from "./assets";
-import { detectClaude } from "./detect";
+import { runCodex } from "./codexSession";
+import { detectAgent, notInstalledMessage } from "./detect";
 import type { ClaudeActivity } from "./events";
 import {
 	type MotionProject,
@@ -29,7 +35,7 @@ import {
 	motionSystemPrompt,
 	normalizeMotionProject,
 } from "./motionProject";
-import { DEFAULT_MODEL, readStoryboardFile, runClaude } from "./session";
+import { readStoryboardFile, runClaude } from "./session";
 import {
 	type HyperFrameStoryboard,
 	normalizeStoryboard,
@@ -45,7 +51,7 @@ const MAX_PREVIEW_STILLS = 6;
 export type CreatorStatus = "planning" | "planned" | "rendering" | "rendered" | "failed";
 
 /**
- * Which visual library Claude plans against.
+ * Which visual library the agent plans against.
  *
  *   motion — animated backdrops and kinetic typography (`MotionGraphics`)
  *   cards  — clean HyperFrame layout cards
@@ -54,6 +60,8 @@ export type CreatorLook = "motion" | "cards";
 
 export interface CreatorSession {
 	id: string;
+	/** Which CLI planned this session. */
+	agent: AgentId;
 	request: string;
 	format: HyperFrameFormat;
 	targetSeconds: number;
@@ -67,7 +75,7 @@ export interface CreatorSession {
 	motion?: MotionProject;
 	/** Stock images fetched for the frames that asked for one. */
 	assets?: ResolvedAsset[];
-	/** What the validator had to correct in Claude's storyboard. */
+	/** What the validator had to correct in the agent's storyboard. */
 	warnings?: string[];
 	durationSeconds?: number;
 	previewPaths?: Array<{ frameIndex: number; path: string }>;
@@ -78,6 +86,7 @@ export interface CreatorSession {
 
 export interface PlanInput {
 	request: string;
+	agent?: AgentId;
 	format?: HyperFrameFormat;
 	targetSeconds?: number;
 	model?: string;
@@ -113,33 +122,37 @@ export function discardSession(id: string): void {
 }
 
 /**
- * Stage 1 — brief Claude and validate what comes back.
+ * Stage 1 — brief the chosen agent and validate what comes back.
  *
  * The storyboard is normalized before it is stored, so every later stage works
  * on frames that are known to render: out-of-range values are clamped, unknown
  * frame kinds degrade to their text equivalent, and anything referencing media
- * this session does not have becomes text rather than a broken frame.
+ * this session does not have becomes text rather than a broken frame. That
+ * normalization is also what lets a second agent be added without trusting it
+ * any further than the first: whatever it writes goes through the same gate.
  */
 export async function planStoryboard(
 	baseDir: string,
 	input: PlanInput,
 	onActivity?: (activity: ClaudeActivity) => void,
 ): Promise<CreatorSession> {
-	const installation = await detectClaude();
+	const agent: AgentId = input.agent ?? "claude";
+	const installation = await detectAgent(agent);
 	if (!installation.installed || !installation.binaryPath) {
-		throw new Error(
-			"Claude Code was not found on this machine. Install it, sign in, then try again.",
-		);
+		throw new Error(notInstalledMessage(agent));
 	}
 
 	const id = randomUUID();
 	const format = input.format ?? "landscape";
 	const targetSeconds = input.targetSeconds ?? 45;
-	const model = input.model ?? DEFAULT_MODEL;
+	// An empty model is meaningful for Codex — it means "whatever the CLI
+	// defaults to" — so only an absent one falls back to the agent's default.
+	const model = input.model ?? AGENTS[agent].defaultModel;
 	const look: CreatorLook = input.look ?? "motion";
 
 	const session: CreatorSession = {
 		id,
+		agent,
 		request: input.request,
 		format,
 		targetSeconds,
@@ -151,7 +164,7 @@ export async function planStoryboard(
 	sessions.set(id, session);
 
 	// The contract is generated from the same constants the validator enforces,
-	// so what Claude is told and what is accepted can never drift apart.
+	// so what the agent is told and what is accepted can never drift apart.
 	const contract =
 		look === "motion"
 			? motionSystemPrompt({ format, targetSeconds })
@@ -166,6 +179,7 @@ export async function planStoryboard(
 	const workspace = createWorkspace({
 		baseDir,
 		sessionId: id,
+		agent,
 		request: input.request,
 		contract,
 		format,
@@ -177,18 +191,20 @@ export async function planStoryboard(
 	running.set(id, controller);
 
 	try {
-		const run = await runClaude({
+		const runOptions = {
 			binaryPath: installation.binaryPath,
 			workspace,
 			prompt: buildPrompt(),
 			model,
 			signal: controller.signal,
 			...(onActivity ? { onActivity } : {}),
-		});
+		};
+		const run = agent === "codex" ? await runCodex(runOptions) : await runClaude(runOptions);
 
+		// Codex reports tokens, not dollars, so this stays undefined there.
 		session.costUsd = run.costUsd;
 
-		const file = readStoryboardFile(workspace);
+		const file = readStoryboardFile(workspace, agent);
 		if (file.error) {
 			// A failed run explains itself better than the missing file does.
 			session.status = "failed";
@@ -205,7 +221,7 @@ export async function planStoryboard(
 			session.warnings = warnings;
 			session.durationSeconds = motionDurationSeconds(project);
 		} else {
-			// Claude planned without a network, naming the pictures it wanted.
+			// The agent planned without a network, naming the pictures it wanted.
 			// They are fetched here, before validation, so a query that found
 			// nothing degrades through the same path an unsupplied image always
 			// did — and the licence credit reaches the storyboard as a term the

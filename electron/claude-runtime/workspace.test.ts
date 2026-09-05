@@ -4,7 +4,13 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildArgs, childEnv, DENIED_TOOLS } from "./session";
 import { VIDEO_SKILLS } from "./skills";
-import { buildBrief, createWorkspace, removeWorkspace, workspacePaths } from "./workspace";
+import {
+	buildAgentsDoc,
+	buildBrief,
+	createWorkspace,
+	removeWorkspace,
+	workspacePaths,
+} from "./workspace";
 
 const created: string[] = [];
 
@@ -33,6 +39,9 @@ describe("createWorkspace", () => {
 		expect(fs.existsSync(paths.outputDir)).toBe(true);
 		expect(fs.existsSync(paths.previewDir)).toBe(true);
 		expect(fs.existsSync(paths.renderDir)).toBe(true);
+		// Codex discovers AGENTS.md on its own; it must be on disk, not only
+		// referenced from the prompt.
+		expect(fs.existsSync(paths.agentsDocPath)).toBe(true);
 		for (const skill of VIDEO_SKILLS) {
 			const file = path.join(paths.skillsDir, skill.id, "SKILL.md");
 			expect(fs.existsSync(file)).toBe(true);
@@ -118,5 +127,56 @@ describe("childEnv", () => {
 	it("widens PATH for a GUI launch", () => {
 		const env = childEnv({ PATH: "/usr/bin" });
 		expect(env.PATH?.split(path.delimiter)).toContain("/usr/local/bin");
+	});
+});
+
+describe("agent-aware briefing", () => {
+	it("tells Claude it has file tools and no shell", () => {
+		const brief = buildBrief({
+			agent: "claude",
+			request: "a video",
+			contract: "contract",
+			format: "landscape",
+			targetSeconds: 30,
+		});
+		expect(brief).toContain("Read, Write, Edit, Glob, and Grep");
+		expect(brief).toContain("There is no");
+	});
+
+	it("tells Codex the truth about its sandbox instead", () => {
+		// Codex works through a shell, so describing Claude's file-tool
+		// restriction to it would be a restriction it can see is false.
+		const brief = buildBrief({
+			agent: "codex",
+			request: "a video",
+			contract: "contract",
+			format: "landscape",
+			targetSeconds: 30,
+		});
+		expect(brief).toContain("Shell commands are available and confined to it");
+		expect(brief).not.toContain("Read, Write, Edit, Glob, and Grep");
+	});
+
+	it("keeps both agents pointed at the same deliverable", () => {
+		for (const agent of ["claude", "codex"] as const) {
+			const brief = buildBrief({
+				agent,
+				request: "a video",
+				contract: "contract",
+				format: "landscape",
+				targetSeconds: 30,
+			});
+			expect(brief).toContain("output/storyboard.json");
+			expect(brief).toContain("assetQuery");
+		}
+	});
+
+	it("writes an AGENTS.md that points at the brief rather than copying it", () => {
+		const doc = buildAgentsDoc("codex");
+		expect(doc).toContain("BRIEF.md");
+		expect(doc).toContain("output/storyboard.json");
+		expect(doc).toContain("Codex");
+		// A copy would be a second source of truth for the contract.
+		expect(doc).not.toContain("## The frame contract");
 	});
 });

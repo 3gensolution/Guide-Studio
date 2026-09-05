@@ -20,6 +20,25 @@ describe("candidateBinaryPaths", () => {
 		const candidates = candidateBinaryPaths("win32", "C:\\Users\\ada");
 		expect(candidates.every((candidate) => /\.(exe|cmd)$/.test(candidate))).toBe(true);
 	});
+
+	it("searches the same install routes for Codex, under its own name", () => {
+		const candidates = candidateBinaryPaths("darwin", "/Users/ada", "codex");
+		expect(candidates).toContain("/Users/ada/.local/bin/codex");
+		expect(candidates).toContain("/opt/homebrew/bin/codex");
+		expect(candidates).toContain("/Users/ada/.codex/bin/codex");
+		// Nothing from the other agent leaks into the list.
+		expect(candidates.some((candidate) => candidate.includes("claude"))).toBe(false);
+	});
+});
+
+describe("parseVersion across both CLIs", () => {
+	it("reads Claude Code's format", () => {
+		expect(parseVersion("1.0.65 (Claude Code)")).toBe("1.0.65");
+	});
+
+	it("reads the Codex CLI's format", () => {
+		expect(parseVersion("codex-cli 0.153.4")).toBe("0.153.4");
+	});
 });
 
 describe("augmentedPathEnv", () => {

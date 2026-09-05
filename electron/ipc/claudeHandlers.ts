@@ -2,10 +2,18 @@
 //
 // The renderer never sees a binary path, a workspace path, or a child
 // process — it sends a request and receives sessions. Everything that can
-// touch the filesystem or spawn Claude stays in main.
+// touch the filesystem or spawn an agent CLI stays in main.
+//
+// The channel names still say "claude" because they are the feature's names,
+// not the vendor's, and renaming a wire protocol nothing else could see would
+// only churn every call site. Detection is the exception: `agent-detect`
+// answers for every supported CLI at once, which is what the window needs to
+// offer the ones that are ready and explain how to get the others, and it
+// replaced a Claude-only channel that nothing calls any more.
 
 import path from "node:path";
 import { app, BrowserWindow, ipcMain } from "electron";
+import { toAgentId } from "../claude-runtime/agents";
 import {
 	type CreatorSession,
 	cancelSession,
@@ -16,7 +24,7 @@ import {
 	previewStoryboard,
 	renderStoryboard,
 } from "../claude-runtime/creator";
-import { detectClaude } from "../claude-runtime/detect";
+import { detectAgents } from "../claude-runtime/detect";
 import type { ClaudeActivity } from "../claude-runtime/events";
 import { VIDEO_SKILLS } from "../claude-runtime/skills";
 
@@ -41,9 +49,9 @@ function ok(session: CreatorSession) {
 
 export function registerClaudeHandlers(): void {
 	// ── Setup ──
-	ipcMain.handle("claude-detect", async () => {
+	ipcMain.handle("agent-detect", async () => {
 		try {
-			return { success: true, installation: await detectClaude() };
+			return { success: true, agents: await detectAgents() };
 		} catch (error) {
 			return fail(error);
 		}
@@ -61,6 +69,7 @@ export function registerClaudeHandlers(): void {
 			_event,
 			input: {
 				request: string;
+				agent?: "claude" | "codex";
 				format?: "landscape" | "vertical" | "square";
 				targetSeconds?: number;
 				model?: string;
@@ -71,7 +80,10 @@ export function registerClaudeHandlers(): void {
 				return { success: false, error: "Describe the video you want first." };
 			}
 			try {
-				const session = await planStoryboard(baseDir(), input, (activity: ClaudeActivity) => {
+				// The agent decides which binary gets spawned, so it is narrowed
+				// here rather than trusted from the renderer.
+				const plan = { ...input, agent: toAgentId(input.agent) };
+				const session = await planStoryboard(baseDir(), plan, (activity: ClaudeActivity) => {
 					broadcast("claude-activity", activity);
 				});
 				return ok(session);

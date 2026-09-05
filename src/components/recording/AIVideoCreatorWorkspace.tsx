@@ -1,12 +1,17 @@
 // ── AI Video Creator ─────────────────────────────────────────────────────
 //
-// Guide Studio orchestrates; Claude designs. The user describes a video, we
-// hand Claude a brief plus our craft skills, and it writes a storyboard
-// against the fixed scene library. We validate it, render it locally, and let
-// the user drop the result onto the editor timeline.
+// Guide Studio orchestrates; a coding agent designs. The user describes a
+// video, we hand the agent a brief plus our craft skills, and it writes a
+// storyboard against the fixed scene library. We validate it, render it
+// locally, and let the user drop the result onto the editor timeline.
+//
+// Two agents can do the designing — Claude Code on a Claude subscription, or
+// Codex on a ChatGPT sign-in — and the user picks per video. Nothing after the
+// plan differs, so the choice only shows up in this file as copy, a model
+// list, and which install we look for.
 //
 // The stages are deliberately visible — brief, plan, preview, render — because
-// each one costs the user something different (their Claude quota, then their
+// each one costs the user something different (their agent quota, then their
 // CPU) and they should never be spent without the user seeing why.
 
 import {
@@ -28,8 +33,10 @@ import { toFileUrl } from "@/components/video-editor/projectPersistence";
 
 type Format = "landscape" | "vertical" | "square";
 type Look = "motion" | "cards";
+type AgentId = "claude" | "codex";
 
 interface Installation {
+	agent?: AgentId;
 	installed: boolean;
 	binaryPath?: string;
 	version?: string;
@@ -107,23 +114,69 @@ const LOOKS: Array<{ id: Look; label: string; hint: string }> = [
 
 const LENGTHS = [15, 30, 45, 60, 90];
 
-const MODELS = [
-	{ id: "claude-opus-5", label: "Opus 5", hint: "Most capable" },
-	{ id: "claude-sonnet-5", label: "Sonnet 5", hint: "Faster, cheaper" },
-];
+/**
+ * The two agents, as the user meets them. This mirrors `electron/claude-
+ * runtime/agents.ts`, which is the authority — main narrows whatever the
+ * renderer sends and picks the model itself if this list is out of date.
+ *
+ * `scope` is not decoration. The two agents are confined to the session folder
+ * by different mechanisms, and Codex reaching that guarantee through a sandbox
+ * rather than a tool allowlist means it *can* run commands in there. That is a
+ * real difference in what the user is authorising, so it is on the screen
+ * rather than in a changelog.
+ */
+const AGENT_UI: Record<
+	AgentId,
+	{
+		label: string;
+		account: string;
+		installCommand: string;
+		signInCommand: string;
+		note: string;
+		scope: string;
+		models: Array<{ id: string; label: string; hint?: string }>;
+	}
+> = {
+	claude: {
+		label: "Claude Code",
+		account: "Claude subscription",
+		installCommand: "npm install -g @anthropic-ai/claude-code",
+		signInCommand: "claude",
+		note: "Runs on your Claude subscription, through your own install.",
+		scope: "File tools only, scoped to the session folder.",
+		models: [
+			{ id: "claude-opus-5", label: "Opus 5", hint: "Most capable" },
+			{ id: "claude-sonnet-5", label: "Sonnet 5", hint: "Faster, cheaper" },
+		],
+	},
+	codex: {
+		label: "Codex",
+		account: "ChatGPT sign-in",
+		installCommand: "npm install -g @openai/codex",
+		signInCommand: "codex",
+		// Codex model ids depend on both the CLI version and the ChatGPT plan,
+		// and pinning one either side does not carry fails the run outright, so
+		// the only offer here is the CLI's own default.
+		note: "Runs on your ChatGPT sign-in. Codex picks the model your plan allows — pin one in ~/.codex/config.toml if you need to.",
+		scope:
+			"Sandboxed to the session folder with the network off; it can run shell commands in there.",
+		models: [{ id: "", label: "Auto", hint: "Your Codex default" }],
+	},
+};
 
-const INSTALL_COMMAND = "npm install -g @anthropic-ai/claude-code";
+const AGENT_ORDER: AgentId[] = ["claude", "codex"];
 
 export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
-	const [installation, setInstallation] = useState<Installation | null>(null);
+	const [installations, setInstallations] = useState<Record<AgentId, Installation> | null>(null);
 	const [checking, setChecking] = useState(true);
-	const [copied, setCopied] = useState(false);
+	const [copied, setCopied] = useState<AgentId | null>(null);
 
 	const [request, setRequest] = useState("");
+	const [agent, setAgent] = useState<AgentId>("claude");
 	const [format, setFormat] = useState<Format>("landscape");
 	const [targetSeconds, setTargetSeconds] = useState(45);
 	const [look, setLook] = useState<Look>("motion");
-	const [model, setModel] = useState(MODELS[0].id);
+	const [model, setModel] = useState(AGENT_UI.claude.models[0].id);
 
 	const [session, setSession] = useState<CreatorSession | null>(null);
 	const [activities, setActivities] = useState<Activity[]>([]);
@@ -133,10 +186,25 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 	const [inserted, setInserted] = useState(false);
 	const activityEndRef = useRef<HTMLDivElement | null>(null);
 
+	const agentUi = AGENT_UI[agent];
+	const agentLabel = agentUi.label;
+	const installation = installations?.[agent] ?? null;
+	const anyInstalled = AGENT_ORDER.some((id) => installations?.[id]?.installed === true);
+
 	const checkInstall = useCallback(async () => {
 		setChecking(true);
-		const result = await window.electronAPI.claudeDetect();
-		setInstallation(result.installation ?? { installed: false, supportsFileSkills: false });
+		const result = await window.electronAPI.agentDetect();
+		const found = result.agents ?? {
+			claude: { installed: false, supportsFileSkills: false },
+			codex: { installed: false, supportsFileSkills: false },
+		};
+		setInstallations(found);
+		// Land on an agent that can actually run. Claude first when both are
+		// present, because it is the one the feature was built against.
+		setAgent((current) => {
+			if (found[current]?.installed) return current;
+			return AGENT_ORDER.find((id) => found[id]?.installed) ?? current;
+		});
 		setChecking(false);
 	}, []);
 
@@ -144,7 +212,13 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 		void checkInstall();
 	}, [checkInstall]);
 
-	// Live activity from the running Claude session.
+	// A model id only means anything to the agent it belongs to, so switching
+	// agents resets the choice rather than sending Claude's id to Codex.
+	useEffect(() => {
+		setModel(AGENT_UI[agent].models[0].id);
+	}, [agent]);
+
+	// Live activity from the running agent session.
 	useEffect(() => {
 		if (!window.electronAPI?.onClaudeActivity) return;
 		return window.electronAPI.onClaudeActivity((activity) => {
@@ -171,6 +245,7 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 
 		const result = await window.electronAPI.claudePlan({
 			request,
+			agent,
 			format,
 			targetSeconds,
 			model,
@@ -178,7 +253,7 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 		});
 
 		if (!result.success || !result.session) {
-			setError(result.error ?? "Claude could not plan this video.");
+			setError(result.error ?? `${agentLabel} could not plan this video.`);
 			setBusy(null);
 			return;
 		}
@@ -186,7 +261,7 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 		const planned = result.session as unknown as CreatorSession;
 		setSession(planned);
 		if (planned.status === "failed") {
-			setError(planned.error ?? "Claude finished without a usable storyboard.");
+			setError(planned.error ?? `${agentLabel} finished without a usable storyboard.`);
 			setBusy(null);
 			return;
 		}
@@ -198,7 +273,7 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 			setSession(preview.session as unknown as CreatorSession);
 		}
 		setBusy(null);
-	}, [request, format, targetSeconds, model, look, busy]);
+	}, [request, agent, agentLabel, format, targetSeconds, model, look, busy]);
 
 	const handleRender = useCallback(async () => {
 		if (!session || busy) return;
@@ -229,16 +304,19 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 	}, [session]);
 
 	// ── Setup gate ──
-	if (checking || !installation?.installed) {
+	// Held until *some* agent is runnable, not until the selected one is: with
+	// two supported CLIs, "you have neither" and "you have the other" are
+	// different problems and only the first is a wall.
+	if (checking || !anyInstalled) {
 		return (
 			<SetupGate
 				checking={checking}
-				installation={installation}
+				installations={installations}
 				copied={copied}
-				onCopy={() => {
-					void navigator.clipboard.writeText(INSTALL_COMMAND);
-					setCopied(true);
-					setTimeout(() => setCopied(false), 2000);
+				onCopy={(id) => {
+					void navigator.clipboard.writeText(AGENT_UI[id].installCommand);
+					setCopied(id);
+					setTimeout(() => setCopied(null), 2000);
 				}}
 				onRecheck={checkInstall}
 				onClose={onClose}
@@ -270,7 +348,9 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 				<div className="min-w-0">
 					<h1 className="text-sm font-semibold">AI Video Creator</h1>
 					<p className="truncate text-[11px] text-white/40">
-						Claude Code {installation.version} · designs scenes, Guide Studio renders them
+						{agentLabel}
+						{installation?.version ? ` ${installation.version}` : ""} · designs scenes, Guide Studio
+						renders them
 					</p>
 				</div>
 				<button
@@ -303,10 +383,40 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 							className="w-full resize-none rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-[13px] leading-relaxed text-white placeholder:text-white/25 focus:border-[#6E6BFF]/60 focus:outline-none disabled:opacity-50"
 						/>
 						<p className="mt-1.5 text-[10px] text-white/30">
-							Specifics beat adjectives — name the audience, the outcome, and anything Claude should
-							not invent.
+							Specifics beat adjectives — name the audience, the outcome, and anything the agent
+							should not invent.
 						</p>
 					</div>
+
+					<Field label="Agent">
+						<div className="flex gap-1.5">
+							{AGENT_ORDER.map((id) => {
+								const found = installations?.[id];
+								return (
+									<button
+										key={id}
+										type="button"
+										onClick={() => setAgent(id)}
+										// An agent that is not installed cannot be chosen, but it
+										// is still shown: a user who only has one of the two
+										// should learn the other is supported.
+										disabled={busy !== null || !found?.installed}
+										className={`flex-1 rounded-lg border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+											agent === id
+												? "border-[#6E6BFF]/60 bg-[#6E6BFF]/15"
+												: "border-white/10 hover:bg-white/5"
+										}`}
+									>
+										<div className="text-[12px] text-white/90">{AGENT_UI[id].label}</div>
+										<div className="truncate text-[10px] text-white/40">
+											{found?.installed ? AGENT_UI[id].account : "Not installed"}
+										</div>
+									</button>
+								);
+							})}
+						</div>
+						<p className="mt-1.5 text-[10px] text-white/30">{agentUi.scope}</p>
+					</Field>
 
 					<Field label="Look">
 						<div className="flex flex-col gap-1.5">
@@ -360,9 +470,9 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 
 					<Field label="Model">
 						<div className="flex gap-1.5">
-							{MODELS.map((option) => (
+							{agentUi.models.map((option) => (
 								<Choice
-									key={option.id}
+									key={option.id || "auto"}
 									active={model === option.id}
 									disabled={busy !== null}
 									onClick={() => setModel(option.id)}
@@ -371,9 +481,7 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 								/>
 							))}
 						</div>
-						<p className="mt-1.5 text-[10px] text-white/30">
-							Runs on your Claude subscription, through your own install.
-						</p>
+						<p className="mt-1.5 text-[10px] text-white/30">{agentUi.note}</p>
 					</Field>
 
 					<button
@@ -385,7 +493,7 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 						{busy === "planning" || busy === "previewing" ? (
 							<>
 								<Loader2 size={14} className="animate-spin" />
-								{busy === "planning" ? "Claude is planning…" : "Rendering preview…"}
+								{busy === "planning" ? `${agentLabel} is planning…` : "Rendering preview…"}
 							</>
 						) : (
 							<>
@@ -417,7 +525,7 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 						</div>
 					)}
 
-					{!session && activities.length === 0 && !error && <EmptyState />}
+					{!session && activities.length === 0 && !error && <EmptyState agentLabel={agentLabel} />}
 
 					{activities.length > 0 && !session?.storyboard && (
 						<ActivityFeed activities={activities} endRef={activityEndRef} />
@@ -440,7 +548,7 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 								<details className="rounded-xl border border-amber-500/20 bg-amber-500/[0.07] px-3.5 py-2.5">
 									<summary className="cursor-pointer text-[11px] font-medium text-amber-200/90">
 										Guide Studio corrected {session.warnings.length}{" "}
-										{session.warnings.length === 1 ? "thing" : "things"} in Claude's plan
+										{session.warnings.length === 1 ? "thing" : "things"} in the agent's plan
 									</summary>
 									<ul className="mt-2 space-y-1">
 										{session.warnings.map((warning) => (
@@ -554,7 +662,7 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 
 							<details className="rounded-xl border border-white/[0.06]">
 								<summary className="cursor-pointer px-3.5 py-2.5 text-[11px] text-white/40">
-									Claude's activity log
+									{agentLabel} activity log
 								</summary>
 								<div className="border-t border-white/[0.06] p-3">
 									<ActivityFeed activities={activities} endRef={activityEndRef} />
@@ -569,7 +677,7 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 }
 
 /**
- * What Claude asked for and what Guide Studio actually found. The credit is
+ * What the agent asked for and what Guide Studio actually found. The credit is
  * shown here as well as burned into the outro, because a user about to publish
  * should be able to see whose photograph they are publishing before they do.
  */
@@ -639,16 +747,16 @@ function Choice({
 	);
 }
 
-function EmptyState() {
+function EmptyState({ agentLabel }: { agentLabel: string }) {
 	return (
 		<div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
 			<Clapperboard size={26} className="text-white/15" />
 			<p className="text-[13px] text-white/40">
-				Describe a video and Claude will design the scenes
+				Describe a video and {agentLabel} will design the scenes
 			</p>
 			<p className="max-w-sm text-[11px] leading-relaxed text-white/25">
-				Claude plans the frames against Guide Studio's scene library. Nothing renders until you
-				approve the plan, and nothing leaves this machine.
+				{agentLabel} plans the frames against Guide Studio's scene library. Nothing renders until
+				you approve the plan, and nothing leaves this machine.
 			</p>
 		</div>
 	);
@@ -701,16 +809,16 @@ function ActivityLine({ activity }: { activity: Activity }) {
 
 function SetupGate({
 	checking,
-	installation,
+	installations,
 	copied,
 	onCopy,
 	onRecheck,
 	onClose,
 }: {
 	checking: boolean;
-	installation: Installation | null;
-	copied: boolean;
-	onCopy: () => void;
+	installations: Record<AgentId, Installation> | null;
+	copied: AgentId | null;
+	onCopy: (agent: AgentId) => void;
 	onRecheck: () => void;
 	onClose: () => void;
 }) {
@@ -741,49 +849,27 @@ function SetupGate({
 					</div>
 
 					<h1 className="text-lg font-semibold">
-						{checking ? "Looking for Claude Code…" : "Connect your Claude Code"}
+						{checking ? "Looking for a coding agent…" : "Connect a coding agent"}
 					</h1>
 					<p className="mt-2 text-[13px] leading-relaxed text-white/50">
-						The AI Video Creator drives Claude Code on this machine — your install, your login, your
-						subscription. Guide Studio sends it the brief and renders what it designs.
+						The AI Video Creator drives a coding CLI on this machine — your install, your login,
+						your subscription. Guide Studio sends it the brief and renders what it designs. Set up
+						either one; you can switch per video.
 					</p>
 
 					{!checking && (
 						<>
-							<ol className="mt-5 flex flex-col gap-3">
-								<Step index={1} title="Install Claude Code">
-									<div className="mt-1.5 flex items-center gap-2 rounded-lg border border-white/10 bg-black/40 px-3 py-2">
-										<code className="min-w-0 flex-1 truncate font-mono text-[11px] text-white/70">
-											{INSTALL_COMMAND}
-										</code>
-										<button
-											type="button"
-											onClick={onCopy}
-											className="flex-shrink-0 rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white"
-										>
-											{copied ? <Check size={13} /> : <Copy size={13} />}
-										</button>
-									</div>
-								</Step>
-								<Step index={2} title="Sign in">
-									<p className="mt-1 text-[12px] text-white/45">
-										Run <code className="font-mono text-white/60">claude</code> once in a terminal
-										and complete the login.
-									</p>
-								</Step>
-								<Step index={3} title="Come back and re-check">
-									<p className="mt-1 text-[12px] text-white/45">
-										Guide Studio looks in the standard install locations, so no path setup is
-										needed.
-									</p>
-								</Step>
-							</ol>
-
-							{installation?.error && (
-								<p className="mt-4 break-words rounded-lg border border-white/10 bg-black/30 px-3 py-2 font-mono text-[10px] text-white/35">
-									{installation.error}
-								</p>
-							)}
+							<div className="mt-5 flex flex-col gap-3">
+								{AGENT_ORDER.map((id) => (
+									<AgentSetupCard
+										key={id}
+										agent={id}
+										installation={installations?.[id] ?? null}
+										copied={copied === id}
+										onCopy={() => onCopy(id)}
+									/>
+								))}
+							</div>
 
 							<button
 								type="button"
@@ -793,6 +879,10 @@ function SetupGate({
 								<RefreshCw size={14} />
 								Check again
 							</button>
+
+							<p className="mt-3 text-[11px] text-white/30">
+								Guide Studio looks in the standard install locations, so no path setup is needed.
+							</p>
 						</>
 					)}
 				</div>
@@ -801,24 +891,63 @@ function SetupGate({
 	);
 }
 
-function Step({
-	index,
-	title,
-	children,
+/**
+ * One agent's install instructions, or a green tick if it is already there.
+ * The error is shown verbatim because the useful ones are specific — a
+ * missing sign-in, a broken shim — and paraphrasing them loses the fix.
+ */
+function AgentSetupCard({
+	agent,
+	installation,
+	copied,
+	onCopy,
 }: {
-	index: number;
-	title: string;
-	children: React.ReactNode;
+	agent: AgentId;
+	installation: Installation | null;
+	copied: boolean;
+	onCopy: () => void;
 }) {
+	const ui = AGENT_UI[agent];
+	const ready = installation?.installed === true;
+
 	return (
-		<li className="flex gap-3">
-			<span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-[10px] text-white/50">
-				{index}
-			</span>
-			<div className="min-w-0 flex-1">
-				<p className="text-[13px] font-medium text-white/85">{title}</p>
-				{children}
+		<div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3.5">
+			<div className="flex items-center gap-2">
+				<p className="text-[13px] font-medium text-white/85">{ui.label}</p>
+				<span className="text-[11px] text-white/35">{ui.account}</span>
+				{ready && (
+					<span className="ml-auto flex items-center gap-1 text-[11px] text-emerald-400/80">
+						<Check size={12} />
+						{installation?.version ?? "ready"}
+					</span>
+				)}
 			</div>
-		</li>
+
+			{!ready && (
+				<>
+					<div className="mt-2 flex items-center gap-2 rounded-lg border border-white/10 bg-black/40 px-3 py-2">
+						<code className="min-w-0 flex-1 truncate font-mono text-[11px] text-white/70">
+							{ui.installCommand}
+						</code>
+						<button
+							type="button"
+							onClick={onCopy}
+							className="flex-shrink-0 rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white"
+						>
+							{copied ? <Check size={13} /> : <Copy size={13} />}
+						</button>
+					</div>
+					<p className="mt-1.5 text-[11px] text-white/40">
+						Then run <code className="font-mono text-white/60">{ui.signInCommand}</code> once in a
+						terminal and complete the login.
+					</p>
+					{installation?.error && (
+						<p className="mt-2 break-words rounded-lg border border-white/10 bg-black/30 px-2.5 py-1.5 font-mono text-[10px] text-white/30">
+							{installation.error}
+						</p>
+					)}
+				</>
+			)}
+		</div>
 	);
 }

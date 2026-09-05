@@ -1,28 +1,34 @@
 // ── Session workspace ────────────────────────────────────────────────────
 //
 // Every run gets its own directory under userData, and that directory is the
-// only place Claude can touch: it is the process cwd, the only path passed to
-// `--add-dir`, and the sandbox the allowed file tools are scoped to.
+// only place the agent can touch: it is the process cwd, the only path passed
+// to `--add-dir` (Claude) or `--cd` under a write sandbox (Codex).
 //
 //   <userData>/claude-runtime/<sessionId>/
 //     .claude/skills/<id>/SKILL.md   the bundled skill pack
+//     AGENTS.md                      pointer to the brief, for agents that read it
 //     BRIEF.md                       the request, the contract, the skills index
-//     output/storyboard.json         the deliverable Claude writes
+//     output/storyboard.json         the deliverable the agent writes
 //     output/preview/                stills we render from it afterwards
 //     assets/                        stock images Guide Studio fetched for it
 //     render/<title>.mp4             the finished video
 //
-// Keeping the brief on disk rather than only in the prompt matters for older
-// Claude Code builds: they have no skills loader, but they can always read a
-// file in their own working directory.
+// Keeping the brief on disk rather than only in the prompt is what makes the
+// workspace agent-agnostic. Older Claude Code builds have no skills loader and
+// Codex does not read `.claude/` at all, but both can always read a file in
+// their own working directory — so the skill pack is written once, in Claude's
+// layout, and every agent is pointed at those paths by the brief.
 
 import fs from "node:fs";
 import path from "node:path";
+import { type AgentId, agentLabel } from "./agents";
 import { skillFileContents, skillIndex, VIDEO_SKILLS, type VideoSkill } from "./skills";
 
 export interface WorkspacePaths {
 	root: string;
 	briefPath: string;
+	/** Codex reads this automatically; it just points at the brief. */
+	agentsDocPath: string;
 	outputDir: string;
 	storyboardPath: string;
 	previewDir: string;
@@ -36,6 +42,7 @@ export function workspacePaths(root: string): WorkspacePaths {
 	return {
 		root,
 		briefPath: path.join(root, "BRIEF.md"),
+		agentsDocPath: path.join(root, "AGENTS.md"),
 		outputDir: path.join(root, "output"),
 		storyboardPath: path.join(root, "output", "storyboard.json"),
 		previewDir: path.join(root, "output", "preview"),
@@ -46,6 +53,8 @@ export function workspacePaths(root: string): WorkspacePaths {
 }
 
 export interface BriefInput {
+	/** Which CLI will read this. Only the tools paragraph depends on it. */
+	agent?: AgentId;
 	/** What the user typed in the creator window. */
 	request: string;
 	/** The generated contract describing the frame library and its limits. */
@@ -56,12 +65,39 @@ export interface BriefInput {
 }
 
 /**
- * The single document Claude is pointed at. It leads with the deliverable,
+ * What the agent is allowed to do, in its own terms. The two agents reach the
+ * same place — nothing outside this folder is reachable — but describing
+ * Claude's file tools to Codex, which works through a shell, would just read
+ * as a false restriction and invite it to work around one.
+ */
+function toolsParagraph(agent: AgentId): string {
+	if (agent === "codex") {
+		return [
+			"You are running in a sandbox whose writable root is this folder, with no",
+			"network access. Shell commands are available and confined to it. You do",
+			"not need the network: when a frame should show a photograph, name what",
+			"you want with `assetQuery` as the frame contract describes, and Guide",
+			"Studio finds it, downloads it, and credits the photographer for you",
+			"after this run finishes.",
+		].join("\n");
+	}
+	return [
+		"You have Read, Write, Edit, Glob, and Grep inside this folder. There is no",
+		"shell and no network access. You do not need either: when a frame should",
+		"show a photograph, name what you want with `assetQuery` as the frame",
+		"contract describes, and Guide Studio finds it, downloads it, and credits",
+		"the photographer for you after this run finishes.",
+	].join("\n");
+}
+
+/**
+ * The single document the agent is pointed at. It leads with the deliverable,
  * because a model that reads only the first paragraph should still write the
  * right file to the right path.
  */
 export function buildBrief(input: BriefInput): string {
 	const skills = input.skills ?? VIDEO_SKILLS;
+	const agent = input.agent ?? "claude";
 	return [
 		"# Guide Studio — video brief",
 		"",
@@ -98,11 +134,29 @@ export function buildBrief(input: BriefInput): string {
 		"3. Write `output/storyboard.json`.",
 		"4. Read it back and confirm it parses and obeys the contract limits.",
 		"",
-		"You have Read, Write, Edit, Glob, and Grep inside this folder. There is no",
-		"shell and no network access. You do not need either: when a frame should",
-		"show a photograph, name what you want with `assetQuery` as the frame",
-		"contract describes, and Guide Studio finds it, downloads it, and credits",
-		"the photographer for you after this run finishes.",
+		toolsParagraph(agent),
+		"",
+	].join("\n");
+}
+
+/**
+ * `AGENTS.md` is picked up automatically by Codex from its working directory,
+ * so the brief is reached even if the prompt is truncated or ignored. It stays
+ * a pointer rather than a copy: one brief, no chance of the two drifting.
+ */
+export function buildAgentsDoc(agent: AgentId): string {
+	return [
+		"# Guide Studio session",
+		"",
+		`Read \`BRIEF.md\` in this directory first. It is the whole task: it names the`,
+		"deliverable, the request, the frame contract you must obey, and the craft",
+		"skills to follow.",
+		"",
+		"Write exactly one file — `output/storyboard.json` — containing one JSON",
+		"object and nothing else. Do not create extra files, and do not reply with",
+		"the JSON.",
+		"",
+		`(This session is being run by Guide Studio through ${agentLabel(agent)}.)`,
 		"",
 	].join("\n");
 }
@@ -141,6 +195,7 @@ export function createWorkspace(options: CreateWorkspaceOptions): WorkspacePaths
 	}
 
 	fs.writeFileSync(paths.briefPath, buildBrief(options), "utf8");
+	fs.writeFileSync(paths.agentsDocPath, buildAgentsDoc(options.agent ?? "claude"), "utf8");
 	return paths;
 }
 

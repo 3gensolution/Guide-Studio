@@ -743,11 +743,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return ipcRenderer.invoke("ai-generate-video-batch", clips);
 	},
 
-	// ── AI Video Creator (drives the user's own Claude Code install) ──
-	claudeDetect: () => ipcRenderer.invoke("claude-detect"),
+	// ── AI Video Creator (drives the user's own Claude Code or Codex install) ──
+	agentDetect: () => ipcRenderer.invoke("agent-detect"),
 	claudeSkills: () => ipcRenderer.invoke("claude-skills"),
 	claudePlan: (input: {
 		request: string;
+		agent?: "claude" | "codex";
 		format?: "landscape" | "vertical" | "square";
 		targetSeconds?: number;
 		model?: string;
