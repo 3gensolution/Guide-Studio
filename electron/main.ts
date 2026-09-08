@@ -28,7 +28,11 @@ import { registerClaudeHandlers } from "./ipc/claudeHandlers";
 import { registerDemoHandlers } from "./ipc/demoHandlers";
 import { registerExportHandlers } from "./ipc/exportHandlers";
 import { registerFfmpegHandlers } from "./ipc/ffmpegHandlers";
-import { getSelectedDesktopSource, registerIpcHandlers } from "./ipc/handlers";
+import {
+	getSelectedDesktopSource,
+	REOPEN_SOURCE_SELECTOR_FLAG,
+	registerIpcHandlers,
+} from "./ipc/handlers";
 import { registerProjectHandlers } from "./ipc/projectHandlers";
 import { registerSettingsHandlers } from "./ipc/settingsHandlers";
 import { registerStudioCacheHandlers } from "./ipc/studioCacheHandlers";
@@ -1220,4 +1224,10 @@ app.whenReady().then(async () => {
 	// when there is nothing to edit). The recording HUD is summoned on demand via
 	// "start-new-recording" / "switch-to-hud".
 	createEditorWindowWrapper();
+
+	// Set by the "Reset Permission & Restart" recovery path: the TCC entry was
+	// just cleared, so reopen the picker to trigger the fresh macOS prompt.
+	if (process.argv.includes(REOPEN_SOURCE_SELECTOR_FLAG)) {
+		createSourceSelectorWindowWrapper();
+	}
 });

@@ -1259,6 +1259,99 @@ async function loadRecordedSessionForVideoPath(
 	}
 }
 
+// macOS caches CGPreflightScreenCaptureAccess per process, so once
+// getMediaAccessStatus("screen") has answered "denied" it keeps answering
+// "denied" for the lifetime of the app even after the user flips the switch in
+// System Settings. Probing the capturer asks the window server directly, which
+// reflects the grant immediately. Window titles of other apps are only exposed
+// to processes that hold Screen Recording, so seeing one proves access.
+let screenCaptureProbeGranted = false;
+
+async function probeScreenCaptureAccess(): Promise<boolean> {
+	if (screenCaptureProbeGranted) {
+		return true;
+	}
+
+	try {
+		const ownTitles = new Set(
+			BrowserWindow.getAllWindows()
+				.filter((win) => !win.isDestroyed())
+				.map((win) => win.getTitle()),
+		);
+		const sources = await desktopCapturer.getSources({
+			types: ["window"],
+			thumbnailSize: { width: 0, height: 0 },
+			fetchWindowIcons: false,
+		});
+		screenCaptureProbeGranted = sources.some(
+			(source) => source.name.trim().length > 0 && !ownTitles.has(source.name),
+		);
+	} catch {
+		screenCaptureProbeGranted = false;
+	}
+
+	return screenCaptureProbeGranted;
+}
+
+export const REOPEN_SOURCE_SELECTOR_FLAG = "--guide-studio-reopen-source-selector";
+
+const FALLBACK_MAC_BUNDLE_ID = "com.guidestudio.app";
+
+// TCC keys Screen Recording grants by bundle id, so the reset needs the id of
+// the bundle actually running: the packaged app in production, Electron.app in
+// dev. Info.plist next to the executable is the only source that tracks both.
+async function getMacBundleId(): Promise<string> {
+	const marker = ".app/Contents/MacOS/";
+	const exePath = app.getPath("exe");
+	const markerIndex = exePath.indexOf(marker);
+	if (markerIndex === -1) {
+		return FALLBACK_MAC_BUNDLE_ID;
+	}
+
+	try {
+		const plist = await fs.readFile(
+			path.join(exePath.slice(0, markerIndex + ".app".length), "Contents", "Info.plist"),
+			"utf8",
+		);
+		const match = plist.match(/<key>CFBundleIdentifier<\/key>\s*<string>([^<]+)<\/string>/);
+		return match?.[1]?.trim() || FALLBACK_MAC_BUNDLE_ID;
+	} catch {
+		return FALLBACK_MAC_BUNDLE_ID;
+	}
+}
+
+// Clears this app's Screen Recording entry so macOS forgets the stale "denied"
+// decision and shows the native prompt again on the next launch. Only affects
+// Guide Studio's own row; other apps' permissions are untouched.
+async function resetMacScreenCapturePermission(): Promise<{
+	success: boolean;
+	bundleId: string;
+	error?: string;
+}> {
+	const bundleId = await getMacBundleId();
+	return new Promise((resolve) => {
+		const child = spawn("/usr/bin/tccutil", ["reset", "ScreenCapture", bundleId]);
+		let stderr = "";
+		child.stderr.on("data", (chunk) => {
+			stderr += String(chunk);
+		});
+		child.on("error", (error) => {
+			resolve({ success: false, bundleId, error: String(error) });
+		});
+		child.on("close", (code) => {
+			resolve(
+				code === 0
+					? { success: true, bundleId }
+					: {
+							success: false,
+							bundleId,
+							error: stderr.trim() || `tccutil exited with code ${code}`,
+						},
+			);
+		});
+	});
+}
+
 export function registerIpcHandlers(
 	createEditorWindow: () => void,
 	createSourceSelectorWindow: () => BrowserWindow,
@@ -1276,8 +1369,8 @@ export function registerIpcHandlers(
 
 		try {
 			const status = systemPreferences.getMediaAccessStatus("screen");
-			if (status === "granted") {
-				return { success: true, granted: true, status };
+			if (status === "granted" || screenCaptureProbeGranted) {
+				return { success: true, granted: true, status: "granted" };
 			}
 
 			// Screen recording has no askForMediaAccess equivalent, so trigger the
@@ -1297,6 +1390,12 @@ export function registerIpcHandlers(
 						// Permission probing failure is reported by the explicit status check below.
 					});
 				return { success: true, granted: false, status: "not-determined" };
+			}
+
+			// "denied"/"restricted" may just be the stale per-process TCC cache, so
+			// confirm with a live probe before telling the user to open Settings.
+			if (await probeScreenCaptureAccess()) {
+				return { success: true, granted: true, status: "granted" };
 			}
 
 			return { success: true, granted: false, status };
@@ -1426,18 +1525,38 @@ export function registerIpcHandlers(
 					const mainWin = getMainWindow();
 					const messageOptions = {
 						type: "warning",
-						buttons: ["Open System Settings", "Cancel"],
+						buttons: ["Reset Permission & Restart", "Open System Settings", "Cancel"],
 						defaultId: 0,
-						cancelId: 1,
+						cancelId: 2,
 						message: "Screen Recording permission is required",
 						detail:
-							"Allow Guide Studio in macOS System Settings, then come back and choose a screen or window.",
+							"If Guide Studio already looks allowed in System Settings, macOS is holding a stale entry from an earlier build. Resetting clears just that entry and restarts Guide Studio so macOS asks again — then click Allow.",
 					} satisfies Electron.MessageBoxOptions;
 					const result =
 						mainWin && !mainWin.isDestroyed()
 							? await dialog.showMessageBox(mainWin, messageOptions)
 							: await dialog.showMessageBox(messageOptions);
 					if (result.response === 0) {
+						const reset = await resetMacScreenCapturePermission();
+						if (reset.success) {
+							// Relaunch so the new process starts with a clean TCC cache and
+							// lands straight back on the picker to trigger the native prompt.
+							app.relaunch({
+								args: [
+									...process.argv.slice(1).filter((arg) => arg !== REOPEN_SOURCE_SELECTOR_FLAG),
+									REOPEN_SOURCE_SELECTOR_FLAG,
+								],
+							});
+							app.quit();
+						} else {
+							await dialog.showMessageBox({
+								type: "error",
+								buttons: ["OK"],
+								message: "Couldn't reset the Screen Recording permission",
+								detail: `${reset.error ?? "tccutil failed."}\n\nRun this in Terminal, then reopen Guide Studio:\n\ntccutil reset ScreenCapture ${reset.bundleId}`,
+							});
+						}
+					} else if (result.response === 1) {
 						await shell.openExternal(
 							"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
 						);
