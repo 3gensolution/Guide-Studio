@@ -92,6 +92,18 @@ print_ok "Signing identity found: ${SIGN_IDENTITY}"
 # Electron Builder signs the .app bundle with CSC_NAME, so default it to the
 # verified identity when the caller hasn't set a separate value.
 export CSC_NAME="${CSC_NAME:-$SIGN_IDENTITY}"
+
+# Electron Builder rejects a name that still carries the certificate-type
+# prefix ("Please remove prefix ... appropriate certificate will be chosen
+# automatically") because it prepends the prefix itself. codesign, used for the
+# DMG below, wants the fully qualified name. Strip the prefix here so
+# SIGN_IDENTITY can stay fully qualified for both.
+for _prefix in "Developer ID Application: " "Developer ID Installer: " \
+               "3rd Party Mac Developer Application: " "3rd Party Mac Developer Installer: "; do
+    CSC_NAME="${CSC_NAME#"$_prefix"}"
+done
+unset _prefix
+export CSC_NAME
 print_ok "Electron Builder signing identity: ${CSC_NAME}"
 
 # Check notary profile
@@ -113,7 +125,7 @@ print_ok "Entitlements file found"
 cd "$PROJECT_ROOT"
 
 print_step "Cleaning previous build artifacts..."
-rm -rf dist dist-electron "${RELEASE_DIR}"
+rm -rf dist dist-electron dist-remotion "${RELEASE_DIR}"
 print_ok "Clean complete"
 
 # ── Install Dependencies ─────────────────────────────────────────────
@@ -131,6 +143,17 @@ print_ok "macOS native helpers built"
 print_step "Building Vite + Electron... (this may take a minute)"
 npx tsc && npx vite build
 print_ok "Vite + Electron build complete"
+
+# dist-remotion/ ships as extraResources (see electron-builder.json5), so it has
+# to be regenerated here. Without this the DMG carries whatever stale bundle was
+# left on disk, or none at all on a clean checkout.
+print_step "Bundling Remotion compositions..."
+node scripts/bundle-remotion.mjs
+if [ ! -d "${PROJECT_ROOT}/dist-remotion" ]; then
+    print_err "dist-remotion/ was not produced; the packaged app would be missing its Remotion bundle."
+    exit 1
+fi
+print_ok "Remotion bundle built"
 
 # ── Package, Sign, Notarize per Architecture ─────────────────────────
 for ARCH in "${ARCHS[@]}"; do
