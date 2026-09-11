@@ -455,3 +455,74 @@ describe("storyboardSystemPrompt", () => {
 		expect(prompt).toContain("do not use image or imageSplit frames");
 	});
 });
+
+/**
+ * The whiteboard look restricts the library to a single kind. What matters is
+ * that a frame the planner asked for in some other kind still becomes a
+ * whiteboard frame: substituting the usual "statement" would put a dark studio
+ * card in the middle of a white board, which reads as a bug, not as variety.
+ */
+describe("a look that allows only one kind", () => {
+	const options = {
+		hasRecording: false,
+		fallbackTitle: "Scribe video",
+		allowedKinds: ["whiteboard"] as const,
+	};
+
+	it("turns every other kind into the permitted one", () => {
+		const { storyboard } = normalizeStoryboard(
+			{
+				title: "How it works",
+				accent: "indigo",
+				frames: [
+					{ kind: "title", durationSeconds: 4, headline: "How it works" },
+					{ kind: "bullets", durationSeconds: 6, headline: "Steps", bullets: ["One", "Two"] },
+					{ kind: "outro", durationSeconds: 3, headline: "Try it" },
+				],
+			},
+			{ ...options, allowedKinds: [...options.allowedKinds] },
+		);
+		expect(storyboard.frames.map((frame) => frame.kind)).toEqual([
+			"whiteboard",
+			"whiteboard",
+			"whiteboard",
+		]);
+	});
+
+	it("keeps a rescued storyboard inside the permitted kinds", () => {
+		// Too few usable frames makes the normalizer discard the plan and build a
+		// deterministic one. That rescue must not arrive in a different look.
+		const { storyboard, warnings } = normalizeStoryboard(
+			{ title: "How it works", accent: "indigo", frames: [{ kind: "nonsense" }] },
+			{ ...options, allowedKinds: [...options.allowedKinds] },
+		);
+		expect(warnings.join(" ")).toContain("built one from the request");
+		expect(new Set(storyboard.frames.map((frame) => frame.kind))).toEqual(new Set(["whiteboard"]));
+	});
+
+	it("keeps the copy when it substitutes the kind", () => {
+		const { storyboard } = normalizeStoryboard(
+			{
+				title: "How it works",
+				accent: "indigo",
+				frames: [
+					{ kind: "bullets", durationSeconds: 6, headline: "Steps", bullets: ["One", "Two"] },
+					{ kind: "outro", durationSeconds: 3, headline: "Try it" },
+				],
+			},
+			{ ...options, allowedKinds: [...options.allowedKinds] },
+		);
+		expect(storyboard.frames[0]?.headline).toBe("Steps");
+		expect(storyboard.frames[0]?.bullets).toEqual(["One", "Two"]);
+	});
+
+	it("tells the planner which kinds it may use", () => {
+		const prompt = storyboardSystemPrompt({
+			hasRecording: false,
+			assets: [],
+			allowedKinds: ["whiteboard"],
+		});
+		expect(prompt).toContain("whiteboard");
+		expect(prompt).toContain("you may only use these frame kinds");
+	});
+});

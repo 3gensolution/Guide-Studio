@@ -32,7 +32,7 @@ import { type CSSProperties, useCallback, useEffect, useRef, useState } from "re
 import { toFileUrl } from "@/components/video-editor/projectPersistence";
 
 type Format = "landscape" | "vertical" | "square";
-type Look = "motion" | "cards";
+type Look = "motion" | "cards" | "whiteboard";
 type AgentId = "claude" | "codex";
 
 interface Installation {
@@ -110,6 +110,11 @@ const LOOKS: Array<{ id: Look; label: string; hint: string }> = [
 		hint: "Animated backdrops and kinetic typography — text only",
 	},
 	{ id: "cards", label: "Clean cards", hint: "Layout cards, and the only look that shows photos" },
+	{
+		id: "whiteboard",
+		label: "Whiteboard",
+		hint: "A hand writes every frame on a board — text only",
+	},
 ];
 
 const LENGTHS = [15, 30, 45, 60, 90];
@@ -324,7 +329,8 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 		);
 	}
 
-	// The two looks name their scene list differently; the view treats them alike.
+	// A motion project names its scene list differently from a storyboard; the
+	// view treats them alike.
 	const plan: { title: string; accent: string; scenes: PlanScene[] } | undefined = session?.motion
 		? session.motion
 		: session?.storyboard

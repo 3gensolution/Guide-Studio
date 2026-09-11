@@ -53,10 +53,25 @@ export type CreatorStatus = "planning" | "planned" | "rendering" | "rendered" | 
 /**
  * Which visual library the agent plans against.
  *
- *   motion — animated backdrops and kinetic typography (`MotionGraphics`)
- *   cards  — clean HyperFrame layout cards
+ *   motion     — animated backdrops and kinetic typography (`MotionGraphics`)
+ *   cards      — clean HyperFrame layout cards
+ *   whiteboard — every frame hand-written on a board by an animated hand
  */
-export type CreatorLook = "motion" | "cards";
+export type CreatorLook = "motion" | "cards" | "whiteboard";
+
+/**
+ * A whiteboard video is whiteboard frames and nothing else. Letting a title or
+ * outro card through would drop the studio's dark layout into the middle of a
+ * white board, which reads as a rendering fault rather than as variety.
+ */
+const WHITEBOARD_KINDS = ["whiteboard"] as const;
+
+/** Extra direction for the scribe look, on top of the shared contract. */
+const WHITEBOARD_DIRECTION = [
+	"Every frame in this video is a whiteboard frame, including the opening and closing ones: there are no title or outro cards.",
+	"Open with a frame that states the subject and close with one that states the takeaway, both written on the board.",
+	"The hand writes at a steady pace, so copy has to be short. Prefer a headline plus two or three bullets over a long headline.",
+].join(" ");
 
 export interface CreatorSession {
 	id: string;
@@ -69,7 +84,7 @@ export interface CreatorSession {
 	look: CreatorLook;
 	status: CreatorStatus;
 	createdAt: number;
-	/** Set when look is "cards". */
+	/** Set when look is "cards" or "whiteboard". */
 	storyboard?: HyperFrameStoryboard;
 	/** Set when look is "motion". */
 	motion?: MotionProject;
@@ -165,15 +180,24 @@ export async function planStoryboard(
 
 	// The contract is generated from the same constants the validator enforces,
 	// so what the agent is told and what is accepted can never drift apart.
+	const whiteboard = look === "whiteboard";
 	const contract =
 		look === "motion"
 			? motionSystemPrompt({ format, targetSeconds })
 			: storyboardSystemPrompt({
 					hasRecording: false,
 					assets: [],
-					canFetchImages: true,
+					// A scribe video draws its own illustration, so it never goes
+					// looking for a photograph.
+					canFetchImages: !whiteboard,
 					format,
 					targetSeconds,
+					...(whiteboard
+						? {
+								allowedKinds: [...WHITEBOARD_KINDS],
+								skillDirection: WHITEBOARD_DIRECTION,
+							}
+						: {}),
 				});
 
 	const workspace = createWorkspace({
@@ -226,16 +250,19 @@ export async function planStoryboard(
 			// nothing degrades through the same path an unsupplied image always
 			// did — and the licence credit reaches the storyboard as a term the
 			// validator applies rather than something the planner chose to honour.
-			const resolved = await resolveAssetQueries({
-				parsed,
-				destDir: workspace.assetsDir,
-				signal: controller.signal,
-				onNote: (text) => onActivity?.({ kind: "log", text }),
-			});
+			const resolved = whiteboard
+				? { assets: [], warnings: [], attributionLine: undefined }
+				: await resolveAssetQueries({
+						parsed,
+						destDir: workspace.assetsDir,
+						signal: controller.signal,
+						onNote: (text) => onActivity?.({ kind: "log", text }),
+					});
 			const { storyboard, warnings } = normalizeStoryboard(parsed, {
 				hasRecording: false,
 				fallbackTitle,
 				availableAssetIds: resolved.assets.map((asset) => asset.id),
+				...(whiteboard ? { allowedKinds: [...WHITEBOARD_KINDS] } : {}),
 				...(resolved.attributionLine ? { attributionLine: resolved.attributionLine } : {}),
 			});
 			session.storyboard = storyboard;

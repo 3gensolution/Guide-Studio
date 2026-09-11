@@ -817,7 +817,7 @@ interface Window {
 			format?: "landscape" | "vertical" | "square";
 			targetSeconds?: number;
 			model?: string;
-			look?: "motion" | "cards";
+			look?: "motion" | "cards" | "whiteboard";
 		}) => Promise<ClaudeSessionResult>;
 		claudePreview: (sessionId: string) => Promise<ClaudeSessionResult>;
 		claudeRender: (sessionId: string) => Promise<ClaudeSessionResult>;

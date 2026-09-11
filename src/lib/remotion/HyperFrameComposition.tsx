@@ -13,6 +13,7 @@ import {
 } from "remotion";
 import { Scene3d } from "./three/Scene3d";
 import type { Scene3dId, Scene3dParams } from "./three/scenes";
+import { WhiteboardFrame as WhiteboardSurface } from "./WhiteboardFrame";
 
 // ── HyperFrame ───────────────────────────────────────────────────────────
 //
@@ -32,7 +33,8 @@ export type HyperFrameKind =
 	| "outro"
 	| "image"
 	| "imageSplit"
-	| "scene3d";
+	| "scene3d"
+	| "whiteboard";
 
 export type HyperFrameAccent = "indigo" | "emerald" | "amber" | "rose" | "violet";
 
@@ -390,6 +392,8 @@ function renderFrameBody(props: FrameProps) {
 			return <ImageSplitFrame {...props} />;
 		case "scene3d":
 			return <Scene3dFrame {...props} />;
+		case "whiteboard":
+			return <WhiteboardFrameBody {...props} />;
 		default:
 			return <TitleFrame {...props} />;
 	}
@@ -522,6 +526,32 @@ const TitleFrame: React.FC<FrameProps> = ({ frame, palette, logoSrc, logoHasAlph
 		</AbsoluteFill>
 	);
 };
+
+/**
+ * Scribe-style frame: the copy is written on a whiteboard by an animated hand.
+ *
+ * This is the one frame that abandons the dark canvas. A whiteboard is white —
+ * rendering the effect on the studio's near-black surface would read as a pen
+ * scratching a blackboard, which is a different and much weaker look. The
+ * accent still carries through, so a themed video stays on-brand.
+ */
+const WhiteboardFrameBody: React.FC<FrameProps> = ({
+	frame,
+	palette,
+	canvas,
+	durationInFrames,
+}) => (
+	<WhiteboardSurface
+		headline={frame.headline}
+		bullets={frame.bullets}
+		eyebrow={frame.eyebrow}
+		caption={frame.caption}
+		accent={palette.base}
+		durationInFrames={durationInFrames}
+		canvasWidth={canvas.width}
+		canvasHeight={canvas.height}
+	/>
+);
 
 const StatementFrame: React.FC<FrameProps> = ({ frame, palette, allowZoom }) => {
 	const rise = useRise();

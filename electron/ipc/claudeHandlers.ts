@@ -73,7 +73,7 @@ export function registerClaudeHandlers(): void {
 				format?: "landscape" | "vertical" | "square";
 				targetSeconds?: number;
 				model?: string;
-				look?: "motion" | "cards";
+				look?: "motion" | "cards" | "whiteboard";
 			},
 		) => {
 			if (!input?.request?.trim()) {

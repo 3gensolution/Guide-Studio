@@ -35,6 +35,7 @@ export const HYPERFRAME_KINDS = [
 	"image",
 	"imageSplit",
 	"scene3d",
+	"whiteboard",
 ] as const satisfies readonly HyperFrameKind[];
 
 export const HYPERFRAME_ACCENTS = [
@@ -210,7 +211,11 @@ function textEquivalent(kind: HyperFrameKind, allowed: HyperFrameKind[]): HyperF
 		"bullets",
 		"title",
 	];
-	return candidates.find((candidate) => allowed.includes(candidate)) ?? "statement";
+	// Falling through to "statement" when the skill does not permit it would put
+	// a frame from outside the chosen look into the video — a dark card in the
+	// middle of a whiteboard, say. Any permitted kind is a better substitute
+	// than a correct-looking one the look has ruled out.
+	return candidates.find((candidate) => allowed.includes(candidate)) ?? allowed[0] ?? "statement";
 }
 
 export const LIMITS = {
@@ -418,6 +423,8 @@ export const STORYBOARD_SYSTEM_PROMPT = [
 	'- "outro": closing card. Fields: headline, subhead (a short call to action).',
 	'- "image": an image or GIF, full frame. Fields: assetId or assetQuery (one is required), headline, subhead, caption.',
 	'- "imageSplit": an image beside copy. Fields: assetId or assetQuery (one is required), eyebrow, headline, subhead, bullets, side.',
+	'- "whiteboard": copy hand-written on a whiteboard by an animated hand, in the order you write it. Fields: eyebrow, headline, bullets, caption. Use it to explain a concept or walk through steps, not to show the product.',
+	"A whiteboard frame writes at a steady pace, so give it room: allow about one second for every eight words of headline and bullets combined, or the hand will still be writing when the frame cuts.",
 	"focus is {cx,cy,scale}: cx and cy are 0-1 fractions of the frame where the viewer should look; scale is 1.0-2.25 zoom.",
 	"sourceStartSeconds is where in the recording that frame begins; keep frames in increasing order.",
 	`Use ${LIMITS.minFrames}-${LIMITS.maxFrames} frames. Each durationSeconds is ${LIMITS.minFrameSeconds}-${LIMITS.maxFrameSeconds}.`,
@@ -718,6 +725,17 @@ export function normalizeStoryboard(value: unknown, options: NormalizeOptions): 
 			hasRecording: options.hasRecording,
 			recordingSeconds: options.recordingSeconds,
 		});
+		// The deterministic storyboard is built from the default library, which a
+		// restricted look may not permit. Left alone it would rescue a failed plan
+		// by rendering it in the wrong style entirely — dark cards in place of the
+		// whiteboard the user chose — so its kinds go through the same substitution
+		// every other frame does.
+		const allowed = options.allowedKinds;
+		if (allowed?.length) {
+			for (const frame of fallback.frames) {
+				if (!allowed.includes(frame.kind)) frame.kind = textEquivalent(frame.kind, allowed);
+			}
+		}
 		applyAttribution(fallback.frames, options.attributionLine);
 		return { storyboard: fallback, warnings };
 	}

@@ -752,7 +752,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		format?: "landscape" | "vertical" | "square";
 		targetSeconds?: number;
 		model?: string;
-		look?: "motion" | "cards";
+		look?: "motion" | "cards" | "whiteboard";
 	}) => ipcRenderer.invoke("claude-plan", input),
 	claudePreview: (sessionId: string) => ipcRenderer.invoke("claude-preview", sessionId),
 	claudeRender: (sessionId: string) => ipcRenderer.invoke("claude-render", sessionId),
