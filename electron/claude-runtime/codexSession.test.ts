@@ -14,6 +14,7 @@ describe("buildCodexArgs", () => {
 		// these two flags are the whole containment story.
 		expect(args).toContain("--sandbox");
 		expect(args[args.indexOf("--sandbox") + 1]).toBe("workspace-write");
+		expect(args).toContain("sandbox_workspace_write.network_access=false");
 		expect(args[args.indexOf("--cd") + 1]).toBe("/tmp/session");
 	});
 

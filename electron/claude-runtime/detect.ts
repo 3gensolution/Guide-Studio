@@ -116,6 +116,10 @@ export function meetsMinimum(version: string | undefined, minimum: string): bool
  */
 export const SKILLS_MINIMUM_VERSION = "2.0.0";
 
+// Older Codex CLIs can inherit a modern model from ~/.codex/config.toml and
+// then fail with a misleading 400. Keep them out of the creator preflight.
+export const CODEX_CREATOR_MINIMUM_VERSION = "0.100.0";
+
 export interface AgentInstallation {
 	agent: AgentId;
 	installed: boolean;
@@ -169,6 +173,11 @@ export async function detectAgent(agent: AgentId): Promise<AgentInstallation> {
 				binaryPath,
 				version,
 				supportsFileSkills: agent === "claude" && meetsMinimum(version, SKILLS_MINIMUM_VERSION),
+				...(agent === "codex" && !meetsMinimum(version, CODEX_CREATOR_MINIMUM_VERSION)
+					? {
+							error: `Codex ${version ?? ""} is too old for current ChatGPT models. Update it with \`npm install -g @openai/codex\`.`,
+						}
+					: {}),
 			};
 		} catch (error) {
 			lastError = error instanceof Error ? error.message : String(error);

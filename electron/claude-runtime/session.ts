@@ -217,7 +217,7 @@ export async function runAgentProcess(options: RunAgentProcessOptions): Promise<
 				? `${label} did not finish within ${Math.round(options.timeoutMs / 60000)} minutes.`
 				: cancelled
 					? "Cancelled."
-					: (summary ?? stderrTail.trim() ?? `${label} exited with code ${code}.`);
+					: summary || stderrTail.trim() || `${label} exited with code ${code}.`;
 			finish({
 				ok,
 				exitCode: code,

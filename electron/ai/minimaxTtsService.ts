@@ -13,7 +13,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
 import { loadSettings } from "../settings";
-import { type TTSVoice as OpenAIVoice, synthesize as openaiSynthesize } from "./ttsService";
+// Not "the OpenAI fallback" any more: `synthesize` routes by the user's engine
+// setting, so this reaches a local Piper voice when there is no cloud key.
+import { type TTSVoice as OpenAIVoice, synthesize as speak } from "./ttsService";
 
 const TTS_OUTPUT_DIR = "tts-output";
 
@@ -164,21 +166,28 @@ export async function synthesizeMinimax(
 	options?: MinimaxTTSOptions,
 ): Promise<MinimaxTTSResult> {
 	const settings = await loadSettings();
+	// A user who has chosen local narration must not be sent to a paid API just
+	// because a MiniMax key is still saved from before. `synthesize` honours the
+	// engine setting, so handing the line straight to it keeps the script local.
+	if (settings.ttsEngine === "piper") {
+		return speak(text, mapToOpenAIVoice(options?.voiceId));
+	}
 	const apiKey = settings.aiApiKey_minimax;
 	console.log(
 		`[MinimaxTTS] Called with text="${text.slice(0, 40)}..." key=${apiKey ? "✓" : "✗"} voice=${options?.voiceId ?? "(default)"}`,
 	);
 	if (!apiKey) {
-		// Fall through to OpenAI TTS if no MiniMax key — we still want SOMETHING
-		// rather than failing. The OpenAI voice param is a small fixed set and
-		// won't honor MiniMax voice IDs, so we map the tone instead.
+		// Fall through to whichever engine is configured if there is no MiniMax
+		// key — we still want SOMETHING rather than failing. Neither OpenAI's
+		// fixed voice set nor a Piper voice honours a MiniMax voice ID, so the
+		// tone is mapped across instead.
 		console.log(
-			"[MinimaxTTS] ✗ No MiniMax key in settings.aiApiKey_minimax — falling back to OpenAI TTS",
+			"[MinimaxTTS] ✗ No MiniMax key in settings.aiApiKey_minimax — falling back to the configured engine",
 		);
 		const fallbackVoice = mapToOpenAIVoice(options?.voiceId);
-		const fallback = await openaiSynthesize(text, fallbackVoice);
+		const fallback = await speak(text, fallbackVoice);
 		if (!fallback.success) {
-			console.error("[MinimaxTTS] ✗ OpenAI TTS fallback also failed:", fallback.error);
+			console.error("[MinimaxTTS] ✗ The fallback engine also failed:", fallback.error);
 		}
 		return fallback;
 	}
@@ -190,13 +199,13 @@ export async function synthesizeMinimax(
 		`[MinimaxTTS] Synthesizing "${text.slice(0, 60)}..." voice=${voiceId} model=${model}`,
 	);
 
-	// Helper: fall back to OpenAI TTS on any MiniMax failure. The narration
-	// HAS to work — silent video isn't acceptable just because MiniMax has
-	// voice ID drift or transient errors.
+	// Helper: fall back to the configured engine on any MiniMax failure. The
+	// narration HAS to work — silent video isn't acceptable just because MiniMax
+	// has voice ID drift or transient errors.
 	const fallbackToOpenAI = async (reason: string): Promise<MinimaxTTSResult> => {
-		console.warn(`[MinimaxTTS] Fallback to OpenAI TTS — ${reason}`);
+		console.warn(`[MinimaxTTS] Falling back from MiniMax — ${reason}`);
 		const fallbackVoice = mapToOpenAIVoice(options?.voiceId);
-		const result = await openaiSynthesize(text, fallbackVoice);
+		const result = await speak(text, fallbackVoice);
 		return result;
 	};
 

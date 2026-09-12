@@ -14,6 +14,7 @@ import {
 	type Scene3dId,
 	type Scene3dParams,
 } from "../../src/lib/remotion/three/scenes";
+import { describeDoodles, isDoodleId } from "../../src/lib/remotion/whiteboardDoodles";
 import { isRecord, type JsonSchema } from "./json";
 
 // ── HyperFrame storyboard contract ───────────────────────────────────────
@@ -295,6 +296,7 @@ export const HYPERFRAME_STORYBOARD_SCHEMA: JsonSchema = {
 					side: { type: "string", enum: ["left", "right"] },
 					assetId: { type: "string" },
 					assetQuery: { type: "string" },
+					doodle: { type: "string" },
 					sourceStartSeconds: { type: "number" },
 					bullets: { type: "array", items: { type: "string" } },
 					focus: {
@@ -361,6 +363,13 @@ export function storyboardSystemPrompt(options: {
 			`At most ${LIMITS.maxScene3dFrames} scene3d frames per video; any beyond that become text. A scene that needs an image and has none becomes text, so only use one when a suitable assetId exists.`,
 		);
 	}
+	if (!options.allowedKinds || options.allowedKinds.includes("whiteboard")) {
+		lines.push(
+			"A whiteboard frame can also have the hand draw one picture beside the copy. Set doodle to one of these ids — anything else is ignored and the frame is words only:",
+			...describeDoodles(),
+			"Pick the drawing that matches what the frame is about, and leave doodle out when no picture in the list fits. Drawing takes time away from writing, so a frame with a doodle needs a little longer than one without.",
+		);
+	}
 	if (options.format && options.format !== "landscape") {
 		lines.push(
 			options.format === "vertical"
@@ -423,7 +432,7 @@ export const STORYBOARD_SYSTEM_PROMPT = [
 	'- "outro": closing card. Fields: headline, subhead (a short call to action).',
 	'- "image": an image or GIF, full frame. Fields: assetId or assetQuery (one is required), headline, subhead, caption.',
 	'- "imageSplit": an image beside copy. Fields: assetId or assetQuery (one is required), eyebrow, headline, subhead, bullets, side.',
-	'- "whiteboard": copy hand-written on a whiteboard by an animated hand, in the order you write it. Fields: eyebrow, headline, bullets, caption. Use it to explain a concept or walk through steps, not to show the product.',
+	'- "whiteboard": copy hand-written on a whiteboard by an animated hand, in the order you write it. Fields: eyebrow, headline, bullets, caption, doodle. Use it to explain a concept or walk through steps, not to show the product.',
 	"A whiteboard frame writes at a steady pace, so give it room: allow about one second for every eight words of headline and bullets combined, or the hand will still be writing when the frame cuts.",
 	"focus is {cx,cy,scale}: cx and cy are 0-1 fractions of the frame where the viewer should look; scale is 1.0-2.25 zoom.",
 	"sourceStartSeconds is where in the recording that frame begins; keep frames in increasing order.",
@@ -693,6 +702,13 @@ export function normalizeStoryboard(value: unknown, options: NormalizeOptions): 
 		if (resolvedFocus) frame.focus = resolvedFocus;
 		if (sourceStartSeconds !== undefined) frame.sourceStartSeconds = sourceStartSeconds;
 		if (candidate.side === "left" || candidate.side === "right") frame.side = candidate.side;
+		// Only the whiteboard hand draws, and only from the catalog: an invented
+		// id would otherwise ride through to the renderer and draw nothing, with
+		// no sign of why the picture the copy refers to never appeared.
+		if (kind === "whiteboard" && candidate.doodle !== undefined) {
+			if (isDoodleId(candidate.doodle)) frame.doodle = candidate.doodle;
+			else warnings.push(`${label} asked for a drawing that does not exist; left it off.`);
+		}
 		if (assetId) frame.assetId = assetId;
 		if (kind === "scene3d" && scene) {
 			frame.scene = scene;

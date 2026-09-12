@@ -27,6 +27,12 @@ describe("parseCodexStreamLine", () => {
 		]);
 	});
 
+	it("accepts the older message item name", () => {
+		expect(
+			parseCodexStreamLine('{"type":"item.completed","item":{"type":"message","text":"Done."}}'),
+		).toEqual([{ kind: "text", text: "Done." }]);
+	});
+
 	it("reports a command on the way in and its result on the way out", () => {
 		// The started edge is what keeps the feed moving during a long step.
 		expect(parseCodexStreamLine(COMMAND_STARTED)).toEqual([
@@ -55,6 +61,12 @@ describe("parseCodexStreamLine", () => {
 		expect(parseCodexStreamLine('{"type":"turn.failed","error":{"message":"boom"}}')).toEqual([
 			{ kind: "finished", ok: false, summary: "boom" },
 		]);
+	});
+
+	it("accepts a legacy response_item envelope", () => {
+		expect(
+			parseCodexStreamLine('{"type":"response_item","item":{"type":"message","text":"Done."}}'),
+		).toEqual([{ kind: "text", text: "Done." }]);
 	});
 
 	it("keeps a non-JSON notice as a log line rather than throwing", () => {

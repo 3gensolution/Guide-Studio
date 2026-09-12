@@ -64,6 +64,8 @@ export interface HyperFrame {
 	side?: "left" | "right";
 	/** The supplied asset an `image` or `imageSplit` frame displays. */
 	assetId?: string;
+	/** Which catalog drawing a `whiteboard` frame's hand also draws. */
+	doodle?: string;
 	/** Which audited 3D scene a `scene3d` frame renders. */
 	scene?: Scene3dId;
 	/** Bounded parameters for that scene. Validated before it ever gets here. */
@@ -546,6 +548,7 @@ const WhiteboardFrameBody: React.FC<FrameProps> = ({
 		bullets={frame.bullets}
 		eyebrow={frame.eyebrow}
 		caption={frame.caption}
+		doodle={frame.doodle}
 		accent={palette.base}
 		durationInFrames={durationInFrames}
 		canvasWidth={canvas.width}

@@ -2,7 +2,7 @@
  * IPC handlers for AI features.
  * Registered by main.ts alongside other IPC handlers.
  */
-import { ipcMain } from "electron";
+import { BrowserWindow, ipcMain } from "electron";
 import type { AIServiceConfig } from "../../src/lib/ai/types";
 import {
 	analyze,
@@ -40,7 +40,15 @@ import {
 	type MusicMood,
 	type VocalMode,
 } from "../ai/musicService";
-import { synthesize, type TTSVoice } from "../ai/ttsService";
+import {
+	downloadPiperVoice,
+	getPiperStatus,
+	installedVoices,
+	type PiperOptions,
+	synthesizePiper,
+} from "../ai/piperTtsService";
+import { detectLanguage, listPiperVoices, pickVoiceId } from "../ai/piperVoices";
+import { synthesize, type TTSOptions, type TTSVoice } from "../ai/ttsService";
 import { generateVideo, generateVideoBatch } from "../ai/videoService";
 
 export function registerAIHandlers(): void {
@@ -119,8 +127,41 @@ export function registerAIHandlers(): void {
 		},
 	);
 
-	ipcMain.handle("ai-tts-synthesize", async (_event, text: string, voice?: TTSVoice) => {
-		return synthesize(text, voice);
+	ipcMain.handle(
+		"ai-tts-synthesize",
+		async (_event, text: string, voice?: TTSVoice, options?: TTSOptions) => {
+			return synthesize(text, voice, options);
+		},
+	);
+
+	// ── Piper TTS (local, offline, one voice per language) ──
+	ipcMain.handle("ai-piper-status", async () => {
+		return getPiperStatus();
+	});
+
+	ipcMain.handle("ai-piper-voices", async (_event, language?: string) => {
+		// Which voices are already on disk matters to the picker: downloading one
+		// is a hundred-megabyte decision, not an invisible one.
+		return { voices: listPiperVoices(language), installed: await installedVoices() };
+	});
+
+	ipcMain.handle("ai-piper-detect-language", async (_event, text: string) => {
+		return { language: detectLanguage(text), voiceId: pickVoiceId({ text }) };
+	});
+
+	ipcMain.handle("ai-piper-download-voice", async (event, voiceId: string) => {
+		return downloadPiperVoice(voiceId, (progress) => {
+			// Addressed to the window that asked, so two windows downloading two
+			// voices do not each drive the other's progress bar.
+			const senderWindow = BrowserWindow.fromWebContents(event.sender);
+			if (senderWindow && !senderWindow.isDestroyed()) {
+				senderWindow.webContents.send("piper-voice-download-progress", progress);
+			}
+		});
+	});
+
+	ipcMain.handle("ai-piper-tts", async (_event, text: string, options?: PiperOptions) => {
+		return synthesizePiper(text, options);
 	});
 
 	// ── MiniMax TTS (preferred for narrated scene plans) ──

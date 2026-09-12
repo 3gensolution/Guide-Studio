@@ -42,7 +42,12 @@ function easeConnectedPan(value: number) {
 
 export function computeRegionStrength(region: ZoomRegion, timeMs: number) {
 	const zoomInEnd = region.startMs + ZOOM_IN_OVERLAP_MS;
-	const leadInStart = zoomInEnd - ZOOM_IN_TRANSITION_WINDOW_MS;
+	// The zoom-in leads the region so it is mostly complete by the time the click lands,
+	// but it can never start before the timeline does: a region within one lead-in window
+	// of 0 would otherwise open the video already zoomed in and panned off-centre. Clamp
+	// the ramp to 0 and compress it instead, so the first frame is always the full frame.
+	const leadInStart = Math.max(0, zoomInEnd - ZOOM_IN_TRANSITION_WINDOW_MS);
+	const leadInWindow = Math.max(1, zoomInEnd - leadInStart);
 	const leadOutEnd = region.endMs + TRANSITION_WINDOW_MS;
 
 	if (timeMs < leadInStart || timeMs > leadOutEnd) {
@@ -50,7 +55,7 @@ export function computeRegionStrength(region: ZoomRegion, timeMs: number) {
 	}
 
 	if (timeMs < zoomInEnd) {
-		const progress = (timeMs - leadInStart) / ZOOM_IN_TRANSITION_WINDOW_MS;
+		const progress = (timeMs - leadInStart) / leadInWindow;
 		return easeOutScreenStudio(progress);
 	}
 

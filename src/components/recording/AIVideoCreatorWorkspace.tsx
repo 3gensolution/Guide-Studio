@@ -162,10 +162,10 @@ const AGENT_UI: Record<
 		// Codex model ids depend on both the CLI version and the ChatGPT plan,
 		// and pinning one either side does not carry fails the run outright, so
 		// the only offer here is the CLI's own default.
-		note: "Runs on your ChatGPT sign-in. Codex picks the model your plan allows — pin one in ~/.codex/config.toml if you need to.",
+		note: "Runs on your ChatGPT sign-in. Auto uses the model selected by a current Codex CLI; older CLIs can inherit an incompatible model from ~/.codex/config.toml.",
 		scope:
 			"Sandboxed to the session folder with the network off; it can run shell commands in there.",
-		models: [{ id: "", label: "Auto", hint: "Your Codex default" }],
+		models: [{ id: "", label: "Auto", hint: "Codex-compatible default" }],
 	},
 };
 

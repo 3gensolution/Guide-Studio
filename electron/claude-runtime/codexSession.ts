@@ -54,6 +54,10 @@ export function buildCodexArgs(prompt: string, workspaceRoot: string, model?: st
 		// thing that holds.
 		"--sandbox",
 		"workspace-write",
+		// Keep network access off even if the user's Codex config changes the
+		// workspace-write default.
+		"--config",
+		"sandbox_workspace_write.network_access=false",
 		"--cd",
 		workspaceRoot,
 		// A session workspace is a plain directory under userData. Without this

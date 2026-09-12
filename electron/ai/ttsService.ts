@@ -1,11 +1,17 @@
 /**
- * TTS Service — text-to-speech stub with OpenAI TTS support.
- * Local (Piper TTS) integration is a placeholder for future work.
+ * TTS Service — the entry point every narration path goes through.
+ *
+ * Two engines sit behind it: OpenAI's cloud voices, and Piper running locally.
+ * Which one speaks is the user's setting, and "auto" means the cloud when a key
+ * is configured and Piper otherwise — with Piper also catching a cloud failure,
+ * so a quota error or a flight with no wifi costs quality rather than silence.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
+import { loadSettings } from "../settings";
 import { loadAIConfig } from "./aiService";
+import { synthesizePiper } from "./piperTtsService";
 
 const TTS_OUTPUT_DIR = "tts-output";
 
@@ -27,16 +33,41 @@ export interface TTSResult {
 	error?: string;
 }
 
+export interface TTSOptions {
+	/** Overrides the language Piper would otherwise detect from the text. */
+	language?: string;
+	/** A specific Piper voice, when the caller has one in mind. */
+	piperVoiceId?: string;
+}
+
 /**
  * Synthesize text to speech.
  *
- * Cloud: uses OpenAI TTS API (requires API key).
- * Local: placeholder — returns null (Piper TTS integration later).
+ * On success the path is to an audio file in the user's TTS output directory.
+ * The engines write different formats — MP3 from the cloud, MP3 or WAV from
+ * Piper depending on whether FFmpeg is around — and every consumer either plays
+ * the file or hands it to FFmpeg, both of which take either.
  */
-export async function synthesize(text: string, voice: TTSVoice = "nova"): Promise<TTSResult> {
+export async function synthesize(
+	text: string,
+	voice: TTSVoice = "nova",
+	options: TTSOptions = {},
+): Promise<TTSResult> {
 	const config = await loadAIConfig();
+	const settings = await loadSettings().catch(() => null);
+	const engine = settings?.ttsEngine ?? "auto";
 
-	// Try cloud TTS (OpenAI)
+	const speakLocally = () =>
+		synthesizePiper(text, {
+			language: options.language ?? settings?.narrationLanguage,
+			voiceId: options.piperVoiceId ?? settings?.piperVoiceId,
+		});
+
+	// Asked for local: stay local. Falling back to a paid API from a setting
+	// that says "local" would send the user's script somewhere they told us not
+	// to send it.
+	if (engine === "piper") return speakLocally();
+
 	if (config.apiKey) {
 		try {
 			return await synthesizeOpenAI(text, voice, config.apiKey);
@@ -46,11 +77,17 @@ export async function synthesize(text: string, voice: TTSVoice = "nova"): Promis
 			// "TTS not available" message that suggests no key is configured.
 			const msg = err instanceof Error ? err.message : String(err);
 			console.warn("[OpenAI TTS] failed:", msg);
-			// Detect quota errors and give a friendly hint
+			if (engine !== "cloud") {
+				const local = await speakLocally();
+				if (local.success) {
+					console.warn("[TTS] Spoke with local Piper instead:", local.voiceId);
+					return { success: true, audioPath: local.audioPath };
+				}
+			}
 			if (/quota|429|billing|insufficient/i.test(msg)) {
 				return {
 					success: false,
-					error: `OpenAI TTS quota exceeded — top up your OpenAI billing or configure a MiniMax API key (settings.aiApiKey_minimax) for higher-quality narration.`,
+					error: `OpenAI TTS quota exceeded — top up your OpenAI billing, configure a MiniMax API key (settings.aiApiKey_minimax), or install Piper for local narration.`,
 				};
 			}
 			return {
@@ -60,11 +97,22 @@ export async function synthesize(text: string, voice: TTSVoice = "nova"): Promis
 		}
 	}
 
-	// No API key configured at all
+	// No cloud key at all. Piper needs neither key nor account, so this is the
+	// case it exists for rather than an error to report.
+	if (engine === "cloud") {
+		return {
+			success: false,
+			error:
+				"Cloud TTS is selected but no API key is configured. Add an OpenAI or MiniMax key, or switch narration to local Piper.",
+		};
+	}
+	const local = await speakLocally();
+	if (local.success) return { success: true, audioPath: local.audioPath };
 	return {
 		success: false,
 		error:
-			"TTS not available. Configure an OpenAI API key for cloud TTS, or set a MiniMax API key (aiApiKey_minimax) for higher-quality narration.",
+			local.error ??
+			"TTS not available. Configure an OpenAI or MiniMax API key, or install Piper for local narration.",
 	};
 }
 

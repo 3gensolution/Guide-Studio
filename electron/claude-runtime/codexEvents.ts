@@ -71,6 +71,11 @@ export function fromCodexItem(
 			const text = typeof item.text === "string" ? item.text.trim() : "";
 			return text ? [{ kind: "text", text }] : [];
 		}
+		case "message": {
+			if (phase !== "completed") return [];
+			const text = typeof item.text === "string" ? item.text.trim() : "";
+			return text ? [{ kind: "text", text }] : [];
+		}
 		case "reasoning": {
 			if (phase !== "completed") return [];
 			const text = typeof item.text === "string" ? item.text.trim() : "";
@@ -85,6 +90,17 @@ export function fromCodexItem(
 			if (phase !== "completed") return [];
 			const exitCode = typeof item.exit_code === "number" ? item.exit_code : undefined;
 			const ok = item.status === "completed" && (exitCode === undefined || exitCode === 0);
+			const detail = ok ? command : `exit ${exitCode ?? "?"}${command ? ` · ${command}` : ""}`;
+			return [{ kind: "tool-result", ok, ...(detail ? { detail } : {}) }];
+		}
+		case "command": {
+			const command = typeof item.command === "string" ? summariseCommand(item.command) : undefined;
+			if (phase === "started") {
+				return [{ kind: "tool", tool: "Shell", ...(command ? { detail: command } : {}) }];
+			}
+			if (phase !== "completed") return [];
+			const exitCode = typeof item.exit_code === "number" ? item.exit_code : undefined;
+			const ok = exitCode === undefined || exitCode === 0;
 			const detail = ok ? command : `exit ${exitCode ?? "?"}${command ? ` · ${command}` : ""}`;
 			return [{ kind: "tool-result", ok, ...(detail ? { detail } : {}) }];
 		}
@@ -144,6 +160,8 @@ export function parseCodexStreamLine(line: string): ClaudeActivity[] {
 			return fromCodexItem(envelope.item, "updated");
 		case "item.completed":
 			return fromCodexItem(envelope.item, "completed");
+		case "response_item":
+			return fromCodexItem(envelope.item ?? envelope.response_item, "completed");
 		case "turn.completed":
 			return [{ kind: "finished", ok: true }];
 		case "turn.failed": {

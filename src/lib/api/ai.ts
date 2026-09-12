@@ -86,6 +86,12 @@ export interface TTSRequest {
 	voice?: string; // Voice ID
 	model?: string; // "edge-tts" or "elevenlabs"
 	speed?: number;
+	/**
+	 * The language the narration is in, e.g. "de" or "pt-BR". Only the local
+	 * Piper engine uses it, to pick a voice that speaks it; leave it out and the
+	 * language is read from the text.
+	 */
+	language?: string;
 }
 
 // Image Generation
@@ -198,7 +204,9 @@ export class AIService {
 			}
 
 			if (window.electronAPI?.aiTtsSynthesize) {
-				const fallback = await window.electronAPI.aiTtsSynthesize(request.text, request.voice);
+				const fallback = await window.electronAPI.aiTtsSynthesize(request.text, request.voice, {
+					language: request.language,
+				});
 				if (fallback.success && fallback.audioPath) {
 					return { success: true, data: { audioUrl: fallback.audioPath } };
 				}

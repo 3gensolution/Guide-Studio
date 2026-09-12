@@ -154,7 +154,10 @@ export async function planStoryboard(
 	const agent: AgentId = input.agent ?? "claude";
 	const installation = await detectAgent(agent);
 	if (!installation.installed || !installation.binaryPath) {
-		throw new Error(notInstalledMessage(agent));
+		throw new Error(installation.error ?? notInstalledMessage(agent));
+	}
+	if (installation.error) {
+		throw new Error(installation.error);
 	}
 
 	const id = randomUUID();

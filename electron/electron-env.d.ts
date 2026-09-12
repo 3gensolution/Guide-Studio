@@ -483,7 +483,37 @@ interface Window {
 		aiTtsSynthesize: (
 			text: string,
 			voice?: string,
+			options?: { language?: string; piperVoiceId?: string },
 		) => Promise<{ success: boolean; audioPath?: string; error?: string }>;
+		aiPiperStatus: () => Promise<{
+			ready: boolean;
+			binaryPath: string | null;
+			installedVoices: string[];
+			error?: string;
+		}>;
+		aiPiperVoices: (language?: string) => Promise<{
+			voices: Array<import("./ai/piperVoices").PiperVoice>;
+			installed: string[];
+		}>;
+		aiPiperDetectLanguage: (text: string) => Promise<{ language: string; voiceId: string }>;
+		aiPiperDownloadVoice: (voiceId: string) => Promise<{ success: boolean; error?: string }>;
+		onPiperVoiceDownloadProgress: (
+			callback: (progress: {
+				voiceId: string;
+				downloadedBytes: number;
+				totalBytes: number;
+				percent: number;
+			}) => void,
+		) => () => void;
+		aiPiperTts: (
+			text: string,
+			options?: { voiceId?: string; language?: string; speed?: number; autoDownload?: boolean },
+		) => Promise<{
+			success: boolean;
+			audioPath?: string;
+			voiceId?: string;
+			error?: string;
+		}>;
 		aiMinimaxTts: (
 			text: string,
 			options?: {

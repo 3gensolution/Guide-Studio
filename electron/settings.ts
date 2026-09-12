@@ -13,6 +13,19 @@ export interface StudioSettings {
 	aiOllamaUrl?: string;
 	whisperModel: "tiny" | "base" | "small";
 
+	// Narration
+	/**
+	 * Which engine speaks. "auto" uses a configured cloud voice and falls back
+	 * to local Piper, so narration still works with no key and no connection.
+	 */
+	ttsEngine: "auto" | "piper" | "cloud";
+	/** Overrides the language detected from the narration itself. */
+	narrationLanguage?: string;
+	/** A specific Piper voice, e.g. "de_DE-thorsten-medium". */
+	piperVoiceId?: string;
+	/** Where the Piper executable lives, when it is not on PATH. */
+	piperPath?: string;
+
 	// Per-provider API keys (so switching providers doesn't wipe keys)
 	aiApiKey_openai?: string;
 	aiApiKey_anthropic?: string;
@@ -53,6 +66,7 @@ const DEFAULT_SETTINGS: StudioSettings = {
 	captureBackend: "auto",
 	aiProvider: "openai",
 	whisperModel: "small",
+	ttsEngine: "auto",
 	cursorSmoothing: 0.5,
 	cursorSway: 0.3,
 	cursorStyle: "default",

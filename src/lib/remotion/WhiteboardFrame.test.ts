@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildWhiteboardLines, type MeasureText, schedule, wrapLine } from "./WhiteboardFrame";
+import {
+	boardColumns,
+	buildWhiteboardLines,
+	type MeasureText,
+	schedule,
+	scheduleBoard,
+	wrapLine,
+} from "./WhiteboardFrame";
 
 /**
  * A stand-in for real text measurement: every glyph is half the font size wide.
@@ -117,5 +124,94 @@ describe("schedule", () => {
 		const timed = schedule(lines, FPS * 8, FPS, 70, () => 0);
 		const spans = timed.map((line) => line.endFrame - line.startFrame);
 		expect(new Set(spans).size).toBe(1);
+	});
+});
+
+/**
+ * A picture shares the frame's time with the copy, and the hand has to finish
+ * both. The failure this guards against is a frame that cuts while the cat
+ * still has no tail.
+ */
+describe("scheduleBoard", () => {
+	const lines = buildWhiteboardLines("A longer headline here", ["short"], 1500, measure);
+	// A doodle's worth of line: far more of it than there is text, which is the
+	// case the share ceiling exists for.
+	const strokes = [900, 1400, 700, 2200];
+
+	it("draws the picture after the copy is written", () => {
+		const board = scheduleBoard(lines, strokes, FPS * 10, FPS, 70, measure);
+		const lastWord = Math.max(...board.lines.map((line) => line.endFrame));
+		expect(Math.min(...board.strokes.map((stroke) => stroke.startFrame))).toBeGreaterThanOrEqual(
+			lastWord,
+		);
+	});
+
+	it("finishes the last stroke before the frame ends", () => {
+		const duration = FPS * 10;
+		const board = scheduleBoard(lines, strokes, duration, FPS, 70, measure);
+		expect(Math.max(...board.strokes.map((stroke) => stroke.endFrame))).toBeLessThanOrEqual(
+			duration,
+		);
+	});
+
+	it("keeps the picture off more than its share of the frame", () => {
+		const duration = FPS * 10;
+		const board = scheduleBoard(lines, strokes, duration, FPS, 70, measure);
+		const drawing = board.strokes.reduce(
+			(sum, stroke) => sum + (stroke.endFrame - stroke.startFrame),
+			0,
+		);
+		expect(drawing).toBeLessThan(duration * 0.6);
+	});
+
+	it("gives a longer stroke proportionally longer to draw", () => {
+		const board = scheduleBoard(lines, [500, 1000], FPS * 10, FPS, 70, measure);
+		const [first, second] = board.strokes;
+		const shortSpan = (first?.endFrame ?? 0) - (first?.startFrame ?? 0);
+		const longSpan = (second?.endFrame ?? 0) - (second?.startFrame ?? 0);
+		expect(longSpan / shortSpan).toBeCloseTo(2, 0);
+	});
+
+	it("hands the whole frame to the picture when there is no copy", () => {
+		const board = scheduleBoard([], strokes, FPS * 6, FPS, 70, measure);
+		expect(board.strokes).toHaveLength(strokes.length);
+		for (const stroke of board.strokes) {
+			expect(stroke.endFrame).toBeGreaterThan(stroke.startFrame);
+		}
+	});
+
+	it("matches the text-only schedule when there is no picture", () => {
+		expect(scheduleBoard(lines, [], FPS * 8, FPS, 70, measure).lines).toEqual(
+			schedule(lines, FPS * 8, FPS, 70, measure),
+		);
+	});
+});
+
+describe("boardColumns", () => {
+	it("uses the full width when the frame has no picture", () => {
+		const columns = boardColumns(1920, 1080, false);
+		expect(columns.doodleSize).toBe(0);
+		expect(columns.textWidth).toBe(1920 - columns.marginX * 2);
+	});
+
+	it("puts the picture beside the copy on a landscape frame", () => {
+		const columns = boardColumns(1920, 1080, true);
+		expect(columns.stacked).toBe(false);
+		// Copy and picture and both margins have to fit across the board.
+		expect(columns.marginX * 2 + columns.textWidth + columns.doodleSize).toBeLessThanOrEqual(1920);
+		// A headline still needs room to be a headline rather than one word a line.
+		expect(columns.textWidth).toBeGreaterThan(900);
+	});
+
+	it("puts the picture under the copy when the frame is not wider than it is tall", () => {
+		for (const [width, height] of [
+			[1080, 1920],
+			[1080, 1080],
+		]) {
+			const columns = boardColumns(width as number, height as number, true);
+			expect(columns.stacked).toBe(true);
+			expect(columns.textWidth).toBe((width as number) - columns.marginX * 2);
+			expect(columns.doodleSize).toBeLessThanOrEqual((height as number) * 0.3);
+		}
 	});
 });

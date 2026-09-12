@@ -601,8 +601,52 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	aiSaveConfig: (config: Partial<AIServiceConfig>) => {
 		return ipcRenderer.invoke("ai-save-config", config);
 	},
-	aiTtsSynthesize: (text: string, voice?: string) => {
-		return ipcRenderer.invoke("ai-tts-synthesize", text, voice);
+	aiTtsSynthesize: (
+		text: string,
+		voice?: string,
+		options?: { language?: string; piperVoiceId?: string },
+	) => {
+		return ipcRenderer.invoke("ai-tts-synthesize", text, voice, options);
+	},
+	// Piper TTS — local, offline, and the only engine that picks its voice from
+	// the language of the narration itself.
+	aiPiperStatus: () => {
+		return ipcRenderer.invoke("ai-piper-status");
+	},
+	aiPiperVoices: (language?: string) => {
+		return ipcRenderer.invoke("ai-piper-voices", language);
+	},
+	aiPiperDetectLanguage: (text: string) => {
+		return ipcRenderer.invoke("ai-piper-detect-language", text);
+	},
+	aiPiperDownloadVoice: (voiceId: string) => {
+		return ipcRenderer.invoke("ai-piper-download-voice", voiceId);
+	},
+	onPiperVoiceDownloadProgress: (
+		callback: (progress: {
+			voiceId: string;
+			downloadedBytes: number;
+			totalBytes: number;
+			percent: number;
+		}) => void,
+	) => {
+		const listener = (
+			_event: Electron.IpcRendererEvent,
+			progress: {
+				voiceId: string;
+				downloadedBytes: number;
+				totalBytes: number;
+				percent: number;
+			},
+		) => callback(progress);
+		ipcRenderer.on("piper-voice-download-progress", listener);
+		return () => ipcRenderer.removeListener("piper-voice-download-progress", listener);
+	},
+	aiPiperTts: (
+		text: string,
+		options?: { voiceId?: string; language?: string; speed?: number; autoDownload?: boolean },
+	) => {
+		return ipcRenderer.invoke("ai-piper-tts", text, options);
 	},
 	// MiniMax TTS — preferred for multi-scene narration (higher quality, voice picker)
 	aiMinimaxTts: (

@@ -2,6 +2,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	augmentedPathEnv,
+	CODEX_CREATOR_MINIMUM_VERSION,
 	candidateBinaryPaths,
 	meetsMinimum,
 	parseVersion,
@@ -89,5 +90,10 @@ describe("meetsMinimum", () => {
 
 	it("is false when the version is unknown", () => {
 		expect(meetsMinimum(undefined, "2.0.0")).toBe(false);
+	});
+
+	it("recognizes the minimum Codex creator version", () => {
+		expect(meetsMinimum("0.46.0", CODEX_CREATOR_MINIMUM_VERSION)).toBe(false);
+		expect(meetsMinimum("0.100.0", CODEX_CREATOR_MINIMUM_VERSION)).toBe(true);
 	});
 });
