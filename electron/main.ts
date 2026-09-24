@@ -200,6 +200,25 @@ function isEditorWindow(window: BrowserWindow) {
 	return window.webContents.getURL().includes("windowType=editor");
 }
 
+/** Open the AI settings dialog (bring your own API key) in an editor window. */
+function openAISettingsInEditor() {
+	let targetWindow: BrowserWindow | null = BrowserWindow.getFocusedWindow();
+	if (!targetWindow || targetWindow.isDestroyed() || !isEditorWindow(targetWindow)) {
+		targetWindow = getFirstEditorWindow();
+	}
+	if (!targetWindow) {
+		const newWin = createEditorWindowWrapper();
+		if (!newWin) return;
+		newWin.webContents.once("did-finish-load", () => {
+			newWin.webContents.send("menu-ai-settings");
+		});
+		return;
+	}
+	if (targetWindow.isMinimized()) targetWindow.restore();
+	targetWindow.focus();
+	targetWindow.webContents.send("menu-ai-settings");
+}
+
 function sendEditorMenuAction(
 	channel: "menu-load-project" | "menu-save-project" | "menu-save-project-as" | "menu-new-project",
 ) {
@@ -277,6 +296,14 @@ function setupApplicationMenu() {
 				{
 					label: "Check for Updates\u2026",
 					click: triggerManualUpdateCheck,
+				},
+				{ type: "separator" },
+				{
+					// AI runs on the user's own provider key — keep it where a Mac
+					// user looks for preferences.
+					label: "AI Settings\u2026",
+					accelerator: "CmdOrCtrl+,",
+					click: openAISettingsInEditor,
 				},
 				{ type: "separator" },
 				{
@@ -389,6 +416,16 @@ function setupApplicationMenu() {
 					role: "selectAll",
 					label: mainT("common", "actions.selectAll") || "Select All",
 				},
+				...(isMac
+					? []
+					: ([
+							{ type: "separator" as const },
+							{
+								label: "AI Settings\u2026",
+								accelerator: "CmdOrCtrl+,",
+								click: openAISettingsInEditor,
+							},
+						] as Electron.MenuItemConstructorOptions[])),
 			],
 		},
 		{

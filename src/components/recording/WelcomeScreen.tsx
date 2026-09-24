@@ -1,8 +1,9 @@
 import type { LucideIcon } from "lucide-react";
-import { ArrowLeft, Bot, Clapperboard, Film, FolderOpen, PlayCircle } from "lucide-react";
+import { ArrowLeft, Bot, Clapperboard, Film, FolderOpen, PlayCircle, Sparkles } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import guideLogo from "@/assets/guide-logo.svg";
 import { useAIPreflight } from "@/hooks/useAIPreflight";
+import { openAISettings } from "@/lib/ai/aiSettingsBus";
 
 interface WelcomeScreenProps {
 	onNewRecording: () => void;
@@ -104,6 +105,9 @@ export function WelcomeScreen({
 					{onReturnToEditor && (
 						<SidebarItem icon={ArrowLeft} label="Return to editor" onClick={onReturnToEditor} />
 					)}
+					{/* AI runs on the user's own key — make it reachable before a
+					    project is even open. */}
+					<SidebarItem icon={Sparkles} label="AI Settings" onClick={() => openAISettings("chat")} />
 				</nav>
 
 				{/* Spacer */}

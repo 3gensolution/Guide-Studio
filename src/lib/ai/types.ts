@@ -220,13 +220,24 @@ export interface PublishKit {
 
 // ── AI service types ──
 
-export type AIProvider = "ollama" | "openai" | "anthropic" | "groq" | "minimax" | "kimi";
+export type AIProvider =
+	| "ollama"
+	| "openai"
+	| "anthropic"
+	| "groq"
+	| "minimax"
+	| "kimi"
+	| "deepseek"
+	| "glm"
+	| "qwen";
 
 export interface AIServiceConfig {
 	provider: AIProvider;
 	model?: string;
 	apiKey?: string;
 	ollamaUrl?: string;
+	/** Endpoint override for OpenAI-compatible providers. Empty = provider default. */
+	baseUrl?: string;
 }
 
 export interface AIProviderInfo {
@@ -237,6 +248,12 @@ export interface AIProviderInfo {
 	defaultModel: string;
 	models: string[];
 	hasTTS: boolean;
+	/**
+	 * The provider speaks the OpenAI chat-completions dialect, so its endpoint
+	 * can be repointed at a regional or workspace-specific host (Z.ai's China
+	 * domain, an Alibaba workspace domain, a corporate proxy).
+	 */
+	supportsBaseUrl?: boolean;
 }
 
 export const AI_PROVIDERS: AIProviderInfo[] = [
@@ -257,6 +274,7 @@ export const AI_PROVIDERS: AIProviderInfo[] = [
 			"gpt-4.1",
 		],
 		hasTTS: true,
+		supportsBaseUrl: true,
 	},
 	{
 		id: "anthropic",
@@ -280,6 +298,7 @@ export const AI_PROVIDERS: AIProviderInfo[] = [
 		// Mixtral in the rotation.
 		models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
 		hasTTS: false,
+		supportsBaseUrl: true,
 	},
 	{
 		id: "minimax",
@@ -289,6 +308,7 @@ export const AI_PROVIDERS: AIProviderInfo[] = [
 		defaultModel: "MiniMax-M2.7",
 		models: ["MiniMax-M2.7", "MiniMax-M2.7-highspeed", "MiniMax-M2.5", "MiniMax-M2.5-highspeed"],
 		hasTTS: true,
+		supportsBaseUrl: true,
 	},
 	{
 		// Moonshot AI's Kimi family. K2.6 is the current flagship — 256k
@@ -312,6 +332,48 @@ export const AI_PROVIDERS: AIProviderInfo[] = [
 			"moonshot-v1-8k",
 		],
 		hasTTS: false,
+		supportsBaseUrl: true,
+	},
+	{
+		// DeepSeek's own platform. OpenAI-compatible; `deepseek-flash` is the
+		// V4.1-Flash tier (1M context, vision-capable, very cheap) and
+		// `deepseek-v4-pro` the heavier thinking model. The old
+		// `deepseek-chat` / `deepseek-reasoner` aliases were retired in
+		// July 2026 — don't put them back on the list.
+		id: "deepseek",
+		name: "DeepSeek",
+		description: "DeepSeek V4. 1M context at a very low price — the cheapest capable option.",
+		requiresApiKey: true,
+		defaultModel: "deepseek-flash",
+		models: ["deepseek-flash", "deepseek-v4-pro"],
+		hasTTS: false,
+		supportsBaseUrl: true,
+	},
+	{
+		// Zhipu's GLM, through Z.ai's international API. The China platform
+		// (open.bigmodel.cn) serves the same models on the same path — point
+		// the base URL there if that's where the key was issued.
+		id: "glm",
+		name: "GLM (Z.ai)",
+		description: "Zhipu GLM. Strong agentic and coding work; GLM-5 series for the heavy jobs.",
+		requiresApiKey: true,
+		defaultModel: "glm-4.7",
+		models: ["glm-4.7", "glm-4.7-flash", "glm-5.3", "glm-5.1", "glm-5", "glm-4.6"],
+		hasTTS: false,
+		supportsBaseUrl: true,
+	},
+	{
+		// Alibaba's Qwen through Model Studio (DashScope) in OpenAI-compatible
+		// mode. Accounts issued a workspace domain should paste it as the base
+		// URL — the shared international host stays the default.
+		id: "qwen",
+		name: "Qwen",
+		description: "Alibaba Qwen on Model Studio. Long context, strong multilingual output.",
+		requiresApiKey: true,
+		defaultModel: "qwen3.7-plus",
+		models: ["qwen3.7-plus", "qwen3.8-max", "qwen3.8-flash", "qwen3-coder-plus"],
+		hasTTS: false,
+		supportsBaseUrl: true,
 	},
 	{
 		id: "ollama",

@@ -12,6 +12,7 @@ import {
 	getAllProviderKeys,
 	loadAIConfig,
 	saveAIConfig,
+	saveProviderCredentials,
 } from "../ai/aiService";
 import { type ElevenLabsMusicOptions, generateElevenLabsMusic } from "../ai/elevenLabsMusicService";
 import {
@@ -95,6 +96,19 @@ export function registerAIHandlers(): void {
 		await saveAIConfig(config);
 		return { success: true };
 	});
+
+	// Save one provider's own key/model without switching to it — the settings
+	// dialog lets the user fill in several providers before picking one.
+	ipcMain.handle(
+		"ai-save-provider-key",
+		async (
+			_event,
+			provider: string,
+			credentials: { apiKey?: string; model?: string; baseUrl?: string },
+		) => {
+			return saveProviderCredentials(provider, credentials ?? {});
+		},
+	);
 
 	// Save an API key for a side-service (not the main chat provider).
 	// Today: "elevenlabs" for SFX. In future: whatever side-services we add.

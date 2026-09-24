@@ -7,7 +7,16 @@ export interface StudioSettings {
 	captureBackend: "auto" | "native" | "browser";
 
 	// AI (unified — used by aiService.ts)
-	aiProvider: "ollama" | "openai" | "anthropic" | "groq" | "minimax" | "kimi";
+	aiProvider:
+		| "ollama"
+		| "openai"
+		| "anthropic"
+		| "groq"
+		| "minimax"
+		| "kimi"
+		| "deepseek"
+		| "glm"
+		| "qwen";
 	aiApiKey?: string; // Legacy single key (still read as fallback)
 	aiModel?: string;
 	aiOllamaUrl?: string;
@@ -32,6 +41,9 @@ export interface StudioSettings {
 	aiApiKey_groq?: string;
 	aiApiKey_minimax?: string;
 	aiApiKey_kimi?: string;
+	aiApiKey_deepseek?: string;
+	aiApiKey_glm?: string;
+	aiApiKey_qwen?: string;
 	aiApiKey_elevenlabs?: string;
 
 	// Per-provider model selection (so switching providers doesn't lose model choice)
@@ -40,7 +52,22 @@ export interface StudioSettings {
 	aiModel_groq?: string;
 	aiModel_minimax?: string;
 	aiModel_kimi?: string;
+	aiModel_deepseek?: string;
+	aiModel_glm?: string;
+	aiModel_qwen?: string;
 	aiModel_ollama?: string;
+
+	// Optional per-provider endpoint override, for providers that speak the
+	// OpenAI dialect on more than one host: Z.ai's China domain, an Alibaba
+	// Model Studio workspace domain, a corporate proxy. Empty means the
+	// provider's default endpoint.
+	aiBaseUrl_openai?: string;
+	aiBaseUrl_groq?: string;
+	aiBaseUrl_minimax?: string;
+	aiBaseUrl_kimi?: string;
+	aiBaseUrl_deepseek?: string;
+	aiBaseUrl_glm?: string;
+	aiBaseUrl_qwen?: string;
 
 	// Cursor
 	cursorSmoothing: number;

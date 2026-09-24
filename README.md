@@ -12,6 +12,18 @@
 
 <p align="center"><strong>Record your screen, polish it in the editor, and let AI do the tedious parts — all on your own machine.</strong></p>
 
+<p align="center">
+  <a href="https://www.3guideai.com/studio"><img src="https://img.shields.io/badge/%E2%AC%87%20Download%20Guide%20Studio-3guideai.com%2Fstudio-4f46e5?style=for-the-badge" alt="Download Guide Studio from 3guideai.com/studio" /></a>
+</p>
+
+<p align="center">
+  <strong>⬇️ Download it here: <a href="https://www.3guideai.com/studio">https://www.3guideai.com/studio</a></strong>
+  <br />
+  Built by <strong>3GEN Solution</strong>, the company behind <strong>3Guide</strong>.
+</p>
+
+---
+
 Guide Studio is a free, open-source screen recorder and video editor for product demos, walkthroughs, and tutorials. Record a window or your whole screen, then shape the result with zooms, backgrounds, cursor effects, captions, and annotations — and hand the repetitive work to a set of AI tools that run locally.
 
 **100% free** for both **personal** and **commercial** use. Use it, modify it, distribute it. Please respect the License.
@@ -49,7 +61,7 @@ Guide Studio is a free, open-source screen recorder and video editor for product
   <img src="public/screenshots/editor-ai-features.png" alt="The Guide Studio editor with the AI Features panel open" width="900" />
 </p>
 
-Every AI tool in the editor runs on this machine. There is no account, no upload, and no backend service — recordings and transcripts never leave your computer.
+Every AI tool in the editor runs on this machine. There is no account, no upload, and no backend service — recordings and transcripts never leave your computer. The model work runs on **your own API key** (or a local model), set up once in **AI Settings** — see [Your own AI key](#your-own-ai-key) below.
 
 - **Video Guide** — turns a raw recording into a finished walkthrough from your click telemetry: paced zooms, ring and arrow highlights, idle trims, and an optional voiceover, in either a tutorial or a screen-share style.
 - **Step Guide** — the same recording as a written, step-by-step document with screenshots, for docs and support articles.
@@ -63,6 +75,31 @@ Every AI tool in the editor runs on this machine. There is no account, no upload
 - **Extract Clips** — pulls short, shareable cuts out of a long recording.
 - **AI Chat** — an assistant inside the editor that drives the editing tools for you: "add captions", "polish this recording", "open the background settings".
 
+### Your own AI key
+
+Guide Studio has no AI service of its own: chat, narration scripts, Magic Polish, Step Guide, Publish Kit, generated images and music all go out from your machine with a key you supply and are billed by that provider.
+
+Open **AI Settings** — the gear in the editor's AI panel, the sidebar entry on the welcome screen, or <kbd>⌘</kbd><kbd>,</kbd> — and add a key for whichever provider you prefer:
+
+| Provider | Powers | Where to get a key |
+| --- | --- | --- |
+| OpenAI | Chat and all text features, narration voices | [platform.openai.com](https://platform.openai.com/api-keys) |
+| Anthropic | Chat and all text features | [console.anthropic.com](https://console.anthropic.com/settings/keys) |
+| Groq | Chat and all text features (fast, free tier) | [console.groq.com](https://console.groq.com/keys) |
+| MiniMax | Chat, narration voices, generated images and music | [platform.minimaxi.com](https://platform.minimaxi.com/user-center/basic-information/interface-key) |
+| Kimi (Moonshot) | Chat and all text features | [platform.moonshot.ai](https://platform.moonshot.ai/console/api-keys) |
+| DeepSeek | Chat and all text features (1M context, lowest cost) | [platform.deepseek.com](https://platform.deepseek.com/api_keys) |
+| GLM (Z.ai) | Chat and all text features | [z.ai](https://z.ai/manage-apikey/apikey-list) |
+| Qwen | Chat and all text features | [Model Studio](https://modelstudio.console.alibabacloud.com/) |
+| ElevenLabs | Music beds and sound effects | [elevenlabs.io](https://elevenlabs.io/app/settings/api-keys) |
+| Ollama | Everything text, fully offline — no key at all | [ollama.com](https://ollama.com/download) |
+
+Keys are stored in Guide Studio's own `settings.json` in your user app-data folder and are sent only to the provider they belong to. A key per provider is kept, so you can switch between them without re-entering anything, and **Test connection** checks the key before you rely on it.
+
+Every OpenAI-compatible provider also takes an optional **API base URL**, for when your key belongs to a different host than the default — GLM on `open.bigmodel.cn`, an Alibaba Model Studio workspace domain, or a company proxy. Leave it empty and the provider's own endpoint is used.
+
+Captions (on-device Whisper) and local Piper narration voices need no key and work with no connection at all.
+
 ### AI Video Creator
 
 Describe a video and Guide Studio designs and renders the scenes for you — no recording required. Pick a look (motion graphics or clean cards), a shape (16:9, 9:16, or 1:1), and a target length, and you get a storyboard to review before anything renders.
@@ -75,7 +112,10 @@ This runs through **your own Claude Code install**, on your existing Claude subs
 
 ## Installation
 
-Download the latest installer for your platform from the [GitHub Releases](https://github.com/3gensolution/Guide-Studio/releases) page.
+> [!IMPORTANT]
+> **Download Guide Studio at [https://www.3guideai.com/studio](https://www.3guideai.com/studio)** — built and maintained by **3GEN Solution**, the company behind **3Guide**.
+
+Get the latest installer for your platform from [3guideai.com/studio](https://www.3guideai.com/studio), or from the [GitHub Releases](https://github.com/3gensolution/Guide-Studio/releases) page.
 
 ### macOS
 
@@ -206,6 +246,11 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 Guide Studio is built on [OpenScreen](https://github.com/siddharthvaddem/openscreen) by Siddharth Vaddem, used under the MIT License.
 
+
+## About
+
+Guide Studio is built and maintained by **3GEN Solution**, the company behind **3Guide**.
+Download the latest release at **[https://www.3guideai.com/studio](https://www.3guideai.com/studio)**.
 
 ## License
 

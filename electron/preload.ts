@@ -321,6 +321,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		ipcRenderer.on("menu-load-project", listener);
 		return () => ipcRenderer.removeListener("menu-load-project", listener);
 	},
+	onMenuAISettings: (callback: () => void) => {
+		const listener = () => callback();
+		ipcRenderer.on("menu-ai-settings", listener);
+		return () => ipcRenderer.removeListener("menu-ai-settings", listener);
+	},
 	onMenuSaveProject: (callback: () => void) => {
 		const listener = () => callback();
 		ipcRenderer.on("menu-save-project", listener);
@@ -596,10 +601,20 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return ipcRenderer.invoke("ai-get-all-keys") as Promise<{
 			keys: Record<string, string>;
 			models: Record<string, string>;
+			baseUrls: Record<string, string>;
 		}>;
 	},
 	aiSaveConfig: (config: Partial<AIServiceConfig>) => {
 		return ipcRenderer.invoke("ai-save-config", config);
+	},
+	aiSaveProviderKey: (
+		provider: string,
+		credentials: { apiKey?: string; model?: string; baseUrl?: string },
+	) => {
+		return ipcRenderer.invoke("ai-save-provider-key", provider, credentials) as Promise<{
+			success: boolean;
+			error?: string;
+		}>;
 	},
 	aiTtsSynthesize: (
 		text: string,

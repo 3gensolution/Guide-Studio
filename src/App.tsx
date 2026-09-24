@@ -8,6 +8,7 @@ import { LaunchWindow } from "./components/launch/LaunchWindow";
 import { SourceSelector } from "./components/launch/SourceSelector";
 import { RecordingBar } from "./components/recording/RecordingBar";
 import { WebcamPreviewWindow } from "./components/recording/WebcamPreviewWindow";
+import { AISettingsHost } from "./components/ui/AISettingsDialog";
 import { Toaster } from "./components/ui/sonner";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { UpdateToast } from "./components/ui/UpdateToast";
@@ -160,6 +161,9 @@ export default function App() {
 			<TooltipProvider>
 				{content}
 				{windowType !== "recording-bar" && windowType !== "webcam-preview" && <UpdateToast />}
+				{/* One AI settings dialog per window — anything that needs a provider
+				    opens it through `openAISettings()`. */}
+				{!TRANSPARENT_WINDOW_TYPES.has(windowType) && <AISettingsHost />}
 				<Toaster theme="dark" className="pointer-events-auto" />
 			</TooltipProvider>
 		</BackendProvider>

@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
+import { AISettingsButton } from "@/components/ui/AISettingsDialog";
 import { useAIPreflight } from "@/hooks/useAIPreflight";
 import { useAIService } from "@/hooks/useAIService";
 import type { EditorState } from "@/hooks/useEditorHistory";
@@ -259,6 +260,7 @@ export function AIPanelSidebar({
 				<span className="ml-auto text-[9px] px-1.5 py-0.5 rounded bg-[#2563eb]/20 text-[#2563eb]">
 					Local
 				</span>
+				<AISettingsButton size={13} />
 			</div>
 
 			{/* Scrollable sections */}

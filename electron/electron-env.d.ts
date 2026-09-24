@@ -432,6 +432,7 @@ interface Window {
 		onMenuCreateVideo: (callback: () => void) => () => void;
 		onMenuOpenVideo: (callback: () => void) => () => void;
 		onMenuLoadProject: (callback: () => void) => () => void;
+		onMenuAISettings: (callback: () => void) => () => void;
 		onMenuSaveProject: (callback: () => void) => () => void;
 		onMenuSaveProjectAs: (callback: () => void) => () => void;
 		getPlatform: () => Promise<string>;
@@ -451,7 +452,11 @@ interface Window {
 			alt?: boolean;
 		}) => Promise<{ success: boolean }>;
 		// AI features
-		aiGetAllKeys: () => Promise<{ keys: Record<string, string>; models: Record<string, string> }>;
+		aiGetAllKeys: () => Promise<{
+			keys: Record<string, string>;
+			models: Record<string, string>;
+			baseUrls: Record<string, string>;
+		}>;
 		aiAnalyze: (
 			prompt: string,
 			context?: string,
@@ -480,6 +485,10 @@ interface Window {
 		aiSaveConfig: (
 			config: Partial<import("../src/lib/ai/types").AIServiceConfig>,
 		) => Promise<{ success: boolean }>;
+		aiSaveProviderKey: (
+			provider: string,
+			credentials: { apiKey?: string; model?: string; baseUrl?: string },
+		) => Promise<{ success: boolean; error?: string }>;
 		aiTtsSynthesize: (
 			text: string,
 			voice?: string,

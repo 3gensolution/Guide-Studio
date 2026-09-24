@@ -37,10 +37,15 @@ export async function loadAIConfig(): Promise<AIServiceConfig> {
 	const validModel =
 		savedModel && isModelValidForProvider(savedModel, provider) ? savedModel : undefined;
 
+	// Per-provider endpoint override (regional host, workspace domain, proxy).
+	const providerBaseUrlField = `aiBaseUrl_${provider}` as keyof typeof settings;
+	const baseUrl = settings[providerBaseUrlField] as string | undefined;
+
 	return {
 		provider,
 		apiKey,
 		model: validModel,
+		baseUrl: baseUrl || undefined,
 		ollamaUrl: settings.aiOllamaUrl ?? DEFAULT_CONFIG.ollamaUrl,
 	};
 }
@@ -56,6 +61,7 @@ export async function saveAIConfig(config: Partial<AIServiceConfig>): Promise<vo
 
 	if (config.provider) updates.aiProvider = config.provider;
 	if (config.ollamaUrl !== undefined) updates.aiOllamaUrl = config.ollamaUrl;
+	if (config.baseUrl !== undefined) updates[`aiBaseUrl_${provider}`] = config.baseUrl.trim();
 
 	if (config.model !== undefined) {
 		// Save to per-provider model field AND legacy field
@@ -72,23 +78,90 @@ export async function saveAIConfig(config: Partial<AIServiceConfig>): Promise<vo
 	await saveSettings(updates as Partial<import("../settings").StudioSettings>);
 }
 
-/** Return all per-provider API keys and models (for settings dialog) */
+/** Return all per-provider API keys, models and endpoint overrides (for the settings dialog) */
 export async function getAllProviderKeys(): Promise<{
 	keys: Record<string, string>;
 	models: Record<string, string>;
+	baseUrls: Record<string, string>;
 }> {
 	const settings = await loadSettings();
 	const keys: Record<string, string> = {};
 	const models: Record<string, string> = {};
-	for (const provider of ["openai", "anthropic", "groq", "minimax", "kimi", "ollama"]) {
+	const baseUrls: Record<string, string> = {};
+	for (const provider of PROVIDER_IDS) {
 		const keyField = `aiApiKey_${provider}` as keyof typeof settings;
 		const keyVal = settings[keyField] as string | undefined;
 		if (keyVal) keys[provider] = keyVal;
 		const modelField = `aiModel_${provider}` as keyof typeof settings;
 		const modelVal = settings[modelField] as string | undefined;
 		if (modelVal) models[provider] = modelVal;
+		const baseUrlField = `aiBaseUrl_${provider}` as keyof typeof settings;
+		const baseUrlVal = settings[baseUrlField] as string | undefined;
+		if (baseUrlVal) baseUrls[provider] = baseUrlVal;
 	}
-	return { keys, models };
+	// Settings written before per-provider fields existed only have the legacy
+	// single key/model, which belongs to whichever provider is active. Surface
+	// it under that provider so the settings dialog shows the key the user
+	// already has instead of an empty field it would then save over.
+	const active = settings.aiProvider;
+	if (active && !keys[active] && settings.aiApiKey) keys[active] = settings.aiApiKey;
+	if (active && !models[active] && settings.aiModel) models[active] = settings.aiModel;
+	return { keys, models, baseUrls };
+}
+
+/** Every provider the app can talk to. Also the allow-list for the settings
+ *  writes below — a provider id lands in a `aiApiKey_<id>` settings key, so it
+ *  must never come straight from the renderer unchecked. */
+const PROVIDER_IDS = [
+	"ollama",
+	"openai",
+	"anthropic",
+	"groq",
+	"minimax",
+	"kimi",
+	"deepseek",
+	"glm",
+	"qwen",
+] as const;
+
+/**
+ * Store one provider's own key/model without making it the active provider.
+ * The settings dialog edits several providers in one sitting; `saveAIConfig`
+ * can't do that because passing a provider there also switches to it.
+ */
+export async function saveProviderCredentials(
+	provider: string,
+	credentials: { apiKey?: string; model?: string; baseUrl?: string },
+): Promise<{ success: boolean; error?: string }> {
+	if (!(PROVIDER_IDS as readonly string[]).includes(provider)) {
+		return { success: false, error: `Unknown provider: ${provider}` };
+	}
+
+	const current = await loadSettings();
+	const updates: Record<string, unknown> = {};
+
+	if (credentials.apiKey !== undefined) {
+		const apiKey = credentials.apiKey.trim();
+		updates[`aiApiKey_${provider}`] = apiKey;
+		// Keep the legacy single-key field in step for the active provider, so
+		// anything still reading it sees the same key.
+		if (current.aiProvider === provider) updates.aiApiKey = apiKey;
+	}
+
+	if (credentials.model !== undefined) {
+		const model = credentials.model.trim();
+		updates[`aiModel_${provider}`] = model;
+		if (current.aiProvider === provider) updates.aiModel = model;
+	}
+
+	if (credentials.baseUrl !== undefined) {
+		updates[`aiBaseUrl_${provider}`] = credentials.baseUrl.trim();
+	}
+
+	if (Object.keys(updates).length > 0) {
+		await saveSettings(updates as Partial<import("../settings").StudioSettings>);
+	}
+	return { success: true };
 }
 
 // ── Provider endpoints ──
@@ -101,7 +174,41 @@ const PROVIDER_ENDPOINTS: Record<string, string> = {
 	// Moonshot's Kimi API is fully OpenAI-compatible — same /chat/completions
 	// shape, Bearer token auth, supports kimi-k2.6 + the moonshot-v1 family.
 	kimi: "https://api.moonshot.ai/v1/chat/completions",
+	deepseek: "https://api.deepseek.com/v1/chat/completions",
+	// Z.ai serves the international GLM endpoint; the China platform is
+	// https://open.bigmodel.cn/api/paas/v4/chat/completions — same payload, so
+	// users there just override the base URL.
+	glm: "https://api.z.ai/api/paas/v4/chat/completions",
+	// Alibaba Model Studio (DashScope) in OpenAI-compatible mode, Singapore
+	// region. Accounts with a workspace domain override the base URL.
+	qwen: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
 };
+
+/**
+ * Resolve the endpoint for an OpenAI-compatible provider, honouring a
+ * user-supplied base URL. Docs hand out a *base* ("…/compatible-mode/v1"), so a
+ * URL that doesn't already name the route gets `/chat/completions` appended.
+ * Anything that isn't a plain http(s) URL is ignored rather than trusted.
+ */
+export function resolveEndpoint(provider: AIProvider, baseUrl?: string): string | undefined {
+	const fallback = PROVIDER_ENDPOINTS[provider];
+	const trimmed = baseUrl?.trim();
+	if (!trimmed) return fallback;
+
+	let parsed: URL;
+	try {
+		parsed = new URL(trimmed);
+	} catch {
+		return fallback;
+	}
+	if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return fallback;
+
+	const path = parsed.pathname.replace(/\/+$/, "");
+	if (path.endsWith("/chat/completions") || path.endsWith("/messages")) {
+		return `${parsed.origin}${path}`;
+	}
+	return `${parsed.origin}${path}/chat/completions`;
+}
 
 /**
  * Parse the hostname from an endpoint URL. Returns "" if the URL is
@@ -169,6 +276,23 @@ function getMaxOutputTokens(endpoint: string, model: string): number {
 		return 32_768;
 	}
 
+	// DeepSeek V4 (flash and pro) carries a 1M context and long outputs.
+	if (host === "api.deepseek.com") {
+		return 32_768;
+	}
+
+	// GLM 4.7 / 5.x accept long outputs; 32k is comfortably inside every tier.
+	if (host === "api.z.ai" || host === "open.bigmodel.cn") {
+		return 32_768;
+	}
+
+	// Alibaba Model Studio rejects (rather than clamps) an over-large
+	// max_tokens, and the ceiling differs per Qwen tier — stay at the value
+	// every current tier accepts.
+	if (host.endsWith("aliyuncs.com")) {
+		return 16_384;
+	}
+
 	// Safe default
 	return 32_768;
 }
@@ -180,6 +304,9 @@ const DEFAULT_MODELS: Record<string, string> = {
 	groq: "llama-3.3-70b-versatile",
 	minimax: "MiniMax-M2.7",
 	kimi: "kimi-k2.6",
+	deepseek: "deepseek-flash",
+	glm: "glm-4.7",
+	qwen: "qwen3.7-plus",
 };
 
 /** Check if a model name belongs to a given provider */
@@ -192,6 +319,9 @@ function isModelValidForProvider(model: string, provider: string): boolean {
 		// Kimi covers two families: kimi-* (K2 series) and moonshot-v1-*
 		// (legacy generation, kept for users who want shorter context).
 		kimi: ["kimi-", "moonshot-"],
+		deepseek: ["deepseek"],
+		glm: ["glm"],
+		qwen: ["qwen", "qwq"],
 		ollama: ["llama", "mistral", "phi", "gemma", "qwen", "deepseek"],
 	};
 	const providerPrefixes = prefixes[provider] ?? [];
@@ -629,6 +759,9 @@ const PROVIDER_CONCURRENCY: Record<AIProvider, number> = {
 	groq: 3,
 	minimax: 3,
 	kimi: 3,
+	deepseek: 3,
+	glm: 3,
+	qwen: 3,
 	ollama: Infinity, // local — no rate limits
 };
 
@@ -688,8 +821,9 @@ async function callProvider(
 			return anthropicChat(prompt, config.apiKey, model, systemPrompt);
 		}
 
-		// OpenAI, Groq, MiniMax all use OpenAI-compatible chat completions API
-		const endpoint = PROVIDER_ENDPOINTS[provider];
+		// OpenAI, Groq, MiniMax, Kimi, DeepSeek, GLM and Qwen all speak the
+		// OpenAI chat-completions dialect, on whichever host is configured.
+		const endpoint = resolveEndpoint(provider, config.baseUrl);
 		if (!endpoint) throw new Error(`Unknown provider: ${provider}`);
 		if (!config.apiKey) throw new Error(`${provider} API key not configured`);
 		return openaiCompatibleChat(prompt, config.apiKey, model, endpoint, systemPrompt);
@@ -711,20 +845,29 @@ async function isOllamaAvailable(ollamaUrl: string): Promise<boolean> {
 
 export async function checkAvailability(): Promise<AIAvailability> {
 	const config = await loadAIConfig();
+	const settings = await loadSettings();
+	const { keys } = await getAllProviderKeys();
 	const ollamaUrl = config.ollamaUrl ?? "http://localhost:11434";
 	const ollamaUp = await isOllamaAvailable(ollamaUrl);
 
-	const providers: AIAvailability["providers"] = [
-		{ id: "openai", available: Boolean(config.apiKey && config.provider === "openai") },
-		{ id: "anthropic", available: Boolean(config.apiKey && config.provider === "anthropic") },
-		{ id: "groq", available: Boolean(config.apiKey && config.provider === "groq") },
-		{ id: "minimax", available: Boolean(config.apiKey && config.provider === "minimax") },
-		{
-			id: "ollama",
-			available: ollamaUp,
-			reason: ollamaUp ? undefined : "Ollama not detected at localhost:11434",
-		},
-	];
+	// A cloud provider counts as available the moment the user has saved a key
+	// for it — not only while it happens to be the selected one — so Settings
+	// can show which providers are ready to switch to.
+	const hasKey = (id: string) =>
+		Boolean(keys[id] ?? (settings.aiProvider === id ? settings.aiApiKey : undefined));
+
+	const providers: AIAvailability["providers"] = PROVIDER_IDS.filter((id) => id !== "ollama").map(
+		(id) => ({
+			id,
+			available: hasKey(id),
+			reason: hasKey(id) ? undefined : "No API key saved — add your own key in AI Settings",
+		}),
+	);
+	providers.push({
+		id: "ollama",
+		available: ollamaUp,
+		reason: ollamaUp ? undefined : `Ollama not detected at ${ollamaUrl}`,
+	});
 
 	// Active provider is whatever is configured + available
 	let activeProvider: AIProvider | null = null;

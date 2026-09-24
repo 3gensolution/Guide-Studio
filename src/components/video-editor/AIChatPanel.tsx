@@ -5,28 +5,22 @@
  * switch panels, export, …) by emitting a small JSON tool-call that this panel
  * parses and dispatches to the real editor handlers passed in via `editTools`.
  *
- * Model routing: the request asks the studio backend for the OpenRouter Qwen 3
- * small model (EDIT_TOOLS_MODEL) — a compact model dedicated to edit-tool
- * intent. Whether that model is actually used is decided server-side; the studio
- * `/studio/ai/chat/completion` endpoint must honor the `model` param and route
- * it to OpenRouter. If it doesn't, chat still works via the backend default.
+ * Model routing: the chat runs on whatever provider and model the user set up
+ * in AI Settings, with their own API key (or a local Ollama). Nothing here
+ * talks to a Guide Studio server — `aiService.chatCompletion` goes over IPC to
+ * the local AI service, which calls the provider directly.
  *
  * The tool protocol is prompt-based (JSON in the text response) rather than
- * native function-calling, because the chat endpoint returns plain text
- * (`{ content }`) — this keeps everything working over the existing route.
+ * native function-calling, because the local chat call returns plain text
+ * (`{ content }`) — this keeps every provider on the same path.
  */
-import { Bot, CornerDownLeft, Loader2, User, Wrench } from "lucide-react";
+import { Bot, CornerDownLeft, Key, Loader2, User, Wrench } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { AISettingsButton } from "@/components/ui/AISettingsDialog";
 import { useAIPreflight } from "@/hooks/useAIPreflight";
+import { openAISettings } from "@/lib/ai/aiSettingsBus";
 import { aiService, type ChatMessage } from "@/lib/api/ai";
-
-/** OpenRouter slug for the small Gemma model dedicated to edit-tool chat.
- *  Any "vendor/model" id makes the studio backend route to OpenRouter (bare ids
- *  stay on DeepSeek), so this keeps AI Chat on Gemma while the other AI features
- *  use the backend default. Adjust to the exact slug your OpenRouter account
- *  exposes; matches the backend STUDIO_CHAT_MODEL default. */
-export const EDIT_TOOLS_MODEL = "google/gemma-4-26b-a4b-it";
 
 /** A single editor action the assistant is allowed to invoke. */
 export interface EditTool {
@@ -125,8 +119,35 @@ export function AIChatPanel({ editTools = [] }: { editTools?: EditTool[] }) {
 	const [messages, setMessages] = useState<DisplayMessage[]>([]);
 	const [input, setInput] = useState("");
 	const [isSending, setIsSending] = useState(false);
+	// Which provider the chat will use, so the panel can say "no key yet"
+	// before the user types a message into a void.
+	const [activeProvider, setActiveProvider] = useState<string | null | undefined>(undefined);
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const inputRef = useRef<HTMLTextAreaElement>(null);
+
+	// Re-check on mount and whenever the window regains focus — the settings
+	// dialog may have added a key in between.
+	useEffect(() => {
+		let cancelled = false;
+		const check = async () => {
+			if (!window.electronAPI?.aiCheckAvailability) {
+				if (!cancelled) setActiveProvider(null);
+				return;
+			}
+			try {
+				const availability = await window.electronAPI.aiCheckAvailability();
+				if (!cancelled) setActiveProvider(availability?.activeProvider ?? null);
+			} catch {
+				if (!cancelled) setActiveProvider(null);
+			}
+		};
+		void check();
+		window.addEventListener("focus", check);
+		return () => {
+			cancelled = true;
+			window.removeEventListener("focus", check);
+		};
+	}, []);
 
 	const systemPrompt = useMemo(() => buildSystemPrompt(editTools), [editTools]);
 	const toolByName = useMemo(() => new Map(editTools.map((t) => [t.name, t])), [editTools]);
@@ -154,16 +175,12 @@ export function AIChatPanel({ editTools = [] }: { editTools?: EditTool[] }) {
 				.filter((m): m is { role: "user" | "assistant"; content: string } => m.role !== "tool")
 				.map((m) => ({ role: m.role, content: m.content }));
 
-			const payload = { messages: [systemPrompt, ...convo], temperature: 0.2 };
-			// Prefer the small edit-tools model. The studio backend currently returns
-			// 502 "Chat service error" whenever an explicit model is routed to
-			// OpenRouter, so fall back to the backend default (which works) to keep chat
-			// usable. Once the backend's model routing is fixed this automatically
-			// starts using EDIT_TOOLS_MODEL with no client change.
-			let result = await aiService.chatCompletion({ ...payload, model: EDIT_TOOLS_MODEL });
-			if (!result.success) {
-				result = await aiService.chatCompletion(payload);
-			}
+			// The model comes from AI Settings (the user's provider + key), so the
+			// request carries no model of its own.
+			const result = await aiService.chatCompletion({
+				messages: [systemPrompt, ...convo],
+				temperature: 0.2,
+			});
 
 			if (!result.success) {
 				toast.error("AI chat failed", { description: result.error });
@@ -240,6 +257,9 @@ export function AIChatPanel({ editTools = [] }: { editTools?: EditTool[] }) {
 						Clear
 					</button>
 				)}
+				<span className={messages.length > 0 ? "" : "ml-auto"}>
+					<AISettingsButton size={13} />
+				</span>
 			</div>
 
 			{/* Messages */}
@@ -249,11 +269,30 @@ export function AIChatPanel({ editTools = [] }: { editTools?: EditTool[] }) {
 						<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#6E6BFF]/10 border border-[#6E6BFF]/30">
 							<Bot size={22} className="text-[#6E6BFF]" />
 						</div>
-						<div className="text-sm font-medium text-white/90">Ask the AI to edit for you</div>
-						<p className="max-w-[240px] text-xs leading-relaxed text-white/50">
-							Try "add captions", "polish this recording", or "open the background panel". The
-							assistant runs the tools for you.
-						</p>
+						<div className="text-sm font-medium text-white/90">
+							{activeProvider === null ? "Connect your AI key" : "Ask the AI to edit for you"}
+						</div>
+						{activeProvider === null ? (
+							<>
+								<p className="max-w-[240px] text-xs leading-relaxed text-white/50">
+									Chat runs on your own provider — OpenAI, Anthropic, Groq, MiniMax, Kimi, or a
+									local Ollama. Add a key once and every AI feature uses it.
+								</p>
+								<button
+									type="button"
+									onClick={() => openAISettings("chat")}
+									className="inline-flex items-center gap-1.5 rounded-lg bg-[#6E6BFF] px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-[#6E6BFF]/90"
+								>
+									<Key size={12} />
+									Add your API key
+								</button>
+							</>
+						) : (
+							<p className="max-w-[240px] text-xs leading-relaxed text-white/50">
+								Try "add captions", "polish this recording", or "open the background panel". The
+								assistant runs the tools for you.
+							</p>
+						)}
 					</div>
 				) : (
 					messages.map((m, i) => {
