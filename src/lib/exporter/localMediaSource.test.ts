@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { resolveMediaElementSource } from "./localMediaSource";
+import {
+	resolveMediaElementSource,
+	resolveMediaResourceUrl,
+	toStudioMediaUrl,
+} from "./localMediaSource";
 
 describe("resolveMediaElementSource", () => {
 	beforeEach(() => {
@@ -52,5 +56,20 @@ describe("resolveMediaElementSource", () => {
 
 		expect(result.src).toBe("https://example.com/video.mp4");
 		expect(readLocalFile).not.toHaveBeenCalled();
+	});
+});
+
+describe("resolveMediaResourceUrl", () => {
+	beforeEach(() => {
+		Object.assign(globalThis, { window: { electronAPI: { readLocalFile: vi.fn() } } });
+	});
+
+	it("serves local files through the range-capable studio:// protocol inside Electron", async () => {
+		// file:// ignores Range, so the export demuxer would re-read the whole
+		// recording on every small read.
+		const url = await resolveMediaResourceUrl("file:///Users/me/rec%20one.mp4");
+
+		expect(url).toBe(toStudioMediaUrl("/Users/me/rec one.mp4"));
+		expect(decodeURIComponent(url.replace("studio://file/", ""))).toBe("/Users/me/rec one.mp4");
 	});
 });

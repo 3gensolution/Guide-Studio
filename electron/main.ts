@@ -984,8 +984,9 @@ app.whenReady().then(async () => {
 	protocol.handle("studio", async (request) => {
 		// studio://file/C:/path/to/file.webm -> C:/path/to/file.webm
 		const rawUrl = request.url;
+		// No per-request logging: the export demuxer reads the source through
+		// here in small range requests, thousands per export.
 		const filePath = decodeURIComponent(rawUrl.replace("studio://file/", "").replace(/#.*$/, ""));
-		console.log("[studio://] request.url:", rawUrl, "-> filePath:", filePath);
 
 		const mimeFor = (p: string): string => {
 			const ext = path.extname(p).toLowerCase();
@@ -1026,11 +1027,27 @@ app.whenReady().then(async () => {
 			const mimeType = mimeFor(filePath);
 			const rangeHeader = request.headers.get("range");
 
+			// The export demuxer sizes the file with a HEAD request before its
+			// range reads; answer from stat instead of reading the whole file.
+			if (request.method === "HEAD") {
+				return new Response(null, {
+					status: 200,
+					headers: {
+						"Content-Type": mimeType,
+						"Content-Length": String(fileSize),
+						"Accept-Ranges": "bytes",
+						"Cache-Control": "no-cache",
+					},
+				});
+			}
+
 			if (rangeHeader) {
 				const match = /bytes=(\d*)-(\d*)/.exec(rangeHeader);
 				if (match) {
 					const start = match[1] ? parseInt(match[1], 10) : 0;
-					const end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
+					// Clamp like any HTTP server: readers (web-demuxer) routinely ask for
+					// a full buffer past EOF on the last read and expect a short 206.
+					const end = Math.min(match[2] ? parseInt(match[2], 10) : fileSize - 1, fileSize - 1);
 					if (
 						Number.isNaN(start) ||
 						Number.isNaN(end) ||

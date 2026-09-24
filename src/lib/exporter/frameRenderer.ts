@@ -2488,6 +2488,17 @@ export class FrameRenderer {
 		this.webcamDecodedFrame = null;
 	}
 
+	/**
+	 * Submits this frame's pending canvas GPU work before it is captured.
+	 * Chromium otherwise defers the flush to the page's next animation frame,
+	 * which paces the export to the editor window's paint rate and stalls it
+	 * almost entirely when the window isn't painting (hidden, covered, or the
+	 * user switched apps). A 1px readback is the only portable way to force it.
+	 */
+	flushForCapture(): void {
+		this.compositeCtx?.getImageData(0, 0, 1, 1);
+	}
+
 	getCanvas(): HTMLCanvasElement {
 		if (!this.compositeCanvas) {
 			throw new Error("Renderer not initialized");

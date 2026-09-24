@@ -47,8 +47,43 @@ import type {
 	ExportResult,
 } from "./types";
 
-const DEFAULT_MAX_ENCODE_QUEUE = 240;
+// Every queued VideoFrame pins a full-resolution RGBA copy of the canvas, so a
+// frame-count cap alone is dangerous: 240 frames at 2880x1800 is ~5 GB of GPU
+// memory. Hardware encoders only need a few frames in flight, so bound by memory.
+const ENCODE_QUEUE_MEMORY_BUDGET_BYTES = 256 * 1024 * 1024;
+const MIN_ENCODE_QUEUE = 4;
+const MAX_ENCODE_QUEUE = 32;
+
+export function getDefaultMaxEncodeQueue(width: number, height: number): number {
+	const frameBytes = Math.max(1, width * height * 4);
+	return Math.min(
+		MAX_ENCODE_QUEUE,
+		Math.max(MIN_ENCODE_QUEUE, Math.floor(ENCODE_QUEUE_MEMORY_BUDGET_BYTES / frameBytes)),
+	);
+}
+
+// Fallback wake-up in case a runtime never fires "dequeue".
+const ENCODER_DEQUEUE_FALLBACK_MS = 20;
+
+/**
+ * Resolves when the encoder frees a queue slot. Event-driven rather than a
+ * setTimeout poll, so the render loop resumes the moment the encoder is ready
+ * instead of whenever the (clamped, jittery) timer fires.
+ */
+function waitForEncoderDequeue(encoder: VideoEncoder): Promise<void> {
+	return new Promise((resolve) => {
+		const done = () => {
+			clearTimeout(timer);
+			encoder.removeEventListener("dequeue", done);
+			resolve();
+		};
+		const timer = setTimeout(done, ENCODER_DEQUEUE_FALLBACK_MS);
+		encoder.addEventListener("dequeue", done);
+	});
+}
+
 const PROGRESS_SAMPLE_WINDOW_MS = 1_000;
+const PROGRESS_EMIT_INTERVAL_MS = 100;
 
 interface VideoExporterConfig extends ExportConfig {
 	videoUrl: string;
@@ -165,6 +200,7 @@ export class VideoExporter {
 	private exportStartTimeMs = 0;
 	private progressSampleStartTimeMs = 0;
 	private progressSampleStartFrame = 0;
+	private lastProgressEmitMs = Number.NEGATIVE_INFINITY;
 	private encoderError: Error | null = null;
 	private nativeExportSessionId: string | null = null;
 	private nativeH264Encoder: VideoEncoder | null = null;
@@ -221,6 +257,7 @@ export class VideoExporter {
 			this.exportStartTimeMs = this.getNowMs();
 			this.progressSampleStartTimeMs = this.exportStartTimeMs;
 			this.progressSampleStartFrame = 0;
+			this.lastProgressEmitMs = Number.NEGATIVE_INFINITY;
 			this.nextForcedKeyframeIndex = 0;
 
 			// Initialize streaming decoder and load video metadata
@@ -383,11 +420,10 @@ export class VideoExporter {
 					// Apply backpressure
 					while (
 						this.encoder &&
-						this.encoder.encodeQueueSize >=
-							Math.max(1, Math.floor(this.config.maxEncodeQueue ?? DEFAULT_MAX_ENCODE_QUEUE)) &&
+						this.encoder.encodeQueueSize >= this.getMaxEncodeQueue() &&
 						!this.cancelled
 					) {
-						await new Promise((resolve) => setTimeout(resolve, 5));
+						await waitForEncoderDequeue(this.encoder);
 					}
 
 					if (this.encoder && this.encoder.state === "configured") {
@@ -897,16 +933,14 @@ export class VideoExporter {
 		}
 
 		// Apply backpressure: don't queue too far ahead of FFmpeg's stdin pipe
-		while (
-			this.nativeH264Encoder.encodeQueueSize >=
-			Math.max(1, Math.floor(this.config.maxEncodeQueue ?? DEFAULT_MAX_ENCODE_QUEUE))
-		) {
-			await new Promise<void>((r) => setTimeout(r, 2));
+		while (this.nativeH264Encoder.encodeQueueSize >= this.getMaxEncodeQueue()) {
+			await waitForEncoderDequeue(this.nativeH264Encoder);
 			if (this.cancelled) return;
 			if (this.nativeEncoderError) throw this.nativeEncoderError;
 			if (this.nativeWriteError) throw this.nativeWriteError;
 		}
 
+		this.renderer!.flushForCapture();
 		const canvas = this.renderer!.getCanvas();
 		// @ts-expect-error - colorSpace not in TypeScript definitions but works at runtime
 		const frame = new VideoFrame(canvas, {
@@ -1145,6 +1179,7 @@ export class VideoExporter {
 	}
 
 	private async encodeRenderedFrame(timestamp: number, frameDuration: number, frameIndex: number) {
+		this.renderer!.flushForCapture();
 		const canvas = this.renderer!.getCanvas();
 
 		// @ts-expect-error - colorSpace not in TypeScript definitions but works at runtime
@@ -1161,11 +1196,10 @@ export class VideoExporter {
 
 		while (
 			this.encoder &&
-			this.encoder.encodeQueueSize >=
-				Math.max(1, Math.floor(this.config.maxEncodeQueue ?? DEFAULT_MAX_ENCODE_QUEUE)) &&
+			this.encoder.encodeQueueSize >= this.getMaxEncodeQueue() &&
 			!this.cancelled
 		) {
-			await new Promise((resolve) => setTimeout(resolve, 5));
+			await waitForEncoderDequeue(this.encoder);
 		}
 
 		if (this.encoder && this.encoder.state === "configured") {
@@ -1261,6 +1295,18 @@ export class VideoExporter {
 			this.progressSampleStartFrame = currentFrame;
 		}
 
+		// Each progress callback re-renders the whole editor; per-frame updates
+		// steal main-thread time from the render loop.
+		const isFinalFrame = phase === "extracting" && currentFrame >= totalFrames;
+		if (
+			phase === "extracting" &&
+			!isFinalFrame &&
+			nowMs - this.lastProgressEmitMs < PROGRESS_EMIT_INTERVAL_MS
+		) {
+			return;
+		}
+		this.lastProgressEmitMs = nowMs;
+
 		if (this.config.onProgress) {
 			this.config.onProgress({
 				currentFrame,
@@ -1274,6 +1320,14 @@ export class VideoExporter {
 					typeof audioProgress === "number" ? Math.max(0, Math.min(audioProgress, 1)) : undefined,
 			});
 		}
+	}
+
+	private getMaxEncodeQueue(): number {
+		const configured = this.config.maxEncodeQueue;
+		if (typeof configured === "number" && Number.isFinite(configured)) {
+			return Math.max(1, Math.floor(configured));
+		}
+		return getDefaultMaxEncodeQueue(this.config.width, this.config.height);
 	}
 
 	private getNowMs(): number {

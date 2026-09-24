@@ -109,11 +109,23 @@ export async function resolveMediaResourceUrl(resource: string): Promise<string>
 				return result.url;
 			}
 		} catch {
-			// Fall through to a file URL when the local media server is unavailable.
+			// Fall through when the local media server is unavailable.
 		}
 	}
 
+	// Inside Electron, serve through the studio:// protocol, which honours
+	// Range requests. file:// ignores Range, so web-demuxer's per-read range
+	// XHRs would each load the whole recording (quadratic in file size).
+	if (typeof window !== "undefined" && window.electronAPI) {
+		return toStudioMediaUrl(localFilePath);
+	}
+
 	return /^file:\/\//i.test(resource) ? resource : toFileUrl(localFilePath);
+}
+
+/** studio://file/<encoded path> — decoded back to the path by the main process handler. */
+export function toStudioMediaUrl(localFilePath: string): string {
+	return `studio://file/${encodeURIComponent(localFilePath)}`;
 }
 
 export async function createReadableMediaResourceFile(resource: string): Promise<File> {

@@ -82,7 +82,7 @@ export function ExportDialog({
 	const dialog = (
 		<>
 			<div
-				className="fixed inset-0 bg-black/50 backdrop-blur-[2px] z-[9998] animate-in fade-in duration-150"
+				className="fixed inset-0 bg-black/60 z-[9998] animate-in fade-in duration-150"
 				onClick={isExporting ? undefined : onClose}
 			/>
 
