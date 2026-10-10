@@ -8,6 +8,9 @@
  *
  * The main process keeps a key *per provider* (`aiApiKey_<provider>`), so the
  * user can fill in several and switch between them without losing any.
+ *
+ * Claude Code and Codex need no key at all: requests run through the CLI the
+ * user already installed and signed into, on their own subscription.
  */
 
 import {
@@ -20,13 +23,14 @@ import {
 	Music,
 	Settings,
 	Sparkles,
+	Terminal,
 	TriangleAlert,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { type AISettingsTab, onOpenAISettings, openAISettings } from "@/lib/ai/aiSettingsBus";
-import { AI_PROVIDERS, type AIProvider } from "@/lib/ai/types";
+import { AI_PROVIDERS, type AIProvider, LOCAL_AGENT_PROVIDERS } from "@/lib/ai/types";
 
 /** Where each provider hands out keys, plus what a key looks like. */
 const PROVIDER_HELP: Record<AIProvider, { keyUrl: string; placeholder: string }> = {
@@ -48,6 +52,14 @@ const PROVIDER_HELP: Record<AIProvider, { keyUrl: string; placeholder: string }>
 		placeholder: "sk-…",
 	},
 	ollama: { keyUrl: "https://ollama.com/download", placeholder: "" },
+	"claude-code": { keyUrl: "https://docs.claude.com/en/docs/claude-code/setup", placeholder: "" },
+	codex: { keyUrl: "https://github.com/openai/codex", placeholder: "" },
+};
+
+/** How to get each local agent CLI ready — install once, sign in once. */
+const AGENT_SETUP: Partial<Record<AIProvider, { install: string; signIn: string }>> = {
+	"claude-code": { install: "npm install -g @anthropic-ai/claude-code", signIn: "claude" },
+	codex: { install: "npm install -g @openai/codex", signIn: "codex" },
 };
 
 /** Shown under the endpoint override so the field is useful without the docs. */
@@ -145,6 +157,10 @@ export function AISettingsDialog({
 	const [saving, setSaving] = useState(false);
 	const [testing, setTesting] = useState(false);
 	const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+	// Install status of the local agent CLIs, from the main process's detection.
+	const [agentStatus, setAgentStatus] = useState<
+		Partial<Record<AIProvider, { available: boolean; reason?: string }>>
+	>({});
 
 	useEffect(() => {
 		setTab(initialTab);
@@ -159,12 +175,20 @@ export function AISettingsDialog({
 		setTestResult(null);
 		void (async () => {
 			try {
-				const [config, all, elevenLabs] = await Promise.all([
+				const [config, all, elevenLabs, availability] = await Promise.all([
 					window.electronAPI?.aiGetConfig?.(),
 					window.electronAPI?.aiGetAllKeys?.(),
 					window.electronAPI?.aiGetServiceKey?.("elevenlabs"),
+					window.electronAPI?.aiCheckAvailability?.().catch(() => undefined),
 				]);
 				if (cancelled) return;
+				const status: Partial<Record<AIProvider, { available: boolean; reason?: string }>> = {};
+				for (const entry of availability?.providers ?? []) {
+					if (LOCAL_AGENT_PROVIDERS.includes(entry.id)) {
+						status[entry.id] = { available: entry.available, reason: entry.reason };
+					}
+				}
+				setAgentStatus(status);
 				if (config?.provider) setProvider(config.provider);
 				if (config?.ollamaUrl) setOllamaUrl(config.ollamaUrl);
 				setKeys(all?.keys ?? {});
@@ -189,6 +213,7 @@ export function AISettingsDialog({
 	const info = AI_PROVIDERS.find((p) => p.id === provider) ?? AI_PROVIDERS[0];
 	const currentKey = keys[provider] ?? "";
 	const currentModel = models[provider] ?? "";
+	const agentSetup = AGENT_SETUP[provider];
 
 	/** Write everything to the main process. Returns false when it failed. */
 	const persist = useCallback(async (): Promise<boolean> => {
@@ -236,10 +261,12 @@ export function AISettingsDialog({
 		setSaving(false);
 		if (!ok) return;
 		toast.success(`AI is set up with ${info.name}`, {
-			description: "Chat and every other AI feature now run on your key.",
+			description: agentSetup
+				? `Chat and every other AI feature now run through your ${info.name} sign-in.`
+				: "Chat and every other AI feature now run on your key.",
 		});
 		onOpenChange(false);
-	}, [persist, info.name, onOpenChange]);
+	}, [persist, info.name, agentSetup, onOpenChange]);
 
 	// Test uses the same path a real request takes: save, then send one tiny
 	// prompt to the selected provider with its own key.
@@ -335,7 +362,12 @@ export function AISettingsDialog({
 								<span className="text-[11px] font-medium text-white/70">Provider</span>
 								<div className="grid grid-cols-3 gap-1.5">
 									{AI_PROVIDERS.map((p) => {
-										const configured = p.id === "ollama" ? true : Boolean(keys[p.id]?.trim());
+										const configured =
+											p.id === "ollama"
+												? true
+												: AGENT_SETUP[p.id]
+													? Boolean(agentStatus[p.id]?.available)
+													: Boolean(keys[p.id]?.trim());
 										return (
 											<button
 												key={p.id}
@@ -363,8 +395,39 @@ export function AISettingsDialog({
 								<p className="text-[10px] leading-relaxed text-white/35">{info.description}</p>
 							</div>
 
-							{/* Key (cloud providers) or endpoint (Ollama) */}
-							{info.requiresApiKey ? (
+							{/* Key (cloud providers), CLI setup (Claude Code / Codex) or endpoint (Ollama) */}
+							{agentSetup ? (
+								<div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
+									<div className="flex items-center gap-2">
+										<Terminal size={12} className="flex-shrink-0 text-white/40" />
+										<span className="text-[11px] font-medium text-white/70">
+											{agentStatus[provider]?.available
+												? `${info.name} found on this machine`
+												: (agentStatus[provider]?.reason ?? `${info.name} not detected`)}
+										</span>
+										<span
+											className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${
+												agentStatus[provider]?.available ? "bg-emerald-400" : "bg-amber-400"
+											}`}
+										/>
+										<button
+											type="button"
+											onClick={() => openLink(PROVIDER_HELP[provider].keyUrl)}
+											className="ml-auto inline-flex items-center gap-1 text-[10px] text-[#6E6BFF] hover:text-[#8b89ff] transition-colors"
+										>
+											Setup guide
+											<ExternalLink size={10} />
+										</button>
+									</div>
+									<p className="text-[10px] leading-relaxed text-white/40">
+										No API key — requests run through your own install and are billed to your{" "}
+										{provider === "codex" ? "ChatGPT" : "Claude"} plan. Install with{" "}
+										<code className="text-white/60">{agentSetup.install}</code>, then run{" "}
+										<code className="text-white/60">{agentSetup.signIn}</code> once in a terminal to
+										sign in.
+									</p>
+								</div>
+							) : info.requiresApiKey ? (
 								<KeyInput
 									label={`${info.name} API key`}
 									value={currentKey}
@@ -408,7 +471,7 @@ export function AISettingsDialog({
 									value={currentModel}
 									onChange={(e) => setModels((prev) => ({ ...prev, [provider]: e.target.value }))}
 									spellCheck={false}
-									placeholder={info.defaultModel}
+									placeholder={info.defaultModel || "CLI default"}
 									className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/90 placeholder:text-white/25 focus:border-[#6E6BFF]/50 focus:outline-none"
 								/>
 								<datalist id={`ai-models-${provider}`}>
@@ -417,7 +480,9 @@ export function AISettingsDialog({
 									))}
 								</datalist>
 								<p className="text-[10px] leading-relaxed text-white/35">
-									Leave empty for {info.defaultModel}. Any model id this provider accepts works.
+									{provider === "codex"
+										? "Leave empty to use the model Codex picks for your plan (set in ~/.codex/config.toml). A model your plan doesn't carry fails every request."
+										: `Leave empty for ${info.defaultModel}. Any model id this provider accepts works.`}
 								</p>
 							</div>
 

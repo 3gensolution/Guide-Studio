@@ -16,7 +16,9 @@ export interface StudioSettings {
 		| "kimi"
 		| "deepseek"
 		| "glm"
-		| "qwen";
+		| "qwen"
+		| "claude-code"
+		| "codex";
 	aiApiKey?: string; // Legacy single key (still read as fallback)
 	aiModel?: string;
 	aiOllamaUrl?: string;
@@ -56,6 +58,8 @@ export interface StudioSettings {
 	aiModel_glm?: string;
 	aiModel_qwen?: string;
 	aiModel_ollama?: string;
+	"aiModel_claude-code"?: string;
+	aiModel_codex?: string;
 
 	// Optional per-provider endpoint override, for providers that speak the
 	// OpenAI dialect on more than one host: Z.ai's China domain, an Alibaba

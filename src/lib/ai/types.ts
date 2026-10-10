@@ -229,7 +229,13 @@ export type AIProvider =
 	| "kimi"
 	| "deepseek"
 	| "glm"
-	| "qwen";
+	| "qwen"
+	// The user's own coding-agent CLIs, on their own sign-in — no API key.
+	| "claude-code"
+	| "codex";
+
+/** Providers served by a local CLI rather than an HTTP API. */
+export const LOCAL_AGENT_PROVIDERS: readonly AIProvider[] = ["claude-code", "codex"];
 
 export interface AIServiceConfig {
 	provider: AIProvider;
@@ -374,6 +380,33 @@ export const AI_PROVIDERS: AIProviderInfo[] = [
 		models: ["qwen3.7-plus", "qwen3.8-max", "qwen3.8-flash", "qwen3-coder-plus"],
 		hasTTS: false,
 		supportsBaseUrl: true,
+	},
+	{
+		// Runs through the user's installed Claude Code CLI on their Claude
+		// subscription. The model is always pinned: old Claude Code builds
+		// default to a retired id and 404 every request.
+		id: "claude-code",
+		name: "Claude Code",
+		description:
+			"Your installed Claude Code, on your Claude subscription. No API key — sign in once with `claude`.",
+		requiresApiKey: false,
+		defaultModel: "claude-sonnet-5",
+		models: ["claude-sonnet-5", "claude-opus-5", "claude-haiku-4-5-20251001"],
+		hasTTS: false,
+	},
+	{
+		// Runs through the user's installed Codex CLI on their ChatGPT sign-in.
+		// Empty model = Codex's own default, the only id guaranteed to match
+		// both the CLI version and the plan.
+		id: "codex",
+		name: "Codex",
+		description:
+			"Your installed Codex CLI, on your ChatGPT sign-in. No API key — sign in once with `codex`.",
+		requiresApiKey: false,
+		defaultModel: "",
+		// Suggestions only — which ids work depends on the CLI version and plan.
+		models: ["gpt-5.5"],
+		hasTTS: false,
 	},
 	{
 		id: "ollama",

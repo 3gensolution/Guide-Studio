@@ -1,6 +1,7 @@
 /**
  * AI Service — supports multiple LLM providers.
- * Ollama (local), OpenAI, Anthropic, Groq, MiniMax.
+ * Ollama (local), the user's own Claude Code / Codex CLI (local), and the
+ * API providers: OpenAI, Anthropic, Groq, MiniMax, Kimi, DeepSeek, GLM, Qwen.
  */
 
 import dns from "node:dns";
@@ -11,6 +12,7 @@ import type {
 	AIServiceResult,
 } from "../../src/lib/ai/types";
 import { loadSettings, saveSettings } from "../settings";
+import { agentCliChat, detectAgentCached } from "./agentCliProvider";
 import { recordUsage } from "./tokenUsage";
 
 // Force IPv4 for all DNS lookups — prevents IPv6 socket errors with some API endpoints
@@ -122,7 +124,16 @@ const PROVIDER_IDS = [
 	"deepseek",
 	"glm",
 	"qwen",
+	"claude-code",
+	"codex",
 ] as const;
+
+/** Provider id → the agent CLI that serves it. Needs no key, only an install + sign-in. */
+const CLI_AGENTS = { "claude-code": "claude", codex: "codex" } as const;
+
+function cliAgentFor(provider: string): "claude" | "codex" | undefined {
+	return CLI_AGENTS[provider as keyof typeof CLI_AGENTS];
+}
 
 /**
  * Store one provider's own key/model without making it the active provider.
@@ -307,10 +318,15 @@ const DEFAULT_MODELS: Record<string, string> = {
 	deepseek: "deepseek-flash",
 	glm: "glm-4.7",
 	qwen: "qwen3.7-plus",
+	"claude-code": "claude-sonnet-5",
+	// Empty on purpose: Codex picks the model its sign-in allows.
+	codex: "",
 };
 
 /** Check if a model name belongs to a given provider */
 function isModelValidForProvider(model: string, provider: string): boolean {
+	// Codex ids follow the CLI version and the ChatGPT plan — trust what the user typed.
+	if (provider === "codex") return true;
 	const prefixes: Record<string, string[]> = {
 		openai: ["gpt-", "o1", "o3", "o4"],
 		anthropic: ["claude-"],
@@ -322,6 +338,7 @@ function isModelValidForProvider(model: string, provider: string): boolean {
 		deepseek: ["deepseek"],
 		glm: ["glm"],
 		qwen: ["qwen", "qwq"],
+		"claude-code": ["claude-", "opus", "sonnet", "haiku"],
 		ollama: ["llama", "mistral", "phi", "gemma", "qwen", "deepseek"],
 	};
 	const providerPrefixes = prefixes[provider] ?? [];
@@ -762,6 +779,9 @@ const PROVIDER_CONCURRENCY: Record<AIProvider, number> = {
 	deepseek: 3,
 	glm: 3,
 	qwen: 3,
+	// Each request spawns a whole CLI session on the user's subscription.
+	"claude-code": 2,
+	codex: 2,
 	ollama: Infinity, // local — no rate limits
 };
 
@@ -806,6 +826,17 @@ async function callProvider(
 	config: AIServiceConfig,
 	systemPrompt?: string,
 ): Promise<string> {
+	const cliAgent = cliAgentFor(provider);
+	if (cliAgent) {
+		return withConcurrencyLimit(provider, () =>
+			agentCliChat(cliAgent, {
+				prompt,
+				systemPrompt,
+				model: config.model || DEFAULT_MODELS[provider] || undefined,
+			}),
+		);
+	}
+
 	const model = config.model ?? DEFAULT_MODELS[provider] ?? "gpt-5.4-mini";
 
 	return withConcurrencyLimit(provider, async () => {
@@ -856,13 +887,32 @@ export async function checkAvailability(): Promise<AIAvailability> {
 	const hasKey = (id: string) =>
 		Boolean(keys[id] ?? (settings.aiProvider === id ? settings.aiApiKey : undefined));
 
-	const providers: AIAvailability["providers"] = PROVIDER_IDS.filter((id) => id !== "ollama").map(
-		(id) => ({
+	const providers: AIAvailability["providers"] = PROVIDER_IDS.filter(
+		(id) => id !== "ollama" && !cliAgentFor(id),
+	).map((id) => ({
+		id,
+		available: hasKey(id),
+		reason: hasKey(id) ? undefined : "No API key saved — add your own key in AI Settings",
+	}));
+
+	// Local agent CLIs: ready when installed and new enough. Sign-in can't be
+	// checked without a billed run, so a signed-out CLI surfaces on first use.
+	const cliStatus: Partial<Record<AIProvider, boolean>> = {};
+	for (const [id, agent] of Object.entries(CLI_AGENTS) as Array<[AIProvider, "claude" | "codex"]>) {
+		const install = await detectAgentCached(agent);
+		const ready = install.installed && !install.error;
+		cliStatus[id] = ready;
+		providers.push({
 			id,
-			available: hasKey(id),
-			reason: hasKey(id) ? undefined : "No API key saved — add your own key in AI Settings",
-		}),
-	);
+			available: ready,
+			reason: ready
+				? undefined
+				: install.installed
+					? install.error
+					: `${agent === "claude" ? "Claude Code" : "Codex"} is not installed on this machine`,
+		});
+	}
+
 	providers.push({
 		id: "ollama",
 		available: ollamaUp,
@@ -873,6 +923,8 @@ export async function checkAvailability(): Promise<AIAvailability> {
 	let activeProvider: AIProvider | null = null;
 	if (config.provider === "ollama" && ollamaUp) {
 		activeProvider = "ollama";
+	} else if (cliAgentFor(config.provider)) {
+		if (cliStatus[config.provider]) activeProvider = config.provider;
 	} else if (config.provider !== "ollama" && config.apiKey) {
 		activeProvider = config.provider;
 	}
@@ -892,7 +944,8 @@ const VISION_MODELS: Record<string, string> = {
  * Only OpenAI and Anthropic support multimodal vision.
  */
 export function supportsVision(provider: AIProvider): boolean {
-	return provider in VISION_MODELS;
+	// Both agent CLIs take images: Claude Code reads the file, Codex attaches it.
+	return provider in VISION_MODELS || Boolean(cliAgentFor(provider));
 }
 
 /**
@@ -1045,6 +1098,21 @@ export async function analyzeImage(
 			const model = VISION_MODELS.openai;
 			const text = await openaiVisionChat(prompt, imageBase64, config.apiKey, model, systemPrompt);
 			console.log(`[AI] OpenAI vision response length: ${text?.length ?? 0}`);
+			return { success: !!text, text: text || undefined };
+		}
+
+		const cliAgent = cliAgentFor(provider);
+		if (cliAgent) {
+			const mime = detectImageMime(imageBase64);
+			const text = await withConcurrencyLimit(provider, () =>
+				agentCliChat(cliAgent, {
+					prompt,
+					systemPrompt,
+					model: config.model || DEFAULT_MODELS[provider] || undefined,
+					imageBase64,
+					imageExt: mime.split("/")[1] === "jpeg" ? "jpg" : mime.split("/")[1],
+				}),
+			);
 			return { success: !!text, text: text || undefined };
 		}
 
