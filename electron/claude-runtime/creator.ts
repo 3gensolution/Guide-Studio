@@ -17,19 +17,43 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import type { MediaContextAsset } from "../../src/lib/ai/mediaContext";
 import type { HyperFrameFormat } from "../../src/lib/remotion/HyperFrameComposition";
+import type {
+	MotionBrandPalette,
+	MotionScene,
+} from "../../src/lib/remotion/MotionGraphicsComposition";
+import type { RenderCaptionLine } from "../../src/lib/remotion/RenderCaptionOverlay";
+import { defaultBrandPalette, extractBrandPaletteFromFile } from "../ai/brandPalette";
 import {
+	analyzeMediaContextAssets,
+	getMediaContextContactSheet,
+	getRegisteredMediaContextAsset,
+	stageMediaContextAssets,
+} from "../ai/mediaContextService";
+import {
+	createProResMaster,
 	renderHyperFrameDemo,
 	renderHyperFrameStills,
 	renderMotionDemo,
 	renderMotionStills,
 } from "../export/remotionExport";
+import { validateRenderedVideo } from "../export/renderValidation";
+import {
+	type MusicMuxBed,
+	muxNarrationAudio,
+	type NarrationMuxSegment,
+	type SfxMuxCue,
+} from "../ffmpeg";
 import { AGENTS, type AgentId } from "./agents";
-import { type ResolvedAsset, resolveAssetQueries } from "./assets";
+import { type ResolvedAsset, resolveAssetQueries, resolveGeneratedAssetQueries } from "./assets";
 import { runCodex } from "./codexSession";
+import { type CreativeSkillId, getCreativeSkill } from "./creativeSkills";
+import { writeCreatorInterchange } from "./creatorInterchange";
 import { detectAgent, notInstalledMessage } from "./detect";
 import type { ClaudeActivity } from "./events";
 import {
+	type MotionAssetSummary,
 	type MotionProject,
 	motionDurationSeconds,
 	motionSystemPrompt,
@@ -37,16 +61,74 @@ import {
 } from "./motionProject";
 import { readStoryboardFile, runClaude } from "./session";
 import {
+	applyShotDurationOverrides,
+	applyShotReviewUpdates,
+	areAllShotsApproved,
+	createPendingShotReviews,
+	evaluateShotCraft,
+	type ReviewableShot,
+	type ShotReview,
+	type ShotReviewDurationLimits,
+} from "./shotReview";
+import {
 	type HyperFrameStoryboard,
 	normalizeStoryboard,
 	parseStoryboardResponse,
 	storyboardDurationSeconds,
 	storyboardSystemPrompt,
 } from "./storyboard";
-import { buildPrompt, createWorkspace, removeWorkspace, type WorkspacePaths } from "./workspace";
+import {
+	buildBrief,
+	buildPrompt,
+	createWorkspace,
+	removeWorkspace,
+	type WorkspacePaths,
+	workspacePaths,
+} from "./workspace";
 
-/** How many frames get a preview still. Enough to judge, cheap enough to wait for. */
-const MAX_PREVIEW_STILLS = 6;
+/** Every renderable shot gets a still: approval without seeing the shot is not approval. */
+const MAX_PREVIEW_STILLS = 14;
+
+async function deriveBrandPalette(
+	stagedReferences: MediaContextAsset[],
+	resolvedAssets: ResolvedAsset[],
+): Promise<MotionBrandPalette> {
+	const sources = [
+		...stagedReferences
+			.filter((asset) => asset.kind === "image" && asset.role === "brand")
+			.map((asset) => ({ path: asset.previewPath, kind: asset.kind })),
+		// Source footage is the visual truth for a product story. It must outrank
+		// a fetched stock/generated image when choosing the art direction.
+		...stagedReferences
+			.filter((asset) => asset.kind === "video")
+			.map((asset) => ({ path: asset.previewPath, kind: asset.kind })),
+		...stagedReferences
+			.filter((asset) => asset.kind === "image" && asset.role !== "brand")
+			.map((asset) => ({ path: asset.previewPath, kind: asset.kind })),
+		...resolvedAssets.map((asset) => ({ path: asset.path, kind: "image" as const })),
+	].filter((source): source is { path: string; kind: "image" | "video" } => Boolean(source.path));
+
+	const seen = new Set<string>();
+	for (const source of sources) {
+		if (seen.has(source.path)) continue;
+		seen.add(source.path);
+		const palette = await extractBrandPaletteFromFile(source.path, source.kind);
+		if (palette) return palette;
+	}
+	return defaultBrandPalette();
+}
+
+async function ensureMotionBrandPalette(session: CreatorSession): Promise<MotionBrandPalette> {
+	if (!session.motion) return defaultBrandPalette();
+	if (session.motion.brandPalette) return session.motion.brandPalette;
+	const brandPalette = await deriveBrandPalette(
+		session.referenceAssets ?? [],
+		session.assets ?? [],
+	);
+	session.motion.brandPalette = brandPalette;
+	persistSessions();
+	return brandPalette;
+}
 
 export type CreatorStatus = "planning" | "planned" | "rendering" | "rendered" | "failed";
 
@@ -58,6 +140,29 @@ export type CreatorStatus = "planning" | "planned" | "rendering" | "rendered" | 
  *   whiteboard — every frame hand-written on a board by an animated hand
  */
 export type CreatorLook = "motion" | "cards" | "whiteboard";
+export type CreatorVisualSource = "stock" | "generated";
+
+function requestCallsForLogo(request: string): boolean {
+	return /\b(?:logo|wordmark|brand\s+mark|brand\s+identity)\b/i.test(request);
+}
+
+/**
+ * Pick a logo candidate only from user-supplied image references. The model
+ * may choose among these ids, but it can never cause a new filesystem path to
+ * be treated as a brand asset.
+ */
+function inferLogoReference(
+	assets: MediaContextAsset[],
+	request: string,
+): MediaContextAsset | undefined {
+	const images = assets.filter((asset) => asset.kind === "image");
+	if (!images.length || !requestCallsForLogo(request)) return undefined;
+	return (
+		images.find((asset) => asset.role === "brand") ??
+		images.find((asset) => /\b(?:logo|wordmark|brand[- ]?mark)\b/i.test(asset.label)) ??
+		(images.length === 1 ? images[0] : undefined)
+	);
+}
 
 /**
  * A whiteboard video is whiteboard frames and nothing else. Letting a title or
@@ -82,6 +187,9 @@ export interface CreatorSession {
 	targetSeconds: number;
 	model: string;
 	look: CreatorLook;
+	/** Creative story profile shared by all motion skills. */
+	creativeSkill?: CreativeSkillId;
+	visualSource: CreatorVisualSource;
 	status: CreatorStatus;
 	createdAt: number;
 	/** Set when look is "cards" or "whiteboard". */
@@ -90,13 +198,64 @@ export interface CreatorSession {
 	motion?: MotionProject;
 	/** Stock images fetched for the frames that asked for one. */
 	assets?: ResolvedAsset[];
+	/** User-supplied references staged into this session workspace. */
+	referenceAssets?: MediaContextAsset[];
 	/** What the validator had to correct in the agent's storyboard. */
 	warnings?: string[];
 	durationSeconds?: number;
 	previewPaths?: Array<{ frameIndex: number; path: string }>;
+	/** Explicit human decision for every renderable shot. */
+	shotReviews?: ShotReview[];
+	/** Advisory pacing and storytelling checks; never a substitute for human review. */
+	craftWarnings?: string[];
 	videoPath?: string;
+	masterPath?: string;
+	/** Editable companion files for timeline/interchange handoff. */
+	interchange?: { manifestPath: string; fcpxmlPath: string };
 	costUsd?: number;
 	error?: string;
+	/** Optional, validated finishing data staged inside this session workspace. */
+	finishing?: CreatorFinishing;
+}
+
+export interface CreatorFinishing {
+	narration?: {
+		segments: Array<{
+			id?: string;
+			text: string;
+			startMs: number;
+			endMs: number;
+			audioPath: string;
+		}>;
+		voiceId?: string;
+		language?: string;
+		fullAudioPath?: string;
+		captions?: RenderCaptionLine[];
+	};
+	musicPath?: string;
+	musicVolume: number;
+	muteOriginalAudio: boolean;
+	sfx?: SfxMuxCue[];
+}
+
+export interface CreatorFinishingInput {
+	narration?: {
+		segments: Array<{
+			id?: string;
+			text: string;
+			startMs: number;
+			endMs: number;
+			audioPath: string;
+		}>;
+		voiceId?: string;
+		language?: string;
+		fullAudioPath?: string;
+		captions?: RenderCaptionLine[];
+	};
+	musicPath?: string;
+	musicVolume?: number;
+	muteOriginalAudio?: boolean;
+	sfx?: Array<{ audioPath: string; offsetMs: number; volume?: number }>;
 }
 
 export interface PlanInput {
@@ -106,11 +265,364 @@ export interface PlanInput {
 	targetSeconds?: number;
 	model?: string;
 	look?: CreatorLook;
+	creativeSkill?: CreativeSkillId;
+	visualSource?: CreatorVisualSource;
+	/** Ids returned by the privileged media picker. */
+	referenceAssetIds?: string[];
 }
 
 const sessions = new Map<string, CreatorSession>();
 const workspaces = new Map<string, WorkspacePaths>();
 const running = new Map<string, AbortController>();
+let sessionStorePath: string | undefined;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function pathInside(root: string, candidate: unknown): string | undefined {
+	if (typeof candidate !== "string" || !candidate) return undefined;
+	const resolvedRoot = path.resolve(root);
+	const resolvedCandidate = path.resolve(candidate);
+	const relative = path.relative(resolvedRoot, resolvedCandidate);
+	if (relative.startsWith("..") || path.isAbsolute(relative)) return undefined;
+	return fs.existsSync(resolvedCandidate) ? resolvedCandidate : undefined;
+}
+
+const FINISHING_AUDIO_EXTENSIONS = new Set([
+	".aac",
+	".flac",
+	".m4a",
+	".mp3",
+	".ogg",
+	".wav",
+	".webm",
+]);
+const MAX_FINISHING_AUDIO_BYTES = 250 * 1024 * 1024;
+
+function stageFinishingAudio(workspace: WorkspacePaths, source: unknown, label: string): string {
+	const userDataRoot = path.dirname(path.dirname(workspace.root));
+	const safeSource = pathInside(userDataRoot, source);
+	if (!safeSource) throw new Error(`${label} is not a valid local user-data file.`);
+	const extension = path.extname(safeSource).toLowerCase();
+	if (!FINISHING_AUDIO_EXTENSIONS.has(extension)) {
+		throw new Error(
+			`${label} must be an audio file (${[...FINISHING_AUDIO_EXTENSIONS].join(", ")}).`,
+		);
+	}
+	const stat = fs.statSync(safeSource);
+	if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_FINISHING_AUDIO_BYTES) {
+		throw new Error(`${label} is empty or larger than 250 MB.`);
+	}
+	fs.mkdirSync(workspace.assetsDir, { recursive: true });
+	const destination = path.join(workspace.assetsDir, `finishing-${randomUUID()}${extension}`);
+	fs.copyFileSync(safeSource, destination);
+	return destination;
+}
+
+function normalizeFinishing(
+	workspace: WorkspacePaths,
+	input: CreatorFinishingInput,
+	maxDurationMs: number,
+): CreatorFinishing {
+	if (!isRecord(input)) throw new Error("Finishing options are invalid.");
+	const rawNarration = isRecord(input.narration) ? input.narration : undefined;
+	const rawSegments =
+		rawNarration && Array.isArray(rawNarration.segments) ? rawNarration.segments : [];
+	const segments = rawSegments.slice(0, 32).map((raw, index) => {
+		if (!isRecord(raw)) throw new Error(`Narration segment ${index + 1} is invalid.`);
+		const text = typeof raw.text === "string" ? raw.text.trim().slice(0, 3000) : "";
+		const startMs = typeof raw.startMs === "number" ? Math.max(0, Math.round(raw.startMs)) : 0;
+		const endMs =
+			typeof raw.endMs === "number" ? Math.max(startMs + 1, Math.round(raw.endMs)) : startMs + 1;
+		if (!text) throw new Error(`Narration segment ${index + 1} has no text.`);
+		if (endMs > maxDurationMs + 1500)
+			throw new Error(`Narration segment ${index + 1} exceeds the video duration.`);
+		return {
+			...(typeof raw.id === "string" ? { id: raw.id.slice(0, 120) } : {}),
+			text,
+			startMs,
+			endMs,
+			audioPath: stageFinishingAudio(workspace, raw.audioPath, `Narration segment ${index + 1}`),
+		};
+	});
+	const fullAudioPath = rawNarration?.fullAudioPath
+		? stageFinishingAudio(workspace, rawNarration.fullAudioPath, "Voiceover")
+		: undefined;
+	const captions =
+		rawNarration && Array.isArray(rawNarration.captions)
+			? rawNarration.captions.slice(0, 64).flatMap((raw) => {
+					if (!isRecord(raw) || typeof raw.text !== "string") return [];
+					const startMs =
+						typeof raw.startMs === "number" ? Math.max(0, Math.round(raw.startMs)) : 0;
+					const endMs =
+						typeof raw.endMs === "number"
+							? Math.max(startMs + 1, Math.round(raw.endMs))
+							: startMs + 1;
+					if (endMs > maxDurationMs + 1500) return [];
+					return [{ text: raw.text.trim().slice(0, 3000), startMs, endMs }];
+				})
+			: [];
+
+	const musicPath = input.musicPath
+		? stageFinishingAudio(workspace, input.musicPath, "Background music")
+		: undefined;
+	const sfx = Array.isArray(input.sfx)
+		? input.sfx.slice(0, 64).flatMap((raw, index) => {
+				if (!isRecord(raw) || typeof raw.audioPath !== "string") return [];
+				const offsetMs =
+					typeof raw.offsetMs === "number" ? Math.max(0, Math.round(raw.offsetMs)) : 0;
+				if (offsetMs > maxDurationMs + 1000) return [];
+				return [
+					{
+						audioPath: stageFinishingAudio(workspace, raw.audioPath, `Sound effect ${index + 1}`),
+						offsetMs,
+						volume: typeof raw.volume === "number" ? Math.min(1, Math.max(0, raw.volume)) : 1,
+					},
+				];
+			})
+		: [];
+	const musicVolume =
+		typeof input.musicVolume === "number" ? Math.min(1, Math.max(0, input.musicVolume)) : 0.18;
+	return {
+		...(segments.length || fullAudioPath
+			? {
+					narration: {
+						segments,
+						...(fullAudioPath ? { fullAudioPath } : {}),
+						...(captions.length ? { captions } : {}),
+						...(typeof rawNarration?.voiceId === "string"
+							? { voiceId: rawNarration.voiceId.slice(0, 120) }
+							: {}),
+						...(typeof rawNarration?.language === "string"
+							? { language: rawNarration.language.slice(0, 20) }
+							: {}),
+					},
+				}
+			: {}),
+		...(musicPath ? { musicPath } : {}),
+		musicVolume,
+		muteOriginalAudio: input.muteOriginalAudio !== false,
+		...(sfx.length ? { sfx } : {}),
+	};
+}
+
+function restoreFinishing(root: string, value: unknown): CreatorFinishing | undefined {
+	if (!isRecord(value)) return undefined;
+	const narrationValue = isRecord(value.narration) ? value.narration : undefined;
+	const rawSegments =
+		narrationValue && Array.isArray(narrationValue.segments) ? narrationValue.segments : [];
+	const segments = rawSegments.flatMap((raw) => {
+		if (!isRecord(raw)) return [];
+		const audioPath = pathInside(root, raw.audioPath);
+		if (!audioPath || typeof raw.text !== "string") return [];
+		const startMs = typeof raw.startMs === "number" ? Math.max(0, Math.round(raw.startMs)) : 0;
+		const endMs =
+			typeof raw.endMs === "number" ? Math.max(startMs + 1, Math.round(raw.endMs)) : startMs + 1;
+		return [
+			{
+				...(typeof raw.id === "string" ? { id: raw.id.slice(0, 120) } : {}),
+				text: raw.text.slice(0, 3000),
+				startMs,
+				endMs,
+				audioPath,
+			},
+		];
+	});
+	const fullAudioPath = pathInside(root, narrationValue?.fullAudioPath);
+	const captions =
+		narrationValue && Array.isArray(narrationValue.captions)
+			? narrationValue.captions.flatMap((raw) => {
+					if (!isRecord(raw) || typeof raw.text !== "string") return [];
+					const startMs =
+						typeof raw.startMs === "number" ? Math.max(0, Math.round(raw.startMs)) : 0;
+					const endMs =
+						typeof raw.endMs === "number"
+							? Math.max(startMs + 1, Math.round(raw.endMs))
+							: startMs + 1;
+					return [{ text: raw.text.slice(0, 3000), startMs, endMs }];
+				})
+			: [];
+	const musicPath = pathInside(root, value.musicPath);
+	const sfx = Array.isArray(value.sfx)
+		? value.sfx.flatMap((raw) => {
+				if (!isRecord(raw)) return [];
+				const audioPath = pathInside(root, raw.audioPath);
+				if (!audioPath) return [];
+				return [
+					{
+						audioPath,
+						offsetMs: typeof raw.offsetMs === "number" ? Math.max(0, Math.round(raw.offsetMs)) : 0,
+						volume: typeof raw.volume === "number" ? Math.min(1, Math.max(0, raw.volume)) : 1,
+					},
+				];
+			})
+		: [];
+	return {
+		...(segments.length || fullAudioPath
+			? {
+					narration: {
+						segments,
+						...(fullAudioPath ? { fullAudioPath } : {}),
+						...(captions.length ? { captions } : {}),
+						...(typeof narrationValue?.voiceId === "string"
+							? { voiceId: narrationValue.voiceId.slice(0, 120) }
+							: {}),
+						...(typeof narrationValue?.language === "string"
+							? { language: narrationValue.language.slice(0, 20) }
+							: {}),
+					},
+				}
+			: {}),
+		...(musicPath ? { musicPath } : {}),
+		musicVolume:
+			typeof value.musicVolume === "number" ? Math.min(1, Math.max(0, value.musicVolume)) : 0.18,
+		muteOriginalAudio: value.muteOriginalAudio !== false,
+		...(sfx.length ? { sfx } : {}),
+	};
+}
+
+function restoreSession(rootDir: string, value: unknown): CreatorSession | undefined {
+	if (!isRecord(value) || typeof value.id !== "string") return undefined;
+	if (!/^[a-zA-Z0-9-]{1,100}$/.test(value.id)) return undefined;
+	const root = path.join(rootDir, value.id);
+	if (!fs.existsSync(root) || (!isRecord(value.storyboard) && !isRecord(value.motion)))
+		return undefined;
+	if (
+		value.status !== "planning" &&
+		value.status !== "planned" &&
+		value.status !== "rendering" &&
+		value.status !== "rendered" &&
+		value.status !== "failed"
+	)
+		return undefined;
+
+	const session = value as unknown as CreatorSession;
+	if (session.status === "planning" || session.status === "rendering") {
+		session.status = "failed";
+		session.error = "The previous run was interrupted. Start a new render from this plan.";
+	}
+	if (session.previewPaths) {
+		session.previewPaths = session.previewPaths.filter((still) => {
+			if (!isRecord(still) || !Number.isInteger(still.frameIndex)) return false;
+			const safePath = pathInside(root, still.path);
+			if (!safePath) return false;
+			still.path = safePath;
+			return true;
+		});
+	}
+	if (session.videoPath) session.videoPath = pathInside(root, session.videoPath);
+	if (session.masterPath) session.masterPath = pathInside(root, session.masterPath);
+	if (session.interchange) {
+		const manifestPath = pathInside(root, session.interchange.manifestPath);
+		const fcpxmlPath = pathInside(root, session.interchange.fcpxmlPath);
+		session.interchange = manifestPath && fcpxmlPath ? { manifestPath, fcpxmlPath } : undefined;
+	}
+	if (session.assets) {
+		session.assets = session.assets.filter((asset) => {
+			if (!isRecord(asset)) return false;
+			const safePath = pathInside(root, asset.path);
+			if (!safePath) return false;
+			asset.path = safePath;
+			return true;
+		});
+	}
+	if (session.referenceAssets) {
+		session.referenceAssets = session.referenceAssets.map((asset) => ({
+			...asset,
+			...(asset.previewPath ? { previewPath: pathInside(root, asset.previewPath) } : {}),
+		}));
+	}
+	if (session.finishing) session.finishing = restoreFinishing(root, session.finishing);
+	if (session.status === "rendered" && !session.videoPath) {
+		session.status = "planned";
+		session.error = "The previous MP4 was not found. Review the plan and render it again.";
+	}
+	return session;
+}
+
+/** Render the optional edit-friendly ProRes master from the validated MP4. */
+export async function createSessionMaster(id: string): Promise<CreatorSession> {
+	const session = sessions.get(id);
+	const workspace = workspaces.get(id);
+	if (!session?.videoPath || !workspace)
+		throw new Error("Render the MP4 before creating a master.");
+	const baseName = path.basename(session.videoPath, path.extname(session.videoPath));
+	const masterPath = path.join(workspace.renderDir, `${baseName}.master.mov`);
+	await createProResMaster(session.videoPath, masterPath);
+	await validateRenderedVideo(masterPath, {
+		width: session.format === "landscape" ? 1920 : 1080,
+		height: session.format === "landscape" ? 1080 : session.format === "vertical" ? 1920 : 1080,
+		fps: 30,
+		durationSeconds: durationWithReviews(session),
+		...(session.finishing?.narration?.segments.length ||
+		session.finishing?.narration?.fullAudioPath ||
+		session.finishing?.musicPath ||
+		session.finishing?.sfx?.length
+			? { requireAudio: true }
+			: {}),
+	});
+	session.masterPath = masterPath;
+	persistSessions();
+	return session;
+}
+
+/** Export a JSON scene manifest plus conservative FCPXML interchange package. */
+export function createSessionInterchange(id: string): CreatorSession {
+	const session = sessions.get(id);
+	const workspace = workspaces.get(id);
+	if (!session?.videoPath || !workspace) {
+		throw new Error("Render the MP4 before exporting an interchange package.");
+	}
+	session.interchange = writeCreatorInterchange(workspace.renderDir, session);
+	persistSessions();
+	return session;
+}
+
+function persistSessions(): void {
+	if (!sessionStorePath) return;
+	const temporaryPath = `${sessionStorePath}.${process.pid}.tmp`;
+	try {
+		fs.mkdirSync(path.dirname(sessionStorePath), { recursive: true });
+		fs.writeFileSync(
+			temporaryPath,
+			JSON.stringify({ version: 1, sessions: [...sessions.values()] }, null, 2),
+			{ encoding: "utf8", mode: 0o600 },
+		);
+		fs.renameSync(temporaryPath, sessionStorePath);
+		fs.chmodSync(sessionStorePath, 0o600);
+	} catch (error) {
+		try {
+			fs.rmSync(temporaryPath, { force: true });
+		} catch {
+			// Preserve the original persistence error without masking the user action.
+		}
+		console.error("[Creator] Could not persist session state:", error);
+	}
+}
+
+/** Rehydrate reviewable sessions after a renderer reload or app restart. */
+export function initializeCreatorStore(baseDir: string): void {
+	const storePath = path.join(path.resolve(baseDir), "sessions.json");
+	if (sessionStorePath === storePath) return;
+	sessionStorePath = storePath;
+	sessions.clear();
+	workspaces.clear();
+
+	try {
+		const parsed: unknown = JSON.parse(fs.readFileSync(storePath, "utf8"));
+		if (!isRecord(parsed) || !Array.isArray(parsed.sessions)) return;
+		for (const value of parsed.sessions) {
+			const session = restoreSession(path.resolve(baseDir), value);
+			if (!session) continue;
+			sessions.set(session.id, session);
+			workspaces.set(session.id, workspacePaths(path.join(path.resolve(baseDir), session.id)));
+		}
+		persistSessions();
+	} catch {
+		// A missing or partially written store should not prevent a new session.
+	}
+}
 
 export function getSession(id: string): CreatorSession | undefined {
 	return sessions.get(id);
@@ -134,6 +646,40 @@ export function discardSession(id: string): void {
 	if (workspace) removeWorkspace(workspace.root);
 	workspaces.delete(id);
 	sessions.delete(id);
+	persistSessions();
+}
+
+/**
+ * Remove only derived preview/render media while keeping the validated plan,
+ * references, and shot decisions available for another review or render.
+ */
+export function clearSessionMedia(id: string): CreatorSession {
+	const session = sessions.get(id);
+	const workspace = workspaces.get(id);
+	if (!session || !workspace) throw new Error("That session is no longer available.");
+	if (session.status === "planning" || session.status === "rendering") {
+		throw new Error("Saved media cannot be cleared while this session is running.");
+	}
+
+	for (const directory of [workspace.previewDir, workspace.renderDir]) {
+		fs.rmSync(directory, { recursive: true, force: true });
+		fs.mkdirSync(directory, { recursive: true });
+	}
+	const previousReviews = session.shotReviews;
+	const shotCount = reviewableShots(session).length;
+	session.shotReviews = createPendingShotReviews(shotCount).map((review, index) => {
+		const previousDuration = previousReviews?.[index]?.durationSeconds;
+		return previousDuration === undefined
+			? review
+			: { ...review, durationSeconds: previousDuration };
+	});
+	session.previewPaths = undefined;
+	session.videoPath = undefined;
+	session.masterPath = undefined;
+	session.interchange = undefined;
+	if (session.status === "rendered") session.status = "planned";
+	persistSessions();
+	return session;
 }
 
 /**
@@ -151,6 +697,7 @@ export async function planStoryboard(
 	input: PlanInput,
 	onActivity?: (activity: ClaudeActivity) => void,
 ): Promise<CreatorSession> {
+	initializeCreatorStore(baseDir);
 	const agent: AgentId = input.agent ?? "claude";
 	const installation = await detectAgent(agent);
 	if (!installation.installed || !installation.binaryPath) {
@@ -167,6 +714,22 @@ export async function planStoryboard(
 	// defaults to" — so only an absent one falls back to the agent's default.
 	const model = input.model ?? AGENTS[agent].defaultModel;
 	const look: CreatorLook = input.look ?? "motion";
+	const creativeSkill = getCreativeSkill(input.creativeSkill);
+	const visualSource: CreatorVisualSource =
+		input.visualSource === "generated" ? "generated" : "stock";
+	const referenceAssets = (input.referenceAssetIds ?? [])
+		.map((id) => getRegisteredMediaContextAsset(id))
+		.filter((asset): asset is MediaContextAsset => Boolean(asset))
+		.slice(0, 12);
+	const inferredLogoReference = inferLogoReference(referenceAssets, input.request);
+	let hasReferenceVideo = referenceAssets.some((asset) => asset.kind === "video");
+	let referenceSummaries: MotionAssetSummary[] = referenceAssets.map((asset) => ({
+		id: asset.id,
+		label: asset.label,
+		kind: asset.kind,
+		role: asset.role,
+		...(asset.shotSegments?.length ? { shotSegments: asset.shotSegments } : {}),
+	}));
 
 	const session: CreatorSession = {
 		id,
@@ -176,6 +739,8 @@ export async function planStoryboard(
 		targetSeconds,
 		model,
 		look,
+		creativeSkill: creativeSkill.id,
+		visualSource,
 		status: "planning",
 		createdAt: Date.now(),
 	};
@@ -186,10 +751,19 @@ export async function planStoryboard(
 	const whiteboard = look === "whiteboard";
 	const contract =
 		look === "motion"
-			? motionSystemPrompt({ format, targetSeconds })
+			? motionSystemPrompt({
+					creativeSkill: creativeSkill.id,
+					format,
+					targetSeconds,
+					assets: referenceSummaries,
+					contextQuery: input.request,
+					...(inferredLogoReference ? { defaultLogoAssetId: inferredLogoReference.id } : {}),
+				})
 			: storyboardSystemPrompt({
-					hasRecording: false,
-					assets: [],
+					hasRecording: hasReferenceVideo,
+					assets: referenceSummaries,
+					contextQuery: input.request,
+					imageSource: visualSource,
 					// A scribe video draws its own illustration, so it never goes
 					// looking for a photograph.
 					canFetchImages: !whiteboard,
@@ -213,15 +787,128 @@ export async function planStoryboard(
 		targetSeconds,
 	});
 	workspaces.set(id, workspace);
+	persistSessions();
 
 	const controller = new AbortController();
 	running.set(id, controller);
+	const referenceWarnings: string[] = [];
 
 	try {
+		const stagedReferences = await stageMediaContextAssets(
+			referenceAssets.map((asset) => asset.id),
+			workspace.assetsDir,
+			inferredLogoReference ? [inferredLogoReference.id] : [],
+		);
+		if (stagedReferences.length !== referenceAssets.length) {
+			throw new Error(
+				"One or more media references changed before staging. Please attach them again.",
+			);
+		}
+		const analyzedReferenceAssets = await analyzeMediaContextAssets(stagedReferences);
+		hasReferenceVideo = analyzedReferenceAssets.some((asset) => asset.kind === "video");
+		session.referenceAssets = analyzedReferenceAssets;
+		referenceSummaries = await Promise.all(
+			analyzedReferenceAssets.map(async (asset) => {
+				const fileName = asset.previewPath
+					? `assets/${path.basename(asset.previewPath)}`
+					: undefined;
+				let contactSheetFileName: string | undefined;
+				let contactSheetTimesSeconds: number[] | undefined;
+				if (asset.kind === "video") {
+					const contactSheet = await getMediaContextContactSheet(
+						asset.id,
+						6,
+						asset.durationSeconds,
+						asset.shotSegments,
+					);
+					if (contactSheet.success && contactSheet.dataUrl) {
+						const encoded = contactSheet.dataUrl.split(",", 2)[1];
+						if (encoded) {
+							const contactSheetPath = path.join(
+								workspace.assetsDir,
+								`${asset.id}-contact-sheet.jpg`,
+							);
+							fs.writeFileSync(contactSheetPath, Buffer.from(encoded, "base64"));
+							contactSheetFileName = `assets/${path.basename(contactSheetPath)}`;
+							contactSheetTimesSeconds = contactSheet.frameTimesSeconds;
+						}
+					} else {
+						referenceWarnings.push(
+							`Could not prepare a visual overview for ${asset.label}; the planner will use its technical metadata and staged video only.`,
+						);
+					}
+				}
+				return {
+					id: asset.id,
+					label: asset.label,
+					kind: asset.kind,
+					role: asset.role,
+					...(fileName ? { fileName } : {}),
+					...(contactSheetFileName ? { contactSheetFileName } : {}),
+					...(contactSheetTimesSeconds ? { contactSheetTimesSeconds } : {}),
+					...(asset.shotSegments?.length ? { shotSegments: asset.shotSegments } : {}),
+					...(asset.visualSummary ? { visualSummary: asset.visualSummary } : {}),
+					...(asset.ocrText?.length ? { ocrText: asset.ocrText } : {}),
+					...(asset.transcriptExcerpt ? { transcriptExcerpt: asset.transcriptExcerpt } : {}),
+					...(asset.transcriptSegments?.length
+						? { transcriptSegments: asset.transcriptSegments }
+						: {}),
+					shows: [
+						asset.width && asset.height ? `${asset.width}×${asset.height}` : "",
+						asset.durationSeconds !== undefined
+							? `${asset.durationSeconds.toFixed(1)} seconds`
+							: "",
+						asset.frameRate !== undefined ? `${asset.frameRate.toFixed(2)} fps` : "",
+						asset.codec ?? "",
+						asset.hasAudio === undefined ? "" : asset.hasAudio ? "audio" : "silent",
+					]
+						.filter(Boolean)
+						.join(", "),
+				};
+			}),
+		);
+		const analyzedContract =
+			look === "motion"
+				? motionSystemPrompt({
+						creativeSkill: creativeSkill.id,
+						format,
+						targetSeconds,
+						assets: referenceSummaries,
+						contextQuery: input.request,
+						...(inferredLogoReference ? { defaultLogoAssetId: inferredLogoReference.id } : {}),
+					})
+				: storyboardSystemPrompt({
+						hasRecording: hasReferenceVideo,
+						assets: referenceSummaries,
+						contextQuery: input.request,
+						imageSource: visualSource,
+						canFetchImages: !whiteboard,
+						format,
+						targetSeconds,
+						...(whiteboard
+							? {
+									allowedKinds: [...WHITEBOARD_KINDS],
+									skillDirection: WHITEBOARD_DIRECTION,
+								}
+							: {}),
+					});
+		fs.writeFileSync(
+			workspace.briefPath,
+			buildBrief({
+				agent,
+				request: input.request,
+				contract: analyzedContract,
+				format,
+				targetSeconds,
+				workspaceRoot: workspace.root,
+			}),
+			"utf8",
+		);
+
 		const runOptions = {
 			binaryPath: installation.binaryPath,
 			workspace,
-			prompt: buildPrompt(),
+			prompt: buildPrompt(workspace.root),
 			model,
 			signal: controller.signal,
 			...(onActivity ? { onActivity } : {}),
@@ -243,10 +930,91 @@ export async function planStoryboard(
 		const fallbackTitle = input.request.slice(0, 80);
 
 		if (look === "motion") {
-			const { project, warnings } = normalizeMotionProject(parsed, { fallbackTitle });
-			session.motion = project;
-			session.warnings = warnings;
+			const resolvedMotionAssets =
+				visualSource === "generated"
+					? await resolveGeneratedAssetQueries({
+							parsed,
+							destDir: workspace.assetsDir,
+							aspectRatio: format === "vertical" ? "9:16" : format === "square" ? "1:1" : "16:9",
+							signal: controller.signal,
+							onNote: (text) => onActivity?.({ kind: "log", text }),
+						})
+					: await resolveAssetQueries({
+							parsed,
+							destDir: workspace.assetsDir,
+							signal: controller.signal,
+							onNote: (text) => onActivity?.({ kind: "log", text }),
+						});
+			const stagedImageIds = stagedReferences
+				.filter((asset) => asset.kind === "image")
+				.map((asset) => asset.id);
+			const stagedVideoReferences = stagedReferences.filter((asset) => asset.kind === "video");
+			const stagedVideoIds = stagedVideoReferences.map((asset) => asset.id);
+			const videoDurations = Object.fromEntries(
+				stagedVideoReferences.map((asset) => [asset.id, asset.durationSeconds]),
+			);
+			const videoShotSegments = Object.fromEntries(
+				stagedVideoReferences.map((asset) => [asset.id, asset.shotSegments]),
+			);
+			const resolvedImageIds = resolvedMotionAssets.assets.map((asset) => asset.id);
+			const defaultImageAsset =
+				resolvedMotionAssets.assets[0] ??
+				stagedReferences.find(
+					(asset) =>
+						asset.kind === "image" &&
+						asset.role !== "brand" &&
+						!/\b(?:logo|wordmark|brand[- ]?mark)\b/i.test(asset.label),
+				);
+			const supportingImageAssetIds = [
+				...stagedReferences
+					.filter(
+						(asset) =>
+							asset.kind === "image" &&
+							asset.role !== "brand" &&
+							asset.id !== inferredLogoReference?.id &&
+							!/\b(?:logo|wordmark|brand[- ]?mark)\b/i.test(asset.label),
+					)
+					.map((asset) => asset.id),
+				...resolvedMotionAssets.assets.map((asset) => asset.id),
+			];
+			const { project, warnings } = normalizeMotionProject(parsed, {
+				fallbackTitle,
+				creativeSkill: creativeSkill.id,
+				availableAssetIds: [...stagedImageIds, ...resolvedImageIds],
+				availableVideoAssetIds: stagedVideoIds,
+				videoDurations,
+				videoShotSegments,
+				format,
+				...(inferredLogoReference ? { defaultLogoAssetId: inferredLogoReference.id } : {}),
+				...(defaultImageAsset ? { defaultImageAssetId: defaultImageAsset.id } : {}),
+				supportingImageAssetIds,
+				...(stagedVideoReferences[0] ? { defaultVideoAssetId: stagedVideoReferences[0].id } : {}),
+				requireLogoReveal: requestCallsForLogo(input.request),
+				requireImageScene: Boolean(defaultImageAsset),
+				requireVideoScene: stagedVideoReferences.length > 0,
+				requireLayeredScene:
+					creativeSkill.id === "explainer-motion" ||
+					creativeSkill.id === "product-update" ||
+					creativeSkill.id === "product-launch",
+			});
+			if (creativeSkill.requireSourceVideo && stagedVideoReferences.length === 0) {
+				warnings.push(
+					`The ${creativeSkill.name} skill is source-footage-first, but no video reference was attached. Attach the real product recording before approving this cut.`,
+				);
+			}
+			const brandPalette = await deriveBrandPalette(stagedReferences, resolvedMotionAssets.assets);
+			session.motion = {
+				...project,
+				brandPalette,
+				...(resolvedMotionAssets.attributionLine
+					? { attributionLine: resolvedMotionAssets.attributionLine }
+					: {}),
+			};
+			session.assets = resolvedMotionAssets.assets;
+			session.warnings = [...referenceWarnings, ...resolvedMotionAssets.warnings, ...warnings];
 			session.durationSeconds = motionDurationSeconds(project);
+			session.shotReviews = createPendingShotReviews(project.scenes.length);
+			session.craftWarnings = evaluateShotCraft(project.scenes);
 		} else {
 			// The agent planned without a network, naming the pictures it wanted.
 			// They are fetched here, before validation, so a query that found
@@ -255,23 +1023,38 @@ export async function planStoryboard(
 			// validator applies rather than something the planner chose to honour.
 			const resolved = whiteboard
 				? { assets: [], warnings: [], attributionLine: undefined }
-				: await resolveAssetQueries({
-						parsed,
-						destDir: workspace.assetsDir,
-						signal: controller.signal,
-						onNote: (text) => onActivity?.({ kind: "log", text }),
-					});
+				: visualSource === "generated"
+					? await resolveGeneratedAssetQueries({
+							parsed,
+							destDir: workspace.assetsDir,
+							aspectRatio: format === "vertical" ? "9:16" : format === "square" ? "1:1" : "16:9",
+							signal: controller.signal,
+							onNote: (text) => onActivity?.({ kind: "log", text }),
+						})
+					: await resolveAssetQueries({
+							parsed,
+							destDir: workspace.assetsDir,
+							signal: controller.signal,
+							onNote: (text) => onActivity?.({ kind: "log", text }),
+						});
 			const { storyboard, warnings } = normalizeStoryboard(parsed, {
-				hasRecording: false,
+				hasRecording: hasReferenceVideo,
+				recordingShotSegments: stagedReferences.find((asset) => asset.kind === "video")
+					?.shotSegments,
 				fallbackTitle,
-				availableAssetIds: resolved.assets.map((asset) => asset.id),
+				availableAssetIds: [
+					...resolved.assets.map((asset) => asset.id),
+					...stagedReferences.filter((asset) => asset.kind === "image").map((asset) => asset.id),
+				],
 				...(whiteboard ? { allowedKinds: [...WHITEBOARD_KINDS] } : {}),
 				...(resolved.attributionLine ? { attributionLine: resolved.attributionLine } : {}),
 			});
 			session.storyboard = storyboard;
 			session.assets = resolved.assets;
-			session.warnings = [...resolved.warnings, ...warnings];
+			session.warnings = [...referenceWarnings, ...resolved.warnings, ...warnings];
 			session.durationSeconds = storyboardDurationSeconds(storyboard);
+			session.shotReviews = createPendingShotReviews(storyboard.frames.length);
+			session.craftWarnings = evaluateShotCraft(storyboard.frames);
 		}
 		session.status = "planned";
 		return session;
@@ -281,12 +1064,265 @@ export async function planStoryboard(
 		return session;
 	} finally {
 		running.delete(id);
+		persistSessions();
 	}
 }
 
 /** The fetched images as the renderer wants them: an id and a local file. */
 function imageAssetsFor(session: CreatorSession) {
-	return (session.assets ?? []).map((asset) => ({ assetId: asset.id, src: asset.path }));
+	return [
+		...(session.assets ?? []).map((asset) => ({ assetId: asset.id, src: asset.path })),
+		...(session.referenceAssets ?? [])
+			.filter((asset) => asset.kind === "image" && asset.previewPath)
+			.map((asset) => ({ assetId: asset.id, src: asset.previewPath! })),
+	];
+}
+
+function videoAssetsFor(session: CreatorSession) {
+	return (session.referenceAssets ?? [])
+		.filter((asset) => asset.kind === "video" && asset.previewPath)
+		.map((asset) => ({ assetId: asset.id, src: asset.previewPath! }));
+}
+
+function videoAssetFor(session: CreatorSession) {
+	return session.referenceAssets?.find((asset) => asset.kind === "video")?.previewPath;
+}
+
+/**
+ * Never let a missing staged media file degrade into a believable-looking text
+ * card. That fallback is useful for an intentionally text-only scene, but it
+ * is unacceptable when the editor supplied footage or an exact logo asset.
+ */
+function assertMotionAssetsResolvable(session: CreatorSession, scenes: MotionScene[]): void {
+	const imageIds = new Set(imageAssetsFor(session).map((asset) => asset.assetId));
+	const videoIds = new Set(videoAssetsFor(session).map((asset) => asset.assetId));
+	const attachedVideo = (session.referenceAssets ?? []).some((asset) => asset.kind === "video");
+	const usedVideo = scenes.some(
+		(scene) =>
+			(scene.kind === "video" && Boolean(scene.videoAssetId)) ||
+			scene.layers?.some((layer) => layer.kind === "video" && Boolean(layer.assetId)),
+	);
+	if (attachedVideo && !usedVideo) {
+		throw new Error(
+			"Attached source video was not used by the approved motion plan. Re-plan this video before rendering.",
+		);
+	}
+
+	for (const scene of scenes) {
+		if (scene.kind === "image" && scene.imageAssetId && !imageIds.has(scene.imageAssetId)) {
+			throw new Error(`Image asset ${scene.imageAssetId} is not staged for rendering.`);
+		}
+		if (scene.kind === "logo" && scene.logoAssetId && !imageIds.has(scene.logoAssetId)) {
+			throw new Error(`Logo asset ${scene.logoAssetId} is not staged for rendering.`);
+		}
+		if (scene.kind === "video" && scene.videoAssetId && !videoIds.has(scene.videoAssetId)) {
+			throw new Error(`Video asset ${scene.videoAssetId} is not staged for rendering.`);
+		}
+		for (const layer of scene.layers ?? []) {
+			if (
+				(layer.kind === "image" || layer.kind === "logo") &&
+				layer.assetId &&
+				!imageIds.has(layer.assetId)
+			) {
+				throw new Error(`Layer image asset ${layer.assetId} is not staged for rendering.`);
+			}
+			if (layer.kind === "video" && layer.assetId && !videoIds.has(layer.assetId)) {
+				throw new Error(`Layer video asset ${layer.assetId} is not staged for rendering.`);
+			}
+		}
+	}
+}
+
+function reviewableShots(session: CreatorSession): ReviewableShot[] {
+	return session.motion ? session.motion.scenes : (session.storyboard?.frames ?? []);
+}
+
+function reviewLimits(session: CreatorSession): ShotReviewDurationLimits {
+	return session.motion ? { minSeconds: 1.5, maxSeconds: 12 } : { minSeconds: 1.5, maxSeconds: 20 };
+}
+
+function durationWithReviews(session: CreatorSession): number {
+	return applyShotDurationOverrides(reviewableShots(session), session.shotReviews).reduce(
+		(total, shot) => total + shot.durationSeconds,
+		0,
+	);
+}
+
+function assertReviewComplete(session: CreatorSession): void {
+	const shots = reviewableShots(session);
+	if (!areAllShotsApproved(session.shotReviews, shots.length)) {
+		const pending = (session.shotReviews ?? []).filter(
+			(review) => review.status !== "approved",
+		).length;
+		throw new Error(
+			`Review every shot before rendering. ${pending || shots.length} shot${(pending || shots.length) === 1 ? "" : "s"} still need approval.`,
+		);
+	}
+}
+
+/** Update human review decisions without allowing the renderer to see invalid timing. */
+export function reviewSessionShots(id: string, updates: unknown): CreatorSession {
+	const session = sessions.get(id);
+	if (!session) throw new Error("That session is no longer available.");
+	if (session.status !== "planned" && session.status !== "rendered") {
+		throw new Error("Shots can only be reviewed after planning has finished.");
+	}
+
+	const shots = reviewableShots(session);
+	const nextReviews = applyShotReviewUpdates(
+		session.shotReviews,
+		updates,
+		shots.length,
+		reviewLimits(session),
+	);
+	const nextDuration = applyShotDurationOverrides(shots, nextReviews).reduce(
+		(total, shot) => total + shot.durationSeconds,
+		0,
+	);
+	const maxTotalSeconds = session.motion ? 180 : 240;
+	if (nextDuration > maxTotalSeconds) {
+		throw new Error(
+			`Timing changes cannot make this video longer than ${maxTotalSeconds} seconds.`,
+		);
+	}
+	session.shotReviews = nextReviews;
+	session.durationSeconds = durationWithReviews(session);
+	// A timing or approval change makes any previous MP4 stale. It must not be
+	// mistaken for the newly approved cut.
+	session.videoPath = undefined;
+	session.masterPath = undefined;
+	session.interchange = undefined;
+	// Narration timings are authored against the approved shot rhythm. A timing
+	// edit makes that finishing pass stale, so it must be regenerated rather
+	// than silently drifting away from the visuals.
+	session.finishing = undefined;
+	session.status = "planned";
+	persistSessions();
+	return session;
+}
+
+/** Attach validated local narration/music to the approved visual plan. */
+export function setSessionFinishing(id: string, input: CreatorFinishingInput): CreatorSession {
+	const session = sessions.get(id);
+	const workspace = workspaces.get(id);
+	if (!session || !workspace) throw new Error("That session is no longer available.");
+	if (session.status !== "planned" && session.status !== "rendered") {
+		throw new Error("Finishing can only be added after planning has finished.");
+	}
+	const maxDurationMs = Math.round(durationWithReviews(session) * 1000);
+	session.finishing = normalizeFinishing(workspace, input, maxDurationMs);
+	session.videoPath = undefined;
+	session.masterPath = undefined;
+	session.interchange = undefined;
+	session.status = "planned";
+	persistSessions();
+	return session;
+}
+
+function isVisualCaptionSuppressedScene(scene: MotionScene): boolean {
+	return (
+		scene.kind === "image" ||
+		scene.kind === "video" ||
+		scene.kind === "logo" ||
+		(scene.kind === "layered" &&
+			Boolean(
+				scene.layers?.some(
+					(layer) => layer.kind === "image" || layer.kind === "video" || layer.kind === "logo",
+				),
+			))
+	);
+}
+
+/** Keep narration timing intact, but never burn captions over visual proof. */
+export function filterCaptionsForMotionScenes(
+	scenes: MotionScene[],
+	lines: RenderCaptionLine[],
+	reviews?: ShotReview[],
+): RenderCaptionLine[] {
+	const reviewedScenes = applyShotDurationOverrides(scenes, reviews);
+	const eligibleRanges: Array<{ startMs: number; endMs: number }> = [];
+	let cursorMs = 0;
+	for (const scene of reviewedScenes) {
+		const durationMs = Math.max(1, Math.round(scene.durationSeconds * 1000));
+		if (!isVisualCaptionSuppressedScene(scene)) {
+			eligibleRanges.push({ startMs: cursorMs, endMs: cursorMs + durationMs });
+		}
+		cursorMs += durationMs;
+	}
+
+	return lines.flatMap((line) =>
+		eligibleRanges.flatMap((range) => {
+			const startMs = Math.max(line.startMs, range.startMs);
+			const endMs = Math.min(line.endMs, range.endMs);
+			return endMs > startMs ? [{ ...line, startMs, endMs }] : [];
+		}),
+	);
+}
+
+function captionsFor(session: CreatorSession): RenderCaptionLine[] {
+	const lines = session.finishing?.narration?.captions?.length
+		? session.finishing.narration.captions
+		: (session.finishing?.narration?.segments ?? []).map((segment) => ({
+				text: segment.text,
+				startMs: segment.startMs,
+				endMs: segment.endMs,
+			}));
+	return session.motion
+		? filterCaptionsForMotionScenes(session.motion.scenes, lines, session.shotReviews)
+		: lines;
+}
+
+function hyperFrameThemeFor(session: CreatorSession) {
+	const palette = session.motion?.brandPalette;
+	if (!palette) return undefined;
+	return {
+		accentHex: palette.primary,
+		softHex: palette.highlight,
+		glowRgba: `rgba(${Number.parseInt(palette.primary.slice(1, 3), 16)},${Number.parseInt(palette.primary.slice(3, 5), 16)},${Number.parseInt(palette.primary.slice(5, 7), 16)},0.35)`,
+	};
+}
+
+async function finishRenderedVideo(session: CreatorSession, outputPath: string): Promise<void> {
+	const finishing = session.finishing;
+	if (
+		!finishing?.narration?.segments.length &&
+		!finishing?.narration?.fullAudioPath &&
+		!finishing?.musicPath &&
+		!finishing?.sfx?.length
+	)
+		return;
+
+	const narration: NarrationMuxSegment[] = finishing.narration?.fullAudioPath
+		? [{ audioPath: finishing.narration.fullAudioPath, offsetMs: 0 }]
+		: (finishing.narration?.segments ?? []).map((segment) => ({
+				audioPath: segment.audioPath,
+				offsetMs: segment.startMs,
+			}));
+	const music: MusicMuxBed | null = finishing.musicPath
+		? {
+				audioPath: finishing.musicPath,
+				volume: finishing.musicVolume,
+				duckWindows: (finishing.narration?.captions?.length
+					? finishing.narration.captions
+					: (finishing.narration?.segments ?? [])
+				).map((segment) => ({ startMs: segment.startMs, endMs: segment.endMs })),
+			}
+		: null;
+	const sfx: SfxMuxCue[] = finishing.sfx ?? [];
+	const temporaryPath = `${outputPath}.finishing.tmp.mp4`;
+	const result = await muxNarrationAudio(
+		outputPath,
+		narration,
+		temporaryPath,
+		music,
+		finishing.muteOriginalAudio,
+		sfx,
+	);
+	if (!result.success) {
+		fs.rmSync(temporaryPath, { force: true });
+		throw new Error(result.error ?? "Audio finishing failed.");
+	}
+	fs.renameSync(temporaryPath, outputPath);
 }
 
 /** Stage 2 — render stills of the planned frames for the preview grid. */
@@ -301,27 +1337,46 @@ export async function previewStoryboard(id: string): Promise<CreatorSession> {
 	};
 
 	if (session.motion) {
+		const scenes = applyShotDurationOverrides(session.motion.scenes, session.shotReviews);
+		assertMotionAssetsResolvable(session, scenes);
+		const brandPalette = await ensureMotionBrandPalette(session);
+		const captions = captionsFor(session);
 		session.previewPaths = await renderMotionStills({
 			title: session.motion.title,
 			accent: session.motion.accent,
-			scenes: session.motion.scenes,
-			sceneIndexes: sample(session.motion.scenes.length),
+			scenes,
+			brandPalette,
+			imageAssets: imageAssetsFor(session),
+			videoAssets: videoAssetsFor(session),
+			...(captions.length ? { captions } : {}),
+			...(session.motion.attributionLine
+				? { attributionLine: session.motion.attributionLine }
+				: {}),
+			sceneIndexes: sample(scenes.length),
 			outputDirectory: workspace.previewDir,
 			format: session.format,
 		});
+		persistSessions();
 		return session;
 	}
 
 	if (!session.storyboard) throw new Error("This session has nothing to preview.");
+	const frames = applyShotDurationOverrides(session.storyboard.frames, session.shotReviews);
+	const captions = captionsFor(session);
+	const theme = hyperFrameThemeFor(session);
 	session.previewPaths = await renderHyperFrameStills({
 		title: session.storyboard.title,
 		accent: session.storyboard.accent,
-		frames: session.storyboard.frames,
-		frameIndexes: sample(session.storyboard.frames.length),
+		frames,
+		frameIndexes: sample(frames.length),
 		outputDirectory: workspace.previewDir,
 		format: session.format,
 		imageAssets: imageAssetsFor(session),
+		screenSrc: videoAssetFor(session),
+		...(captions.length ? { captions } : {}),
+		...(theme ? { theme } : {}),
 	});
+	persistSessions();
 	return session;
 }
 
@@ -335,10 +1390,13 @@ export async function renderStoryboard(
 	if (!session || !workspace) throw new Error("That session is no longer available.");
 	const plan = session.motion ?? session.storyboard;
 	if (!plan) throw new Error("This session has nothing to render.");
+	assertReviewComplete(session);
 
 	const controller = new AbortController();
 	running.set(id, controller);
 	session.status = "rendering";
+	session.masterPath = undefined;
+	session.interchange = undefined;
 
 	const safeName =
 		plan.title
@@ -347,31 +1405,64 @@ export async function renderStoryboard(
 			.replace(/^-|-$/g, "")
 			.slice(0, 60) || "guide-video";
 	const outputPath = path.join(workspace.renderDir, `${safeName}.mp4`);
+	persistSessions();
 
 	try {
 		fs.mkdirSync(workspace.renderDir, { recursive: true });
 		if (session.motion) {
+			const scenes = applyShotDurationOverrides(session.motion.scenes, session.shotReviews);
+			assertMotionAssetsResolvable(session, scenes);
+			const brandPalette = await ensureMotionBrandPalette(session);
+			const captions = captionsFor(session);
 			await renderMotionDemo({
 				title: session.motion.title,
 				accent: session.motion.accent,
-				scenes: session.motion.scenes,
+				scenes,
+				brandPalette,
+				imageAssets: imageAssetsFor(session),
+				videoAssets: videoAssetsFor(session),
+				...(captions.length ? { captions } : {}),
+				...(session.motion.attributionLine
+					? { attributionLine: session.motion.attributionLine }
+					: {}),
 				outputPath,
 				format: session.format,
 				signal: controller.signal,
 				...(onProgress ? { onProgress } : {}),
 			});
 		} else if (session.storyboard) {
+			const frames = applyShotDurationOverrides(session.storyboard.frames, session.shotReviews);
+			const captions = captionsFor(session);
+			const theme = hyperFrameThemeFor(session);
 			await renderHyperFrameDemo({
 				title: session.storyboard.title,
 				accent: session.storyboard.accent,
-				frames: session.storyboard.frames,
+				frames,
 				imageAssets: imageAssetsFor(session),
+				screenSrc: videoAssetFor(session),
+				...(captions.length ? { captions } : {}),
+				...(theme ? { theme } : {}),
 				outputPath,
 				format: session.format,
 				signal: controller.signal,
 				...(onProgress ? { onProgress } : {}),
 			});
 		}
+		await finishRenderedVideo(session, outputPath);
+		// Audio muxing copies the video stream, so validate the finished artifact
+		// again rather than trusting the pre-finish Remotion output.
+		await validateRenderedVideo(outputPath, {
+			width: session.format === "landscape" ? 1920 : 1080,
+			height: session.format === "landscape" ? 1080 : session.format === "vertical" ? 1920 : 1080,
+			fps: 30,
+			durationSeconds: durationWithReviews(session),
+			...(session.finishing?.narration?.segments.length ||
+			session.finishing?.narration?.fullAudioPath ||
+			session.finishing?.musicPath ||
+			session.finishing?.sfx?.length
+				? { requireAudio: true, integratedLufsRange: [-23, -12] as const }
+				: {}),
+		});
 		session.videoPath = outputPath;
 		session.status = "rendered";
 		return session;
@@ -381,5 +1472,6 @@ export async function renderStoryboard(
 		return session;
 	} finally {
 		running.delete(id);
+		persistSessions();
 	}
 }

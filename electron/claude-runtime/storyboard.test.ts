@@ -213,6 +213,29 @@ describe("normalizeStoryboard", () => {
 		expect(starts).toEqual([20, 20, 60]);
 	});
 
+	it("aligns recording frames to detected shot boundaries", () => {
+		const { storyboard, warnings } = normalizeStoryboard(
+			draft({
+				frames: [
+					{ kind: "screen", durationSeconds: 4, headline: "A", sourceStartSeconds: 3.5 },
+					{ kind: "screen", durationSeconds: 4, headline: "B", sourceStartSeconds: 8.4 },
+				],
+			}),
+			{
+				...WITH_RECORDING,
+				recordingShotSegments: [
+					{ startSeconds: 0, endSeconds: 3, midpointSeconds: 1.5 },
+					{ startSeconds: 3, endSeconds: 8, midpointSeconds: 5.5 },
+					{ startSeconds: 8, endSeconds: 12, midpointSeconds: 10 },
+				],
+			},
+		);
+		expect(storyboard.frames.map((frame) => frame.sourceStartSeconds)).toEqual([3, 8]);
+		expect(warnings.filter((warning) => warning.includes("detected shot boundary"))).toHaveLength(
+			2,
+		);
+	});
+
 	it("drops a text frame that carries no words", () => {
 		const { storyboard, warnings } = normalizeStoryboard(
 			draft({
@@ -448,6 +471,25 @@ describe("storyboardSystemPrompt", () => {
 		});
 		expect(prompt).toContain('assetId "asset-1" (logo): Company logo');
 		expect(prompt).not.toContain("shows:");
+	});
+
+	it("gives the planner session-local files and source times for video context", () => {
+		const prompt = storyboardSystemPrompt({
+			hasRecording: true,
+			assets: [
+				{
+					id: "asset-video",
+					label: "Product demo",
+					kind: "video",
+					fileName: "assets/asset-video.mp4",
+					contactSheetFileName: "assets/asset-video-contact-sheet.jpg",
+					contactSheetTimesSeconds: [0, 4.5, 9.75],
+				},
+			],
+		});
+		expect(prompt).toContain("inspect file: assets/asset-video.mp4");
+		expect(prompt).toContain("video overview: assets/asset-video-contact-sheet.jpg");
+		expect(prompt).toContain("overview times: 0.0s, 4.5s, 9.8s");
 	});
 
 	it("forbids image frames outright when nothing was supplied", () => {

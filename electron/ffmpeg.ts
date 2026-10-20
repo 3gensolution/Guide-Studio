@@ -222,6 +222,16 @@ export interface MusicMuxBed {
 	duckWindows: Array<{ startMs: number; endMs: number }>;
 }
 
+/** A short sound-design cue placed on the exported timeline. */
+export interface SfxMuxCue {
+	/** Absolute path to the sound effect file. */
+	audioPath: string;
+	/** Cue start on the exported timeline. */
+	offsetMs: number;
+	/** Cue gain, 0–1. */
+	volume?: number;
+}
+
 /** While narration speaks, the music bed drops to this fraction of its base volume. */
 const MUSIC_DUCK_FACTOR = 0.3;
 
@@ -237,9 +247,10 @@ export async function muxNarrationAudio(
 	outputPath: string,
 	music?: MusicMuxBed | null,
 	muteOriginal = false,
+	sfx: SfxMuxCue[] = [],
 ): Promise<{ success: boolean; error?: string }> {
-	if (segments.length === 0 && !music && !muteOriginal) {
-		return { success: false, error: "No narration segments or music" };
+	if (segments.length === 0 && !music && sfx.length === 0 && !muteOriginal) {
+		return { success: false, error: "No narration segments, music, or sound effects" };
 	}
 	const ffmpegPath = await getFfmpegPath();
 	if (!ffmpegPath) return { success: false, error: "FFmpeg not found" };
@@ -266,10 +277,12 @@ export async function muxNarrationAudio(
 		// Loop the bed; amix duration=first bounds the output to the video.
 		args.push("-stream_loop", "-1", "-i", music.audioPath);
 	}
+	for (const cue of sfx) args.push("-i", cue.audioPath);
 
 	const baseLabel = hasAudio ? "[0:a]" : "[1:a]";
 	const firstSegInput = hasAudio ? 1 : 2;
 	const musicInput = firstSegInput + segments.length;
+	const firstSfxInput = musicInput + (music ? 1 : 0);
 	const buildFilter = (normalizeOff: boolean) => {
 		const parts: string[] = [];
 		const mixed: string[] = [baseLabel];
@@ -291,6 +304,14 @@ export async function muxNarrationAudio(
 			parts.push(`${chain}[bg]`);
 			mixed.push("[bg]");
 		}
+		sfx.forEach((cue, i) => {
+			const delay = Math.max(0, Math.round(cue.offsetMs));
+			const volume = Math.min(1, Math.max(0, cue.volume ?? 1));
+			parts.push(
+				`[${firstSfxInput + i}:a]adelay=${delay}:all=1,volume=${volume.toFixed(3)}[sfx${i}]`,
+			);
+			mixed.push(`[sfx${i}]`);
+		});
 		// normalize=0 keeps speech at full level; older builds lack the option,
 		// so the fallback compensates with a post-mix volume boost instead.
 		const mixOpts = normalizeOff

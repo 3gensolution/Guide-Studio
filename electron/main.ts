@@ -15,6 +15,7 @@ import {
 	Tray,
 } from "electron";
 import { ShortcutBinding } from "../src/lib/shortcuts";
+import { registerMediaContextHandlers } from "./ai/mediaContextService";
 import { getSession as getCreatorSession } from "./claude-runtime/creator";
 import {
 	loadAndRegisterGlobalShortcut,
@@ -1219,6 +1220,8 @@ app.whenReady().then(async () => {
 
 	// AI handlers (generate, narrate, etc.)
 	registerAIHandlers();
+	// Shared, picker-approved image/video references for AI Chat and Creator.
+	registerMediaContextHandlers();
 
 	// AI Video Creator — orchestrates the user's own Claude Code install.
 	registerClaudeHandlers();

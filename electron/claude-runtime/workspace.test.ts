@@ -7,6 +7,7 @@ import { VIDEO_SKILLS } from "./skills";
 import {
 	buildAgentsDoc,
 	buildBrief,
+	buildPrompt,
 	createWorkspace,
 	removeWorkspace,
 	workspacePaths,
@@ -178,5 +179,15 @@ describe("agent-aware briefing", () => {
 		expect(doc).toContain("Codex");
 		// A copy would be a second source of truth for the contract.
 		expect(doc).not.toContain("## The frame contract");
+	});
+
+	it("uses absolute session paths for CLI file tools when a workspace is supplied", () => {
+		const root = "/Users/mac/Library/Application Support/guide-studio/claude-runtime/s1";
+		const doc = buildAgentsDoc("claude", root);
+		const prompt = buildPrompt(root);
+		expect(doc).toContain(`${root}/BRIEF.md`);
+		expect(doc).toContain(`${root}/output/storyboard.json`);
+		expect(prompt).toContain(`${root}/BRIEF.md`);
+		expect(prompt).toContain(`${root}/output/storyboard.json`);
 	});
 });

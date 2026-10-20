@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { app, ipcMain } from "electron";
+import { app, dialog, ipcMain } from "electron";
 import {
 	assembleSmartExport,
 	type ConvertVideoToGifOptions,
@@ -16,6 +16,7 @@ import {
 	optimizeGif,
 	quickTrimExport,
 	remuxExport,
+	type SfxMuxCue,
 	type SmartAssembleOptions,
 } from "../ffmpeg";
 
@@ -36,6 +37,35 @@ export function registerFfmpegHandlers() {
 		}
 	});
 
+	// Import a music bed through the main process so the renderer never passes
+	// an arbitrary external path into the Creator. The copied file is then
+	// eligible for the Creator's user-data staging boundary.
+	ipcMain.handle("open-audio-file-picker", async () => {
+		try {
+			const result = await dialog.showOpenDialog({
+				title: "Choose background music",
+				filters: [
+					{ name: "Audio", extensions: ["mp3", "wav", "m4a", "aac", "ogg", "flac", "webm"] },
+				],
+				properties: ["openFile"],
+			});
+			if (result.canceled || !result.filePaths[0]) return { success: false, canceled: true };
+			const source = result.filePaths[0];
+			const extension = path.extname(source).toLowerCase();
+			const stat = await fs.stat(source);
+			if (!stat.isFile() || stat.size <= 0 || stat.size > 250 * 1024 * 1024) {
+				return { success: false, error: "Audio must be a non-empty file smaller than 250 MB." };
+			}
+			const dir = path.join(app.getPath("userData"), "narration");
+			await fs.mkdir(dir, { recursive: true });
+			const destination = path.join(dir, `music-${randomUUID()}${extension}`);
+			await fs.copyFile(source, destination);
+			return { success: true, path: destination };
+		} catch (error) {
+			return { success: false, error: error instanceof Error ? error.message : String(error) };
+		}
+	});
+
 	// Mux narration segments into an exported video IN PLACE: write to a
 	// sibling temp file, then swap it over the original on success.
 	ipcMain.handle(
@@ -46,6 +76,7 @@ export function registerFfmpegHandlers() {
 			segments: NarrationMuxSegment[],
 			music?: MusicMuxBed | null,
 			muteOriginal?: boolean,
+			sfx?: SfxMuxCue[],
 		) => {
 			const tempPath = `${videoPath}.narration.tmp.mp4`;
 			try {
@@ -55,6 +86,7 @@ export function registerFfmpegHandlers() {
 					tempPath,
 					music,
 					Boolean(muteOriginal),
+					sfx ?? [],
 				);
 				if (!result.success) {
 					await fs.rm(tempPath, { force: true });
@@ -63,7 +95,9 @@ export function registerFfmpegHandlers() {
 				await fs.rename(tempPath, videoPath);
 				return { success: true };
 			} catch (error) {
-				await fs.rm(tempPath, { force: true }).catch(() => {});
+				await fs.rm(tempPath, { force: true }).catch(() => {
+					// Best-effort cleanup must not mask the original FFmpeg failure.
+				});
 				console.error("Failed to mux narration audio:", error);
 				return { success: false, error: String(error) };
 			}

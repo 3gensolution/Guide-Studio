@@ -14,12 +14,20 @@
  * native function-calling, because the local chat call returns plain text
  * (`{ content }`) — this keeps every provider on the same path.
  */
-import { Bot, CornerDownLeft, Key, Loader2, User, Wrench } from "lucide-react";
+import { Bot, CornerDownLeft, Image, Key, Loader2, Paperclip, User, Wrench, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AISettingsButton } from "@/components/ui/AISettingsDialog";
+import { toFileUrl } from "@/components/video-editor/projectPersistence";
 import { useAIPreflight } from "@/hooks/useAIPreflight";
 import { openAISettings } from "@/lib/ai/aiSettingsBus";
+import { captureFrameAt } from "@/lib/ai/frameCapture";
+import {
+	buildMediaContextPrompt,
+	buildMediaContextRetrievalPrompt,
+	type MediaContextAsset,
+	type MediaContextAssetSummary,
+} from "@/lib/ai/mediaContext";
 import { aiService, type ChatMessage } from "@/lib/api/ai";
 
 /** A single editor action the assistant is allowed to invoke. */
@@ -86,7 +94,10 @@ function extractToolCall(text: string): ToolCall | null {
 	return null;
 }
 
-function buildSystemPrompt(tools: EditTool[]): ChatMessage {
+function buildSystemPrompt(
+	tools: EditTool[],
+	mediaContext: MediaContextAssetSummary[] = [],
+): ChatMessage {
 	const toolList = tools
 		.map((t) => {
 			const args = t.args
@@ -110,20 +121,38 @@ function buildSystemPrompt(tools: EditTool[]): ChatMessage {
 			'- To just talk (no tool): {"action": "reply", "message": "<your answer>"}\n\n' +
 			"Only use a tool when the user clearly asks for that action. When unsure, use " +
 			'"reply" and ask a clarifying question. Keep messages concise. Never invent tools ' +
-			"that are not in the list above.",
+			"that are not in the list above.\n\n" +
+			buildMediaContextPrompt(mediaContext),
 	};
 }
 
-export function AIChatPanel({ editTools = [] }: { editTools?: EditTool[] }) {
+export function AIChatPanel({
+	editTools = [],
+	mediaContext = [],
+	currentVideoPath = null,
+	currentVideoDuration = 0,
+	currentVideoTime = 0,
+}: {
+	editTools?: EditTool[];
+	mediaContext?: MediaContextAssetSummary[];
+	currentVideoPath?: string | null;
+	currentVideoDuration?: number;
+	currentVideoTime?: number;
+}) {
 	const { requireChatProvider } = useAIPreflight();
 	const [messages, setMessages] = useState<DisplayMessage[]>([]);
 	const [input, setInput] = useState("");
 	const [isSending, setIsSending] = useState(false);
+	const [attachedFrame, setAttachedFrame] = useState<string | null>(null);
+	const [attachedAssets, setAttachedAssets] = useState<MediaContextAsset[]>([]);
+	const [isCapturingFrame, setIsCapturingFrame] = useState(false);
 	// Which provider the chat will use, so the panel can say "no key yet"
 	// before the user types a message into a void.
 	const [activeProvider, setActiveProvider] = useState<string | null | undefined>(undefined);
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const inputRef = useRef<HTMLTextAreaElement>(null);
+	const attachedAssetsRef = useRef<MediaContextAsset[]>([]);
+	attachedAssetsRef.current = attachedAssets;
 
 	// Re-check on mount and whenever the window regains focus — the settings
 	// dialog may have added a key in between.
@@ -149,9 +178,92 @@ export function AIChatPanel({ editTools = [] }: { editTools?: EditTool[] }) {
 		};
 	}, []);
 
-	const systemPrompt = useMemo(() => buildSystemPrompt(editTools), [editTools]);
+	useEffect(() => {
+		return () => {
+			const ids = attachedAssetsRef.current.map((asset) => asset.id);
+			if (ids.length) void window.electronAPI.releaseAIReferenceAssets(ids);
+		};
+	}, []);
+
+	const attachedMediaContext = useMemo<MediaContextAssetSummary[]>(
+		() =>
+			attachedAssets.map((asset) => ({
+				id: asset.id,
+				kind: asset.kind,
+				role: asset.role,
+				label: asset.label,
+				...(asset.width !== undefined ? { width: asset.width } : {}),
+				...(asset.height !== undefined ? { height: asset.height } : {}),
+				...(asset.durationSeconds !== undefined ? { durationSeconds: asset.durationSeconds } : {}),
+				...(asset.frameRate !== undefined ? { frameRate: asset.frameRate } : {}),
+				...(asset.codec ? { codec: asset.codec } : {}),
+				...(asset.hasAudio !== undefined ? { hasAudio: asset.hasAudio } : {}),
+				...(asset.shotSegments?.length ? { shotSegments: asset.shotSegments } : {}),
+				...(asset.visualSummary
+					? { visualSummary: asset.visualSummary }
+					: { visualSummary: "User-supplied media. Treat it as factual visual reference." }),
+				...(asset.ocrText?.length ? { ocrText: asset.ocrText } : {}),
+				...(asset.transcriptExcerpt ? { transcriptExcerpt: asset.transcriptExcerpt } : {}),
+				...(asset.transcriptSegments?.length
+					? { transcriptSegments: asset.transcriptSegments }
+					: {}),
+			})),
+		[attachedAssets],
+	);
+	const systemPrompt = useMemo(
+		() => buildSystemPrompt(editTools, [...mediaContext, ...attachedMediaContext]),
+		[attachedMediaContext, editTools, mediaContext],
+	);
 	const toolByName = useMemo(() => new Map(editTools.map((t) => [t.name, t])), [editTools]);
 	const lastMessage = messages[messages.length - 1];
+
+	const captureCurrentFrame = useCallback(async () => {
+		if (!currentVideoPath || isCapturingFrame) return;
+		setIsCapturingFrame(true);
+		try {
+			const safeTime = Math.max(
+				0,
+				Math.min(currentVideoTime, Math.max(0, currentVideoDuration - 0.05)),
+			);
+			const frame = await captureFrameAt(currentVideoPath, safeTime * 1000);
+			if (!frame) {
+				toast.error("Could not capture the current video frame");
+				return;
+			}
+			setAttachedFrame(frame);
+		} finally {
+			setIsCapturingFrame(false);
+		}
+	}, [currentVideoDuration, currentVideoPath, currentVideoTime, isCapturingFrame]);
+
+	const pickReferenceMedia = useCallback(async () => {
+		if (isSending) return;
+		const result = await window.electronAPI.openAIReferenceFilePicker();
+		if (!result.success || !result.assets?.length) {
+			if (result.error) toast.error("Could not attach media", { description: result.error });
+			return;
+		}
+		const analyzed = await window.electronAPI.analyzeAIReferenceAssets(
+			result.assets.map((asset) => asset.id),
+		);
+		const incoming = analyzed.success && analyzed.assets?.length ? analyzed.assets : result.assets;
+		setAttachedAssets((current) => {
+			const byId = new Map(current.map((asset) => [asset.id, asset]));
+			for (const asset of incoming) byId.set(asset.id, asset);
+			const next = [...byId.values()].slice(0, 6);
+			const kept = new Set(next.map((asset) => asset.id));
+			const dropped = incoming.filter((asset) => !kept.has(asset.id));
+			if (dropped.length) {
+				void window.electronAPI.releaseAIReferenceAssets(dropped.map((asset) => asset.id));
+			}
+			return next;
+		});
+	}, [isSending]);
+
+	const removeReferenceMedia = useCallback((id: string) => {
+		setAttachedAssets((current) => current.filter((asset) => asset.id !== id));
+		void window.electronAPI.releaseAIReferenceAssets([id]);
+	}, []);
 
 	// Keep the newest message in view as the conversation grows.
 	useEffect(() => {
@@ -168,12 +280,55 @@ export function AIChatPanel({ editTools = [] }: { editTools?: EditTool[] }) {
 		setMessages(history);
 		setInput("");
 		setIsSending(true);
+		const explicitFrame = attachedFrame;
+		setAttachedFrame(null);
+		let frameForRequest = explicitFrame;
+		let visualAttachmentNote = explicitFrame ? "Attached frame: inspect this visual evidence." : "";
+		const retrievalNote = buildMediaContextRetrievalPrompt(
+			[...mediaContext, ...attachedMediaContext],
+			text,
+		);
+		if (!frameForRequest && attachedAssets.length > 0) {
+			const asset = attachedAssets[0];
+			const vision =
+				asset.kind === "video"
+					? await window.electronAPI.getAIReferenceContactSheet(asset.id, 6)
+					: await window.electronAPI.getAIReferenceVisionData(asset.id, 0);
+			if (vision.success && vision.dataUrl) frameForRequest = vision.dataUrl;
+			if (vision.success && asset.kind === "video") {
+				visualAttachmentNote =
+					"Attached video contact sheet: inspect the evenly spaced moments left-to-right; use the detected shot ranges and media metadata when discussing timing.";
+			} else if (vision.error) {
+				toast.error("Could not prepare media for vision", { description: vision.error });
+			}
+		}
 
 		try {
 			// Send only user/assistant turns as context (tool confirmations are UI-only).
-			const convo: ChatMessage[] = history
-				.filter((m): m is { role: "user" | "assistant"; content: string } => m.role !== "tool")
-				.map((m) => ({ role: m.role, content: m.content }));
+			const convo: ChatMessage[] = [];
+			for (const [index, message] of history.entries()) {
+				if (message.role === "tool") continue;
+				if (index === history.length - 1 && message.role === "user" && frameForRequest) {
+					convo.push({
+						role: "user",
+						content: [
+							{
+								type: "text",
+								text: `${message.content}\n\n${visualAttachmentNote}${retrievalNote ? `\n\n${retrievalNote}` : ""}`,
+							},
+							{ type: "image_url", image_url: { url: frameForRequest } },
+						],
+					});
+				} else {
+					convo.push({
+						role: message.role,
+						content:
+							index === history.length - 1 && message.role === "user" && retrievalNote
+								? `${message.content}\n\n${retrievalNote}`
+								: message.content,
+					});
+				}
+			}
 
 			// The model comes from AI Settings (the user's provider + key), so the
 			// request carries no model of its own.
@@ -186,6 +341,7 @@ export function AIChatPanel({ editTools = [] }: { editTools?: EditTool[] }) {
 				toast.error("AI chat failed", { description: result.error });
 				setInput(text);
 				setMessages(messages);
+				setAttachedFrame(frameForRequest);
 				return;
 			}
 
@@ -227,11 +383,23 @@ export function AIChatPanel({ editTools = [] }: { editTools?: EditTool[] }) {
 			});
 			setInput(text);
 			setMessages(messages);
+			setAttachedFrame(frameForRequest);
 		} finally {
 			setIsSending(false);
 			inputRef.current?.focus();
 		}
-	}, [input, isSending, messages, requireChatProvider, systemPrompt, toolByName]);
+	}, [
+		attachedAssets,
+		attachedFrame,
+		attachedMediaContext,
+		input,
+		isSending,
+		messages,
+		requireChatProvider,
+		systemPrompt,
+		toolByName,
+		mediaContext,
+	]);
 
 	const onInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
 		if (e.key === "Enter" && !e.shiftKey) {
@@ -248,6 +416,30 @@ export function AIChatPanel({ editTools = [] }: { editTools?: EditTool[] }) {
 					<Bot size={14} className="text-[#6E6BFF]" />
 				</div>
 				<span className="text-xs font-medium text-white/80">AI Chat</span>
+				<div className="ml-auto flex items-center gap-1">
+					<button
+						type="button"
+						onClick={() => void pickReferenceMedia()}
+						disabled={isSending}
+						className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] text-white/45 transition-colors hover:bg-white/5 hover:text-white/75 disabled:cursor-not-allowed disabled:opacity-40"
+						title="Attach an image or video reference"
+					>
+						<Paperclip size={12} />
+						Add media
+					</button>
+					{currentVideoPath && (
+						<button
+							type="button"
+							onClick={() => void captureCurrentFrame()}
+							disabled={isCapturingFrame || isSending}
+							className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] text-white/45 transition-colors hover:bg-white/5 hover:text-white/75 disabled:cursor-not-allowed disabled:opacity-40"
+							title="Attach the frame at the current playhead"
+						>
+							<Image size={12} />
+							{isCapturingFrame ? "Capturing" : "Attach frame"}
+						</button>
+					)}
+				</div>
 				{messages.length > 0 && (
 					<button
 						type="button"
@@ -257,7 +449,7 @@ export function AIChatPanel({ editTools = [] }: { editTools?: EditTool[] }) {
 						Clear
 					</button>
 				)}
-				<span className={messages.length > 0 ? "" : "ml-auto"}>
+				<span>
 					<AISettingsButton size={13} />
 				</span>
 			</div>
@@ -349,6 +541,59 @@ export function AIChatPanel({ editTools = [] }: { editTools?: EditTool[] }) {
 
 			{/* Composer */}
 			<div className="border-t border-white/5 p-2.5">
+				{attachedAssets.length > 0 && (
+					<div className="mb-2 flex flex-wrap gap-1.5">
+						{attachedAssets.map((asset) => (
+							<div
+								key={asset.id}
+								className="flex max-w-full items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-1.5 py-1"
+							>
+								{asset.kind === "image" && asset.previewPath ? (
+									<img
+										src={toFileUrl(asset.previewPath)}
+										alt=""
+										className="h-5 w-7 rounded object-cover"
+									/>
+								) : (
+									<span className="flex h-5 w-7 items-center justify-center rounded bg-white/10 text-[8px] uppercase text-white/45">
+										{asset.kind}
+									</span>
+								)}
+								<span className="max-w-[120px] truncate text-[10px] text-white/60">
+									{asset.label}
+								</span>
+								<button
+									type="button"
+									onClick={() => removeReferenceMedia(asset.id)}
+									className="rounded p-0.5 text-white/35 hover:bg-white/10 hover:text-white/75"
+									aria-label={`Remove ${asset.label}`}
+								>
+									<X size={10} />
+								</button>
+							</div>
+						))}
+					</div>
+				)}
+				{attachedFrame && (
+					<div className="mb-2 flex items-center gap-2 rounded-lg border border-[#6E6BFF]/25 bg-[#6E6BFF]/10 px-2 py-1.5">
+						<img
+							src={attachedFrame}
+							alt="Attached current video frame"
+							className="h-10 w-16 rounded object-cover"
+						/>
+						<span className="min-w-0 flex-1 truncate text-[10px] text-white/60">
+							Frame attached for visual context
+						</span>
+						<button
+							type="button"
+							onClick={() => setAttachedFrame(null)}
+							className="rounded p-1 text-white/35 hover:bg-white/10 hover:text-white/75"
+							aria-label="Remove attached frame"
+						>
+							<X size={12} />
+						</button>
+					</div>
+				)}
 				<div className="relative flex items-end gap-2 rounded-lg border border-white/10 bg-white/5 focus-within:border-[#6E6BFF]/50 transition-colors">
 					<textarea
 						ref={inputRef}

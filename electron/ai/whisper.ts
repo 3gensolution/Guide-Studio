@@ -4,7 +4,12 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
+import {
+	MEDIA_CONTEXT_LIMITS,
+	type MediaContextTranscriptSegment,
+} from "../../src/lib/ai/mediaContext";
 import type { CaptionLine, CaptionTrack, CaptionWord } from "../../src/lib/ai/types";
+import { cleanupTempAudio, extractAudio } from "./audioExtractor";
 import { getModelPath } from "./modelManager";
 
 /** Whisper CLI JSON output segment (word-level) */
@@ -272,4 +277,51 @@ export async function createCaptionTrack(
 		modelId,
 		createdAt: Date.now(),
 	};
+}
+
+/**
+ * Produce the compact transcript representation used by AI media context.
+ * Caption rendering keeps word-level precision; planning only needs bounded,
+ * timecoded phrases so prompts stay small and the model can cite moments.
+ */
+export async function transcribeMediaContext(
+	videoPath: string,
+	durationSeconds?: number,
+	options: TranscribeOptions = {},
+): Promise<MediaContextTranscriptSegment[]> {
+	if (
+		typeof durationSeconds === "number" &&
+		(!Number.isFinite(durationSeconds) ||
+			durationSeconds > MEDIA_CONTEXT_LIMITS.maxTranscriptDurationSeconds)
+	) {
+		return [];
+	}
+
+	let wavPath: string | null = null;
+	try {
+		wavPath = await extractAudio(videoPath);
+		const track = await createCaptionTrack(wavPath, options);
+		const segments = track.lines
+			.map((line) => {
+				const text = line.words
+					.map((word) => word.text.trim())
+					.filter(Boolean)
+					.join(" ")
+					.replace(/\s+/g, " ")
+					.trim();
+				if (!text) return undefined;
+				return {
+					startSeconds: Math.max(0, Math.round((line.startMs / 1000) * 10) / 10),
+					endSeconds: Math.max(0, Math.round((line.endMs / 1000) * 10) / 10),
+					text: text.slice(0, MEDIA_CONTEXT_LIMITS.maxTranscriptSegmentChars),
+				};
+			})
+			.filter((segment): segment is MediaContextTranscriptSegment =>
+				Boolean(segment && segment.endSeconds > segment.startSeconds),
+			)
+			.slice(0, MEDIA_CONTEXT_LIMITS.maxTranscriptSegments);
+		return segments;
+	} finally {
+		if (wavPath) await cleanupTempAudio(wavPath);
+	}
 }

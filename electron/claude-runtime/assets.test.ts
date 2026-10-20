@@ -60,6 +60,13 @@ describe("collectAssetQueries", () => {
 		]);
 	});
 
+	it("resolves queries from motion scenes as well as storyboard frames", () => {
+		expect(collectAssetQueries([{ kind: "image", imageQuery: "a glass sphere" }])).toEqual([]);
+		expect(collectAssetQueries([{ kind: "image", assetQuery: "a glass sphere" }])).toEqual([
+			{ index: 0, query: "a glass sphere" },
+		]);
+	});
+
 	it("survives a planner response that is not a frame list", () => {
 		expect(collectAssetQueries(undefined)).toEqual([]);
 		expect(collectAssetQueries(["not an object", 7])).toEqual([]);
@@ -168,6 +175,22 @@ describe("resolveAssetQueries", () => {
 		expect(result.assets).toHaveLength(1);
 		expect(parsed.frames[0]).toMatchObject({ assetId: "asset-1" });
 		expect(result.attributionLine).toContain("Ada");
+	});
+
+	it("resolves an image query from a motion scene", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: unknown) =>
+				String(input).includes("openverse")
+					? searchResponse([HIT])
+					: imageResponse(Buffer.from([9])),
+			),
+		);
+		const parsed = { scenes: [{ kind: "image", assetQuery: "a glass sphere" }] };
+		const result = await resolveAssetQueries({ parsed, destDir: tempDir() });
+
+		expect(result.assets).toHaveLength(1);
+		expect(parsed.scenes[0]).toMatchObject({ assetId: "asset-1" });
 	});
 
 	it("downloads one file when two frames ask for the same picture", async () => {

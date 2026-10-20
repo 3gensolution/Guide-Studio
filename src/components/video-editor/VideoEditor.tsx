@@ -4286,7 +4286,35 @@ export default function VideoEditor() {
 											{showAIPanel ? (
 												<div className="flex-1 min-h-0 flex flex-col">
 													{aiPanelMode === "chat" ? (
-														<AIChatPanel editTools={aiEditTools} />
+														<AIChatPanel
+															editTools={aiEditTools}
+															currentVideoPath={videoPath}
+															currentVideoDuration={duration}
+															currentVideoTime={currentTime}
+															mediaContext={
+																videoPath
+																	? [
+																			{
+																				id: "current-video",
+																				kind: "video",
+																				role: "source-footage",
+																				label: "Current video loaded in the editor",
+																				durationSeconds: duration,
+																				visualSummary:
+																					"The source footage is loaded in the editor. Use the available seek and editing tools when the user asks about a specific moment.",
+																				transcriptExcerpt: editorState.captionTrack
+																					? editorState.captionTrack.lines
+																							.map((line) =>
+																								line.words.map((word) => word.text).join(" "),
+																							)
+																							.join(" ")
+																							.slice(0, 6_000)
+																					: undefined,
+																			},
+																		]
+																	: []
+															}
+														/>
 													) : (
 														<AIPanelSidebar
 															editorState={editorState}

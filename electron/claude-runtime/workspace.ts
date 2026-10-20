@@ -62,6 +62,8 @@ export interface BriefInput {
 	format: "landscape" | "vertical" | "square";
 	targetSeconds: number;
 	skills?: VideoSkill[];
+	/** Absolute session root, used to remove ambiguity in CLI file tools. */
+	workspaceRoot?: string;
 }
 
 /**
@@ -98,12 +100,15 @@ function toolsParagraph(agent: AgentId): string {
 export function buildBrief(input: BriefInput): string {
 	const skills = input.skills ?? VIDEO_SKILLS;
 	const agent = input.agent ?? "claude";
+	const storyboardPath = input.workspaceRoot
+		? path.join(input.workspaceRoot, "output", "storyboard.json")
+		: "output/storyboard.json";
 	return [
 		"# Guide Studio — video brief",
 		"",
 		"## Your deliverable",
 		"",
-		"Write a single file at `output/storyboard.json` containing one JSON object",
+		`Write a single file at \`${storyboardPath}\` containing one JSON object`,
 		"and nothing else — no prose, no markdown fence, no commentary in the file.",
 		"That file is the entire deliverable. Guide Studio validates it, renders it",
 		"locally, and shows the result to the user.",
@@ -131,8 +136,8 @@ export function buildBrief(input: BriefInput): string {
 		"",
 		"1. Read the skills above that apply to this request.",
 		"2. Plan the frame sequence before writing any file.",
-		"3. Write `output/storyboard.json`.",
-		"4. Read it back and confirm it parses and obeys the contract limits.",
+		`3. Write \`${storyboardPath}\`.`,
+		`4. Read \`${storyboardPath}\` back and confirm it parses and obeys the contract limits.`,
 		"",
 		toolsParagraph(agent),
 		"",
@@ -144,15 +149,19 @@ export function buildBrief(input: BriefInput): string {
  * so the brief is reached even if the prompt is truncated or ignored. It stays
  * a pointer rather than a copy: one brief, no chance of the two drifting.
  */
-export function buildAgentsDoc(agent: AgentId): string {
+export function buildAgentsDoc(agent: AgentId, workspaceRoot?: string): string {
+	const briefPath = workspaceRoot ? path.join(workspaceRoot, "BRIEF.md") : "BRIEF.md";
+	const storyboardPath = workspaceRoot
+		? path.join(workspaceRoot, "output", "storyboard.json")
+		: "output/storyboard.json";
 	return [
 		"# Guide Studio session",
 		"",
-		`Read \`BRIEF.md\` in this directory first. It is the whole task: it names the`,
+		`Read \`${briefPath}\` first. It is the whole task: it names the`,
 		"deliverable, the request, the frame contract you must obey, and the craft",
 		"skills to follow.",
 		"",
-		"Write exactly one file — `output/storyboard.json` — containing one JSON",
+		`Write exactly one file — \`${storyboardPath}\` — containing one JSON`,
 		"object and nothing else. Do not create extra files, and do not reply with",
 		"the JSON.",
 		"",
@@ -162,10 +171,14 @@ export function buildAgentsDoc(agent: AgentId): string {
 }
 
 /** The prompt handed to `claude -p`. Short by design: the brief holds the detail. */
-export function buildPrompt(): string {
+export function buildPrompt(workspaceRoot?: string): string {
+	const briefPath = workspaceRoot ? path.join(workspaceRoot, "BRIEF.md") : "BRIEF.md";
+	const storyboardPath = workspaceRoot
+		? path.join(workspaceRoot, "output", "storyboard.json")
+		: "output/storyboard.json";
 	return [
-		"Read BRIEF.md in this directory and produce the storyboard it asks for.",
-		"Follow the craft skills it points you at, then write output/storyboard.json.",
+		`Read \`${briefPath}\` and produce the storyboard it asks for.`,
+		`Follow the craft skills it points you at, then write \`${storyboardPath}\`.`,
 		"When the file is written and verified, reply with one short sentence naming",
 		"the number of frames and the total duration. Do not paste the JSON.",
 	].join(" ");
@@ -194,8 +207,12 @@ export function createWorkspace(options: CreateWorkspaceOptions): WorkspacePaths
 		fs.writeFileSync(path.join(skillDir, "SKILL.md"), skillFileContents(skill), "utf8");
 	}
 
-	fs.writeFileSync(paths.briefPath, buildBrief(options), "utf8");
-	fs.writeFileSync(paths.agentsDocPath, buildAgentsDoc(options.agent ?? "claude"), "utf8");
+	fs.writeFileSync(paths.briefPath, buildBrief({ ...options, workspaceRoot: paths.root }), "utf8");
+	fs.writeFileSync(
+		paths.agentsDocPath,
+		buildAgentsDoc(options.agent ?? "claude", paths.root),
+		"utf8",
+	);
 	return paths;
 }
 

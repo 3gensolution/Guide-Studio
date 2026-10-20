@@ -297,6 +297,31 @@ interface Window {
 			fileName: string,
 		) => Promise<{ success: boolean; path?: string; canceled?: boolean; error?: string }>;
 		openVideoFilePicker: () => Promise<{ success: boolean; path?: string; canceled?: boolean }>;
+		openAIReferenceFilePicker: () => Promise<{
+			success: boolean;
+			canceled?: boolean;
+			assets?: import("../src/lib/ai/mediaContext").MediaContextAsset[];
+			error?: string;
+		}>;
+		analyzeAIReferenceAssets: (assetIds: string[]) => Promise<{
+			success: boolean;
+			assets?: import("../src/lib/ai/mediaContext").MediaContextAsset[];
+			error?: string;
+		}>;
+		getAIReferenceVisionData: (
+			assetId: string,
+			timeSeconds?: number,
+		) => Promise<{ success: boolean; dataUrl?: string; error?: string }>;
+		getAIReferenceContactSheet: (
+			assetId: string,
+			frameCount?: number,
+		) => Promise<{
+			success: boolean;
+			dataUrl?: string;
+			frameTimesSeconds?: number[];
+			error?: string;
+		}>;
+		releaseAIReferenceAssets: (assetIds: string[]) => Promise<{ success: boolean }>;
 		setCurrentVideoPath: (path: string) => Promise<{ success: boolean }>;
 		setCurrentRecordingSession: (
 			session: import("../src/lib/recordingSession").RecordingSession | null,
@@ -330,6 +355,12 @@ interface Window {
 		saveNarrationAudio: (
 			data: ArrayBuffer,
 		) => Promise<{ success: boolean; path?: string; error?: string }>;
+		openAudioFilePicker: () => Promise<{
+			success: boolean;
+			path?: string;
+			canceled?: boolean;
+			error?: string;
+		}>;
 		muxNarrationAudio: (
 			videoPath: string,
 			segments: Array<{ audioPath: string; offsetMs: number }>,
@@ -339,6 +370,7 @@ interface Window {
 				duckWindows: Array<{ startMs: number; endMs: number }>;
 			} | null,
 			muteOriginal?: boolean,
+			sfx?: Array<{ audioPath: string; offsetMs: number; volume?: number }>,
 		) => Promise<{ success: boolean; error?: string }>;
 		autoSaveProject: (
 			projectData: unknown,
@@ -857,9 +889,16 @@ interface Window {
 			targetSeconds?: number;
 			model?: string;
 			look?: "motion" | "cards" | "whiteboard";
+			creativeSkill?: "explainer-motion" | "product-launch" | "product-update" | "brand-reveal";
+			visualSource?: "stock" | "generated";
+			referenceAssetIds?: string[];
 		}) => Promise<ClaudeSessionResult>;
 		claudePreview: (sessionId: string) => Promise<ClaudeSessionResult>;
+		claudeReviewShots: (sessionId: string, updates: unknown) => Promise<ClaudeSessionResult>;
+		claudeSetFinishing: (sessionId: string, input: unknown) => Promise<ClaudeSessionResult>;
 		claudeRender: (sessionId: string) => Promise<ClaudeSessionResult>;
+		claudeCreateMaster: (sessionId: string) => Promise<ClaudeSessionResult>;
+		claudeCreateInterchange: (sessionId: string) => Promise<ClaudeSessionResult>;
 		claudeSession: (sessionId: string) => Promise<ClaudeSessionResult>;
 		claudeSessions: () => Promise<{
 			success: boolean;
@@ -867,6 +906,7 @@ interface Window {
 		}>;
 		claudeCancel: (sessionId: string) => Promise<{ success: boolean }>;
 		claudeDiscard: (sessionId: string) => Promise<{ success: boolean }>;
+		claudeClearMedia: (sessionId: string) => Promise<ClaudeSessionResult>;
 		claudeInsertIntoEditor: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
 		onClaudeActivity: (
 			callback: (activity: import("./claude-runtime/events").ClaudeActivity) => void,

@@ -95,7 +95,7 @@ export interface StudioSettings {
 
 const DEFAULT_SETTINGS: StudioSettings = {
 	captureBackend: "auto",
-	aiProvider: "openai",
+	aiProvider: "minimax",
 	whisperModel: "small",
 	ttsEngine: "auto",
 	cursorSmoothing: 0.5,

@@ -45,11 +45,16 @@ test("exports both clips of a multi-clip timeline", async () => {
 
 	const app = await electron.launch({
 		args: [MAIN_JS, "--no-sandbox", "--enable-unsafe-swiftshader"],
-		env: {
-			...process.env,
-			HEADLESS: process.env["HEADLESS"] ?? "true",
-			GUIDE_STUDIO_E2E_USER_DATA: e2eUserData,
-		},
+		env: Object.fromEntries(
+			Object.entries({
+				...process.env,
+				HEADLESS: process.env["HEADLESS"] ?? "true",
+				GUIDE_STUDIO_E2E_USER_DATA: e2eUserData,
+			}).filter(
+				(entry): entry is [string, string] =>
+					entry[0] !== "ELECTRON_RUN_AS_NODE" && typeof entry[1] === "string",
+			),
+		),
 	});
 	const electronProcess = app.process();
 

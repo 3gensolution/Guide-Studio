@@ -14,15 +14,23 @@
 import path from "node:path";
 import { app, BrowserWindow, ipcMain } from "electron";
 import { toAgentId } from "../claude-runtime/agents";
+import { CREATIVE_SKILL_IDS, type CreativeSkillId } from "../claude-runtime/creativeSkills";
 import {
+	type CreatorFinishingInput,
 	type CreatorSession,
 	cancelSession,
+	clearSessionMedia,
+	createSessionInterchange,
+	createSessionMaster,
 	discardSession,
 	getSession,
+	initializeCreatorStore,
 	listSessions,
 	planStoryboard,
 	previewStoryboard,
 	renderStoryboard,
+	reviewSessionShots,
+	setSessionFinishing,
 } from "../claude-runtime/creator";
 import { detectAgents } from "../claude-runtime/detect";
 import type { ClaudeActivity } from "../claude-runtime/events";
@@ -48,6 +56,7 @@ function ok(session: CreatorSession) {
 }
 
 export function registerClaudeHandlers(): void {
+	initializeCreatorStore(baseDir());
 	// ── Setup ──
 	ipcMain.handle("agent-detect", async () => {
 		try {
@@ -60,6 +69,7 @@ export function registerClaudeHandlers(): void {
 	ipcMain.handle("claude-skills", () => ({
 		success: true,
 		skills: VIDEO_SKILLS.map(({ id, name, description }) => ({ id, name, description })),
+		creativeSkills: CREATIVE_SKILL_IDS,
 	}));
 
 	// ── Stage 1: plan ──
@@ -74,6 +84,9 @@ export function registerClaudeHandlers(): void {
 				targetSeconds?: number;
 				model?: string;
 				look?: "motion" | "cards" | "whiteboard";
+				creativeSkill?: CreativeSkillId;
+				visualSource?: "stock" | "generated";
+				referenceAssetIds?: string[];
 			},
 		) => {
 			if (!input?.request?.trim()) {
@@ -102,6 +115,30 @@ export function registerClaudeHandlers(): void {
 		}
 	});
 
+	// ── Stage 2.5: human shot review ──
+	ipcMain.handle("claude-review-shots", async (_event, sessionId: string, updates: unknown) => {
+		if (typeof sessionId !== "string" || sessionId.length > 100) {
+			return { success: false, error: "That session id is invalid." };
+		}
+		try {
+			return ok(reviewSessionShots(sessionId, updates));
+		} catch (error) {
+			return fail(error);
+		}
+	});
+
+	// ── Stage 2.75: production finishing ──
+	ipcMain.handle("claude-set-finishing", async (_event, sessionId: string, input: unknown) => {
+		if (typeof sessionId !== "string" || sessionId.length > 100) {
+			return { success: false, error: "That session id is invalid." };
+		}
+		try {
+			return ok(setSessionFinishing(sessionId, input as CreatorFinishingInput));
+		} catch (error) {
+			return fail(error);
+		}
+	});
+
 	// ── Stage 3: render ──
 	ipcMain.handle("claude-render", async (_event, sessionId: string) => {
 		try {
@@ -109,6 +146,22 @@ export function registerClaudeHandlers(): void {
 				broadcast("claude-render-progress", { sessionId, percent });
 			});
 			return ok(session);
+		} catch (error) {
+			return fail(error);
+		}
+	});
+
+	ipcMain.handle("claude-create-master", async (_event, sessionId: string) => {
+		try {
+			return ok(await createSessionMaster(sessionId));
+		} catch (error) {
+			return fail(error);
+		}
+	});
+
+	ipcMain.handle("claude-create-interchange", async (_event, sessionId: string) => {
+		try {
+			return ok(createSessionInterchange(sessionId));
 		} catch (error) {
 			return fail(error);
 		}
@@ -131,5 +184,13 @@ export function registerClaudeHandlers(): void {
 	ipcMain.handle("claude-discard", (_event, sessionId: string) => {
 		discardSession(sessionId);
 		return { success: true };
+	});
+
+	ipcMain.handle("claude-clear-media", (_event, sessionId: string) => {
+		try {
+			return ok(clearSessionMedia(sessionId));
+		} catch (error) {
+			return fail(error);
+		}
 	});
 }

@@ -1,3 +1,9 @@
+import {
+	buildMediaContextRetrievalPrompt,
+	type MediaContextRole,
+	type MediaContextShotSegment,
+	type MediaContextTranscriptSegment,
+} from "../../src/lib/ai/mediaContext";
 import type {
 	HyperFrame,
 	HyperFrameAccent,
@@ -253,6 +259,8 @@ export interface NormalizeOptions {
 	hasRecording: boolean;
 	/** Known recording length, used to keep `sourceStartSeconds` inside the media. */
 	recordingSeconds?: number;
+	/** Coarse detected edit ranges for the supplied recording. */
+	recordingShotSegments?: MediaContextShotSegment[];
 	fallbackTitle: string;
 	/** Ids of supplied images and GIFs an image frame is allowed to reference. */
 	availableAssetIds?: string[];
@@ -329,10 +337,23 @@ export interface StoryboardAssetSummary {
 	id: string;
 	label: string;
 	kind: string;
+	role?: MediaContextRole;
+	/** A session-local file the agent may inspect for visual truth. */
+	fileName?: string;
+	/** A bounded multi-moment overview generated for video references. */
+	contactSheetFileName?: string;
+	contactSheetTimesSeconds?: number[];
+	shotSegments?: MediaContextShotSegment[];
 	/** What the image was found to contain, once it has been looked at. */
 	shows?: string;
 	/** Text legible in the image, so frame copy does not repeat it. */
 	text?: string[];
+	ocrText?: string[];
+	/** A conservative visual description generated from the supplied media. */
+	visualSummary?: string;
+	/** A compact excerpt from supplied video speech, when available. */
+	transcriptExcerpt?: string;
+	transcriptSegments?: MediaContextTranscriptSegment[];
 }
 
 export function storyboardSystemPrompt(options: {
@@ -343,12 +364,15 @@ export function storyboardSystemPrompt(options: {
 	 * after the run. Off, an image frame still needs a supplied asset.
 	 */
 	canFetchImages?: boolean;
+	/** Which provider will resolve assetQuery after planning. */
+	imageSource?: "stock" | "generated";
 	/** Frame kinds the selected skill permits, if it restricts them. */
 	allowedKinds?: HyperFrameKind[];
 	/** The skill's own direction, and the shape it renders to. */
 	skillDirection?: string;
 	format?: "landscape" | "vertical" | "square";
 	targetSeconds?: number;
+	contextQuery?: string;
 }) {
 	const lines = [STORYBOARD_SYSTEM_PROMPT];
 	if (options.allowedKinds?.length) {
@@ -387,14 +411,24 @@ export function storyboardSystemPrompt(options: {
 			: "No screen recording is attached. Do not use screen, callout, or split frames.",
 	);
 	if (options.canFetchImages) {
-		lines.push(
-			"Guide Studio can fetch openly-licensed photographs for you, so an image frame does not need a supplied asset.",
-			'On an image or imageSplit frame, set assetQuery to a short plain description of the picture you want — "solar panels on a house roof", "a nurse using a tablet at a ward desk" — and leave assetId out.',
-			"After you finish, Guide Studio searches for each query, downloads what it finds, and puts the photographer's credit on the closing card. You never see the file.",
-			`Use at most ${ASSET_QUERY_LIMITS.maxAssets} image frames per video, and only where a photograph earns its place.`,
-			"Ask only for generic photographs: a scene, an object, a place, a person working. Stock search cannot produce a specific company's product, logo, screenshot, chart, or any picture that has to be factually exact — plan those as bullets or statement frames instead.",
-			"A query that finds nothing becomes a text frame, so never let a frame carry information that is only in its picture.",
-		);
+		if (options.imageSource === "generated") {
+			lines.push(
+				"Guide Studio will generate a visual for each assetQuery with the user's selected image provider.",
+				'On an image or imageSplit frame, set assetQuery to a short visual brief — "abstract light trails around a glass sphere", "a clean studio desk with a laptop" — and leave assetId out.',
+				"Generated images are suitable for atmosphere and illustration, not exact product UI, logos, charts, readable text, prices, or factual product behavior. Keep product truth in supplied references and locally-rendered copy.",
+				`Use at most ${ASSET_QUERY_LIMITS.maxAssets} generated image frames per video, and only where a visual earns its place.`,
+				"A generation failure becomes a text frame, so never let a frame carry information that exists only in its picture.",
+			);
+		} else {
+			lines.push(
+				"Guide Studio can fetch openly-licensed photographs for you, so an image frame does not need a supplied asset.",
+				'On an image or imageSplit frame, set assetQuery to a short plain description of the picture you want — "solar panels on a house roof", "a nurse using a tablet at a ward desk" — and leave assetId out.',
+				"After you finish, Guide Studio searches for each query, downloads what it finds, and puts the photographer's credit on the closing card. You never see the file.",
+				`Use at most ${ASSET_QUERY_LIMITS.maxAssets} image frames per video, and only where a photograph earns its place.`,
+				"Ask only for generic photographs: a scene, an object, a place, a person working. Stock search cannot produce a specific company's product, logo, screenshot, chart, or any picture that has to be factually exact — plan those as bullets or statement frames instead.",
+				"A query that finds nothing becomes a text frame, so never let a frame carry information that is only in its picture.",
+			);
+		}
 	}
 	if (options.assets.length) {
 		lines.push(
@@ -402,16 +436,52 @@ export function storyboardSystemPrompt(options: {
 			...options.assets.map((asset) => {
 				const detail = [
 					`- assetId "${asset.id}" (${asset.kind}): ${asset.label}`,
+					asset.fileName ? ` — inspect file: ${asset.fileName}` : "",
+					asset.contactSheetFileName ? ` — video overview: ${asset.contactSheetFileName}` : "",
+					asset.contactSheetTimesSeconds?.length
+						? ` — overview times: ${asset.contactSheetTimesSeconds.map((time) => `${time.toFixed(1)}s`).join(", ")}`
+						: "",
+					asset.shotSegments?.length
+						? ` — detected shot ranges: ${asset.shotSegments
+								.slice(0, 24)
+								.map(
+									(segment) =>
+										`${segment.startSeconds.toFixed(1)}-${segment.endSeconds.toFixed(1)}s`,
+								)
+								.join(", ")}`
+						: "",
 					// The description is what makes copy specific to the picture
 					// instead of specific to the filename.
 					asset.shows ? ` — shows: ${asset.shows}` : "",
-					asset.text?.length ? ` — text in image: ${asset.text.slice(0, 5).join(" / ")}` : "",
+					(asset.text ?? asset.ocrText)?.length
+						? ` — text in image: ${(asset.text ?? asset.ocrText)?.slice(0, 5).join(" / ")}`
+						: "",
+					asset.visualSummary ? ` — visual summary: ${asset.visualSummary}` : "",
+					asset.transcriptExcerpt ? ` — transcript: ${asset.transcriptExcerpt}` : "",
 				];
 				return detail.join("");
 			}),
 			"Only use an assetId from this list. An image frame without a valid assetId will be replaced with plain text.",
 			"Write copy that suits what each image actually shows, and do not repeat text that is already legible inside the image.",
+			"The listed files are inside this session workspace and may be inspected for visual truth. A video overview is ordered left-to-right, top-to-bottom; use it and the detected shot ranges to understand the source footage before choosing screen or callout moments.",
 		);
+		const retrieval = options.contextQuery
+			? buildMediaContextRetrievalPrompt(
+					options.assets.map((asset) => ({
+						id: asset.id,
+						kind: asset.kind === "video" ? "video" : "image",
+						role: asset.role ?? "supporting-media",
+						label: asset.label,
+						...(asset.visualSummary ? { visualSummary: asset.visualSummary } : {}),
+						...(asset.text || asset.ocrText ? { ocrText: asset.text ?? asset.ocrText } : {}),
+						...(asset.transcriptExcerpt ? { transcriptExcerpt: asset.transcriptExcerpt } : {}),
+						...(asset.transcriptSegments ? { transcriptSegments: asset.transcriptSegments } : {}),
+						...(asset.shotSegments ? { shotSegments: asset.shotSegments } : {}),
+					})),
+					options.contextQuery,
+				)
+			: "";
+		if (retrieval) lines.push(retrieval);
 	} else if (!options.canFetchImages) {
 		lines.push("No images or GIFs were supplied, so do not use image or imageSplit frames.");
 	}
@@ -515,6 +585,24 @@ function normalizeFocus(value: unknown, label: string, warnings: string[]) {
 			warnings,
 		),
 	};
+}
+
+function snapRecordingStartToShotBoundary(
+	requestedStart: number,
+	segments: MediaContextShotSegment[] | undefined,
+): number {
+	if (!segments?.length) return requestedStart;
+	const containing = segments.find(
+		(segment) => requestedStart >= segment.startSeconds && requestedStart <= segment.endSeconds,
+	);
+	if (containing) return containing.startSeconds;
+	return segments.reduce(
+		(best, segment) =>
+			Math.abs(segment.startSeconds - requestedStart) < Math.abs(best - requestedStart)
+				? segment.startSeconds
+				: best,
+		0,
+	);
 }
 
 /**
@@ -676,12 +764,17 @@ export function normalizeStoryboard(value: unknown, options: NormalizeOptions): 
 			`${label} sourceStartSeconds`,
 			RECORDING_KINDS.has(kind) ? warnings : [],
 		);
+		const boundaryStart = RECORDING_KINDS.has(kind)
+			? snapRecordingStartToShotBoundary(requestedStart, options.recordingShotSegments)
+			: requestedStart;
 		const sourceStartSeconds = RECORDING_KINDS.has(kind)
-			? Math.max(previousStart, requestedStart)
+			? Math.max(previousStart, boundaryStart)
 			: undefined;
 		if (sourceStartSeconds !== undefined && sourceStartSeconds !== requestedStart) {
 			warnings.push(
-				`${label} sourceStartSeconds went backwards through the recording; moved it to ${sourceStartSeconds}.`,
+				requestedStart < previousStart
+					? `${label} sourceStartSeconds went backwards through the recording; moved it to ${sourceStartSeconds}.`
+					: `${label} sourceStartSeconds was aligned to a detected shot boundary at ${sourceStartSeconds}.`,
 			);
 		}
 		if (sourceStartSeconds !== undefined) previousStart = sourceStartSeconds;

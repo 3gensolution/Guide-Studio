@@ -1,7 +1,25 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ApiClient } from "./client";
 
 const AUTH_STORAGE_KEY = "guide_studio_auth";
+
+beforeEach(() => {
+	const store = new Map<string, string>();
+	const stub = {
+		getItem: (key: string) => store.get(key) ?? null,
+		setItem: (key: string, value: string) => store.set(key, String(value)),
+		removeItem: (key: string) => store.delete(key),
+		clear: () => store.clear(),
+		key: (index: number) => Array.from(store.keys())[index] ?? null,
+		get length() {
+			return store.size;
+		},
+	};
+	Object.defineProperty(globalThis, "localStorage", {
+		value: stub,
+		configurable: true,
+	});
+});
 
 afterEach(() => {
 	localStorage.removeItem(AUTH_STORAGE_KEY);

@@ -309,7 +309,7 @@ export const AI_PROVIDERS: AIProviderInfo[] = [
 	{
 		id: "minimax",
 		name: "MiniMax",
-		description: "MiniMax M2.7. Competitive quality, affordable. Has TTS.",
+		description: "Unified AI: chat, vision, images, video, music, and narration from one key.",
 		requiresApiKey: true,
 		defaultModel: "MiniMax-M2.7",
 		models: ["MiniMax-M2.7", "MiniMax-M2.7-highspeed", "MiniMax-M2.5", "MiniMax-M2.5-highspeed"],

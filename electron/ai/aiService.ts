@@ -29,8 +29,20 @@ const DEFAULT_CONFIG: AIServiceConfig = {
  */
 export async function loadAIConfig(): Promise<AIServiceConfig> {
 	const settings = await loadSettings();
-	const provider = settings.aiProvider ?? DEFAULT_CONFIG.provider;
-	// Read per-provider key, falling back to legacy single key
+	const configuredProvider = settings.aiProvider ?? DEFAULT_CONFIG.provider;
+	// MiniMax is the unified cloud path: one key covers chat/vision, images,
+	// video, music, and narration. Older installations may still say OpenAI
+	// even though the user only entered the unified MiniMax key, so migrate
+	// that case in memory without overwriting an explicit local/CLI choice.
+	const configuredKeyField = `aiApiKey_${configuredProvider}` as keyof typeof settings;
+	const configuredKey = (settings[configuredKeyField] as string | undefined) ?? settings.aiApiKey;
+	const localOrCli =
+		configuredProvider === "ollama" ||
+		configuredProvider === "claude-code" ||
+		configuredProvider === "codex";
+	const provider =
+		!configuredKey && !localOrCli && settings.aiApiKey_minimax ? "minimax" : configuredProvider;
+	// Read the selected provider's key, falling back to the legacy single key.
 	const providerKeyField = `aiApiKey_${provider}` as keyof typeof settings;
 	const apiKey = (settings[providerKeyField] as string | undefined) ?? settings.aiApiKey;
 	// Read per-provider model, falling back to legacy single model
@@ -452,6 +464,7 @@ async function openaiCompatibleChat(
 	model: string,
 	endpoint: string,
 	systemPrompt?: string,
+	imageBase64?: string,
 ): Promise<string> {
 	// OpenAI reasoning/Pro models require the Responses API instead of Chat
 	// Completions. Use exact host / dot-prefixed suffix rather than a bare
@@ -463,11 +476,23 @@ async function openaiCompatibleChat(
 		return openaiResponsesAPI(prompt, apiKey, model, systemPrompt);
 	}
 
-	const messages: Array<{ role: string; content: string }> = [];
+	const messages: Array<{ role: string; content: unknown }> = [];
 	if (systemPrompt) {
 		messages.push({ role: "system", content: systemPrompt });
 	}
-	messages.push({ role: "user", content: prompt });
+	const userContent = imageBase64
+		? [
+				{ type: "text", text: prompt },
+				{
+					type: "image_url",
+					image_url: {
+						url: `data:${detectImageMime(imageBase64)};base64,${imageBase64}`,
+						detail: "high",
+					},
+				},
+			]
+		: prompt;
+	messages.push({ role: "user", content: userContent });
 
 	const maxOutputTokens = getMaxOutputTokens(endpoint, model);
 	// Timeout: 4 minutes — matches the Anthropic Sonnet ceiling. Plan
@@ -937,11 +962,12 @@ export async function checkAvailability(): Promise<AIAvailability> {
 const VISION_MODELS: Record<string, string> = {
 	openai: "gpt-5.4-mini",
 	anthropic: "claude-sonnet-4-6",
+	minimax: "MiniMax-M2.7",
 };
 
 /**
  * Check if the current provider supports vision (image input).
- * Only OpenAI and Anthropic support multimodal vision.
+ * OpenAI, Anthropic, and MiniMax support multimodal vision.
  */
 export function supportsVision(provider: AIProvider): boolean {
 	// Both agent CLIs take images: Claude Code reads the file, Codex attaches it.
@@ -1126,6 +1152,22 @@ export async function analyzeImage(
 				systemPrompt,
 			);
 			console.log(`[AI] Anthropic vision response length: ${text?.length ?? 0}`);
+			return { success: !!text, text: text || undefined };
+		}
+
+		if (provider === "minimax" && config.apiKey) {
+			const model = config.model || VISION_MODELS.minimax;
+			const endpoint = resolveEndpoint(provider, config.baseUrl);
+			if (!endpoint) throw new Error("MiniMax vision endpoint is not configured");
+			const text = await openaiCompatibleChat(
+				prompt,
+				config.apiKey,
+				model,
+				endpoint,
+				systemPrompt,
+				imageBase64,
+			);
+			console.log(`[AI] MiniMax vision response length: ${text?.length ?? 0}`);
 			return { success: !!text, text: text || undefined };
 		}
 

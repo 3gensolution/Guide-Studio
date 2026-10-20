@@ -25,15 +25,21 @@ import type {
 	HyperFrameCompositionProps,
 	HyperFrameFormat,
 	HyperFrameImageAsset,
+	HyperFrameTheme,
 } from "../../src/lib/remotion/HyperFrameComposition";
 import { hyperFrameFormatSpec } from "../../src/lib/remotion/HyperFrameComposition";
 import type {
+	MotionBrandPalette,
 	MotionCompositionProps,
 	MotionFormat,
+	MotionImageAsset,
 	MotionScene,
+	MotionVideoAsset,
 } from "../../src/lib/remotion/MotionGraphicsComposition";
 import { motionFormatSpec } from "../../src/lib/remotion/MotionGraphicsComposition";
+import type { RenderCaptionLine } from "../../src/lib/remotion/RenderCaptionOverlay";
 import { getFfmpegEnv, getFfmpegPath } from "../ffmpeg";
+import { validateRenderedVideo } from "./renderValidation";
 
 /**
  * Resolve the directory containing Remotion's native binaries (remotion.exe,
@@ -86,6 +92,12 @@ export interface HyperFrameRenderOptions {
 	frames: HyperFrame[];
 	/** Local image files the frames reference, staged into the bundle here. */
 	imageAssets?: Array<{ assetId: string; src: string }>;
+	/** One approved local video source for screen/callout/split frames. */
+	screenSrc?: string;
+	theme?: HyperFrameTheme;
+	captions?: RenderCaptionLine[];
+	screenWidth?: number;
+	screenHeight?: number;
 	outputPath: string;
 	format?: HyperFrameFormat;
 	fps?: number;
@@ -114,12 +126,18 @@ export async function renderHyperFrameDemo(opts: HyperFrameRenderOptions) {
 	const serveUrl = await resolveServeUrl();
 	const binariesDirectory = getRemotionBinariesDirectory();
 	const staged = copyImageAssetsToBundle(serveUrl, opts.imageAssets);
+	const stagedScreen = copyScreenVideoToBundle(serveUrl, opts.screenSrc);
 
 	const inputProps: HyperFrameCompositionProps = {
 		title: opts.title,
 		accent: opts.accent,
 		frames: opts.frames,
 		...(staged.length ? { imageAssets: staged } : {}),
+		...(stagedScreen ? { screenSrc: stagedScreen } : {}),
+		...(opts.screenWidth ? { screenWidth: opts.screenWidth } : {}),
+		...(opts.screenHeight ? { screenHeight: opts.screenHeight } : {}),
+		...(opts.theme ? { theme: opts.theme } : {}),
+		...(opts.captions?.length ? { captions: opts.captions } : {}),
 	};
 
 	const composition = await selectComposition({
@@ -149,6 +167,12 @@ export async function renderHyperFrameDemo(opts: HyperFrameRenderOptions) {
 			...(chromiumOptions ? { chromiumOptions } : {}),
 			onProgress: ({ progress }) => opts.onProgress?.(Math.round(progress * 100)),
 		});
+		await validateRenderedVideo(opts.outputPath, {
+			width: composition.width,
+			height: composition.height,
+			fps,
+			durationSeconds: composition.durationInFrames / fps,
+		});
 	} finally {
 		opts.signal?.removeEventListener("abort", abortListener);
 	}
@@ -172,6 +196,11 @@ export async function renderHyperFrameStills(opts: {
 	accent: HyperFrameCompositionProps["accent"];
 	frames: HyperFrame[];
 	imageAssets?: Array<{ assetId: string; src: string }>;
+	screenSrc?: string;
+	theme?: HyperFrameTheme;
+	captions?: RenderCaptionLine[];
+	screenWidth?: number;
+	screenHeight?: number;
 	frameIndexes: number[];
 	outputDirectory: string;
 	format?: HyperFrameFormat;
@@ -182,12 +211,18 @@ export async function renderHyperFrameStills(opts: {
 	const serveUrl = await resolveServeUrl();
 	const binariesDirectory = getRemotionBinariesDirectory();
 	const staged = copyImageAssetsToBundle(serveUrl, opts.imageAssets);
+	const stagedScreen = copyScreenVideoToBundle(serveUrl, opts.screenSrc);
 
 	const inputProps: HyperFrameCompositionProps = {
 		title: opts.title,
 		accent: opts.accent,
 		frames: opts.frames,
 		...(staged.length ? { imageAssets: staged } : {}),
+		...(stagedScreen ? { screenSrc: stagedScreen } : {}),
+		...(opts.screenWidth ? { screenWidth: opts.screenWidth } : {}),
+		...(opts.screenHeight ? { screenHeight: opts.screenHeight } : {}),
+		...(opts.theme ? { theme: opts.theme } : {}),
+		...(opts.captions?.length ? { captions: opts.captions } : {}),
 	};
 
 	const composition = await selectComposition({
@@ -230,6 +265,46 @@ export async function renderHyperFrameStills(opts: {
 	return results;
 }
 
+/** Create an edit-friendly ProRes 422 HQ master from an already validated MP4. */
+export async function createProResMaster(inputPath: string, outputPath: string): Promise<void> {
+	const ffmpegPath = await getFfmpegPath();
+	if (!ffmpegPath) throw new Error("FFmpeg is unavailable, so a ProRes master cannot be created.");
+	const env = getFfmpegEnv(ffmpegPath);
+	await execFile(
+		ffmpegPath,
+		[
+			"-hide_banner",
+			"-i",
+			inputPath,
+			"-map",
+			"0:v:0",
+			"-map",
+			"0:a?",
+			"-c:v",
+			"prores_ks",
+			"-profile:v",
+			"3",
+			"-pix_fmt",
+			"yuv422p10le",
+			"-color_primaries",
+			"bt709",
+			"-color_trc",
+			"bt709",
+			"-colorspace",
+			"bt709",
+			"-c:a",
+			"pcm_s24le",
+			"-ar",
+			"48000",
+			"-movflags",
+			"+write_colr",
+			"-y",
+			outputPath,
+		],
+		{ env, timeout: 600_000 },
+	);
+}
+
 // ── Motion graphics rendering ────────────────────────────────────────────
 //
 // The animated counterpart to the HyperFrame functions above. Same contract:
@@ -239,6 +314,13 @@ export interface MotionRenderOptions {
 	title: string;
 	accent: MotionCompositionProps["accent"];
 	scenes: MotionScene[];
+	brandPalette?: MotionBrandPalette;
+	/** Local supplied image assets, including a validated logo reveal source. */
+	imageAssets?: MotionImageAsset[];
+	/** Local supplied source videos referenced by validated video scenes. */
+	videoAssets?: MotionVideoAsset[];
+	captions?: RenderCaptionLine[];
+	attributionLine?: string;
 	outputPath: string;
 	format?: MotionFormat;
 	fps?: number;
@@ -251,11 +333,18 @@ export async function renderMotionDemo(opts: MotionRenderOptions) {
 	const spec = motionFormatSpec(opts.format ?? "landscape");
 	const serveUrl = await resolveServeUrl();
 	const binariesDirectory = getRemotionBinariesDirectory();
+	const staged = copyImageAssetsToBundle(serveUrl, opts.imageAssets);
+	const stagedVideos = copyVideoAssetsToBundle(serveUrl, opts.videoAssets);
 
 	const inputProps: MotionCompositionProps = {
 		title: opts.title,
 		accent: opts.accent,
 		scenes: opts.scenes,
+		...(opts.brandPalette ? { brandPalette: opts.brandPalette } : {}),
+		...(opts.attributionLine ? { attributionLine: opts.attributionLine } : {}),
+		...(staged.length ? { imageAssets: staged } : {}),
+		...(stagedVideos.length ? { videoAssets: stagedVideos } : {}),
+		...(opts.captions?.length ? { captions: opts.captions } : {}),
 	};
 
 	const composition = await selectComposition({
@@ -281,6 +370,12 @@ export async function renderMotionDemo(opts: MotionRenderOptions) {
 			cancelSignal,
 			onProgress: ({ progress }) => opts.onProgress?.(Math.round(progress * 100)),
 		});
+		await validateRenderedVideo(opts.outputPath, {
+			width: composition.width,
+			height: composition.height,
+			fps,
+			durationSeconds: composition.durationInFrames / fps,
+		});
 	} finally {
 		opts.signal?.removeEventListener("abort", abortListener);
 	}
@@ -298,6 +393,11 @@ export async function renderMotionStills(opts: {
 	title: string;
 	accent: MotionCompositionProps["accent"];
 	scenes: MotionScene[];
+	brandPalette?: MotionBrandPalette;
+	imageAssets?: MotionImageAsset[];
+	videoAssets?: MotionVideoAsset[];
+	captions?: RenderCaptionLine[];
+	attributionLine?: string;
 	sceneIndexes: number[];
 	outputDirectory: string;
 	format?: MotionFormat;
@@ -307,11 +407,18 @@ export async function renderMotionStills(opts: {
 	const spec = motionFormatSpec(opts.format ?? "landscape");
 	const serveUrl = await resolveServeUrl();
 	const binariesDirectory = getRemotionBinariesDirectory();
+	const staged = copyImageAssetsToBundle(serveUrl, opts.imageAssets);
+	const stagedVideos = copyVideoAssetsToBundle(serveUrl, opts.videoAssets);
 
 	const inputProps: MotionCompositionProps = {
 		title: opts.title,
 		accent: opts.accent,
 		scenes: opts.scenes,
+		...(opts.brandPalette ? { brandPalette: opts.brandPalette } : {}),
+		...(opts.attributionLine ? { attributionLine: opts.attributionLine } : {}),
+		...(staged.length ? { imageAssets: staged } : {}),
+		...(stagedVideos.length ? { videoAssets: stagedVideos } : {}),
+		...(opts.captions?.length ? { captions: opts.captions } : {}),
 	};
 
 	const composition = await selectComposition({
@@ -441,6 +548,12 @@ export async function exportWithRemotion(opts: RemotionExportOptions) {
 	//    - CRF 18 (visually lossless quality)
 	//    - Music mixed at 25% volume if provided
 	await reencodeForCompatibility(tempPath, outputPath, musicPath, musicVolume);
+	await validateRenderedVideo(outputPath, {
+		width: composition.width,
+		height: composition.height,
+		fps,
+		durationSeconds: composition.durationInFrames / fps,
+	});
 	onProgress?.(1);
 
 	// 8. Clean up temp files
@@ -759,6 +872,56 @@ function copyImageAssetsToBundle(
 		}
 	}
 	return staged;
+}
+
+function copyVideoAssetsToBundle(
+	bundlePath: string,
+	assets: Array<{ assetId: string; src: string }> | undefined,
+): MotionVideoAsset[] {
+	if (!assets?.length) return [];
+	const assetDir = path.join(bundlePath, "_video-assets");
+	fs.mkdirSync(assetDir, { recursive: true });
+
+	const staged: MotionVideoAsset[] = [];
+	for (const asset of assets) {
+		if (!/^[a-z0-9-]{1,64}$/i.test(asset.assetId)) continue;
+		try {
+			const extension = path.extname(asset.src).replace(/[^a-z0-9.]/gi, "") || ".mp4";
+			const fileName = `${asset.assetId}${extension}`;
+			fs.copyFileSync(asset.src, path.join(assetDir, fileName));
+			staged.push({ assetId: asset.assetId, src: `_video-assets/${fileName}` });
+		} catch (error) {
+			throw new Error(
+				`Could not stage supplied video ${asset.assetId} for rendering: ${
+					error instanceof Error ? error.message : String(error)
+				}`,
+			);
+		}
+	}
+	return staged;
+}
+
+/**
+ * Stage one approved video under the bundle so Chromium can load it over the
+ * bundle's HTTP server. Only the fixed screen source name is exposed to the
+ * composition; a storyboard cannot turn a model-authored string into a path.
+ */
+function copyScreenVideoToBundle(
+	bundlePath: string,
+	sourcePath: string | undefined,
+): string | undefined {
+	if (!sourcePath) return undefined;
+	try {
+		const extension = path.extname(sourcePath).replace(/[^a-z0-9.]/gi, "") || ".mp4";
+		const videoDir = path.join(bundlePath, "_screen-source");
+		fs.mkdirSync(videoDir, { recursive: true });
+		const fileName = `source${extension}`;
+		fs.copyFileSync(sourcePath, path.join(videoDir, fileName));
+		return `_screen-source/${fileName}`;
+	} catch (error) {
+		console.warn("[remotionExport] Could not stage screen source:", error);
+		return undefined;
+	}
 }
 
 function cleanupScreenshots(bundlePath: string) {

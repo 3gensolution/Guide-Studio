@@ -11,6 +11,7 @@ import {
 	useCurrentFrame,
 	useVideoConfig,
 } from "remotion";
+import { type RenderCaptionLine, RenderCaptionOverlay } from "./RenderCaptionOverlay";
 import { Scene3d } from "./three/Scene3d";
 import type { Scene3dId, Scene3dParams } from "./three/scenes";
 import { WhiteboardFrame as WhiteboardSurface } from "./WhiteboardFrame";
@@ -158,6 +159,8 @@ export interface HyperFrameCompositionProps {
 	imageAssets?: HyperFrameImageAsset[];
 	/** A brand's colour and mark. Absent, the named `accent` is used unchanged. */
 	theme?: HyperFrameTheme;
+	/** Captions are rendered into the final social MP4, not left to the player. */
+	captions?: RenderCaptionLine[];
 	/** Defaults to `HYPERFRAME_ZOOM_ENABLED` (off). See the Zoom section. */
 	allowZoom?: boolean;
 }
@@ -272,6 +275,7 @@ export const HyperFrameComposition: React.FC<HyperFrameCompositionProps> = ({
 	narrationClips,
 	imageAssets,
 	theme,
+	captions,
 	allowZoom = HYPERFRAME_ZOOM_ENABLED,
 }) => {
 	const { fps, width, height } = useVideoConfig();
@@ -335,6 +339,7 @@ export const HyperFrameComposition: React.FC<HyperFrameCompositionProps> = ({
 				);
 			})}
 			{narrationSrc ? <Audio src={narrationSrc} /> : null}
+			<RenderCaptionOverlay lines={captions} />
 		</AbsoluteFill>
 	);
 };
@@ -707,8 +712,41 @@ const OutroFrame: React.FC<FrameProps> = ({ frame, palette, logoSrc, logoHasAlph
 // storyboard normalizer does that substitution, so reaching these components
 // with no source means the asset went missing between approval and render.
 
-const ImageFrame: React.FC<FrameProps> = ({ frame, palette, imageAssets, allowZoom }) => {
+function imageMotionStyle(
+	frameNumber: number,
+	durationInFrames: number,
+	allowZoom: boolean,
+	seed: string,
+) {
+	let hash = 0;
+	for (const character of seed) hash = (hash * 31 + character.charCodeAt(0)) | 0;
+	const direction = Math.abs(hash) % 4;
+	const progress = interpolate(frameNumber, [0, Math.max(1, durationInFrames)], [0, 1], {
+		extrapolateLeft: "clamp",
+		extrapolateRight: "clamp",
+		easing: Easing.bezier(0.22, 0.61, 0.36, 1),
+	});
+	const scale = allowZoom ? interpolate(progress, [0, 1], [1.02, 1.08]) : 1;
+	const travel = allowZoom ? 1.8 : 0;
+	const x =
+		direction === 0 || direction === 2 ? (direction === 0 ? -travel : travel) * progress : 0;
+	const y =
+		direction === 1 || direction === 3 ? (direction === 1 ? -travel : travel) * progress : 0;
+	return {
+		transform: `translate(${x}%, ${y}%) scale(${scale})`,
+		transformOrigin: direction === 0 ? "left center" : direction === 2 ? "right center" : "center",
+	};
+}
+
+const ImageFrame: React.FC<FrameProps> = ({
+	frame,
+	palette,
+	imageAssets,
+	allowZoom,
+	durationInFrames,
+}) => {
 	const rise = useRise();
+	const frameNumber = useCurrentFrame();
 	const src = imageAssets?.find((item) => item.assetId === frame.assetId)?.src;
 	return (
 		<AbsoluteFill>
@@ -720,11 +758,24 @@ const ImageFrame: React.FC<FrameProps> = ({ frame, palette, imageAssets, allowZo
 						flex: 1,
 						width: "100%",
 						opacity: rise,
-						transform: `scale(${entranceScale(rise, 0.985, allowZoom)})`,
+						overflow: "hidden",
 					}}
 				>
 					{src ? (
-						<Img src={src} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+						<Img
+							src={src}
+							style={{
+								width: "100%",
+								height: "100%",
+								objectFit: "contain",
+								...imageMotionStyle(
+									frameNumber,
+									durationInFrames,
+									allowZoom,
+									frame.assetId ?? frame.id ?? "image",
+								),
+							}}
+						/>
 					) : (
 						<MissingAsset palette={palette} label={frame.headline} />
 					)}
@@ -736,14 +787,42 @@ const ImageFrame: React.FC<FrameProps> = ({ frame, palette, imageAssets, allowZo
 	);
 };
 
-const ImageSplitFrame: React.FC<FrameProps> = ({ frame, palette, imageAssets }) => {
+const ImageSplitFrame: React.FC<FrameProps> = ({
+	frame,
+	palette,
+	imageAssets,
+	allowZoom,
+	durationInFrames,
+}) => {
 	const rise = useRise();
+	const frameNumber = useCurrentFrame();
 	const src = imageAssets?.find((item) => item.assetId === frame.assetId)?.src;
 	const mediaFirst = (frame.side ?? "right") === "left";
 	const media = (
-		<div style={{ flex: 1, minWidth: 0, height: "62%", position: "relative" }}>
+		<div
+			style={{
+				flex: 1,
+				minWidth: 0,
+				height: "62%",
+				position: "relative",
+				overflow: "hidden",
+			}}
+		>
 			{src ? (
-				<Img src={src} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+				<Img
+					src={src}
+					style={{
+						width: "100%",
+						height: "100%",
+						objectFit: "contain",
+						...imageMotionStyle(
+							frameNumber,
+							durationInFrames,
+							allowZoom,
+							frame.assetId ?? frame.id ?? "image-split",
+						),
+					}}
+				/>
 			) : (
 				<MissingAsset palette={palette} label={frame.headline} />
 			)}

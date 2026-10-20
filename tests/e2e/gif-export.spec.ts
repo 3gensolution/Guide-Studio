@@ -22,11 +22,16 @@ async function exportFromLoadedVideo(format: "gif" | "mp4"): Promise<Buffer> {
 			// Force software WebGL in headless CI to avoid GPU framebuffer errors.
 			"--enable-unsafe-swiftshader",
 		],
-		env: {
-			...process.env,
-			// Set HEADLESS=false to show windows while debugging.
-			HEADLESS: process.env["HEADLESS"] ?? "true",
-		},
+		env: Object.fromEntries(
+			Object.entries({
+				...process.env,
+				// Set HEADLESS=false to show windows while debugging.
+				HEADLESS: process.env["HEADLESS"] ?? "true",
+			}).filter(
+				(entry): entry is [string, string] =>
+					entry[0] !== "ELECTRON_RUN_AS_NODE" && typeof entry[1] === "string",
+			),
+		),
 	});
 	const electronProcess = app.process();
 

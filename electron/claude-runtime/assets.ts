@@ -16,6 +16,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { generateImage, type ImageAspectRatio } from "../ai/minimaxImageService";
 import { isRecord } from "./json";
 import { ASSET_QUERY_LIMITS } from "./storyboard";
 
@@ -54,6 +55,14 @@ export interface ResolvedAsset {
 	/** Ready-made credit line from the source, already licence-correct. */
 	attribution: string;
 	sourceUrl: string;
+	/** Provenance is explicit so generated media is never mistaken for stock. */
+	provider?: string;
+	model?: string;
+	generated?: boolean;
+	prompt?: string;
+	generatedAt?: string;
+	settings?: { aspectRatio?: ImageAspectRatio };
+	sourceAssetIds?: string[];
 }
 
 export interface ResolveResult {
@@ -213,14 +222,22 @@ export interface ResolveOptions {
 	onNote?: (note: string) => void;
 }
 
+export interface GenerateResolveOptions extends ResolveOptions {
+	aspectRatio?: ImageAspectRatio;
+}
+
 /**
  * Turn every `assetQuery` into a downloaded file and an `assetId` the
- * validator will accept. Frames are mutated in place, because the caller
- * hands the same object straight to `normalizeStoryboard` afterwards.
+ * validator will accept. Storyboard frames and motion scenes are mutated in
+ * place, because the caller hands the same object straight to its normalizer.
  */
 export async function resolveAssetQueries(options: ResolveOptions): Promise<ResolveResult> {
 	const root = isRecord(options.parsed) ? options.parsed : {};
-	const frames = Array.isArray(root.frames) ? root.frames : [];
+	const frames = Array.isArray(root.frames)
+		? root.frames
+		: Array.isArray(root.scenes)
+			? root.scenes
+			: [];
 	const requests = collectAssetQueries(frames);
 	if (!requests.length) return { assets: [], warnings: [] };
 
@@ -274,6 +291,95 @@ export async function resolveAssetQueries(options: ResolveOptions): Promise<Reso
 			const reason = error instanceof Error ? error.message : String(error);
 			warnings.push(
 				`Could not fetch an image for "${request.query}" — ${reason}. Frame ${request.index + 1} became a text frame.`,
+			);
+		}
+	}
+
+	const result: ResolveResult = { assets, warnings };
+	const line = attributionLineFor(assets);
+	if (line) result.attributionLine = line;
+	return result;
+}
+
+/**
+ * Generate visual assets only after the user explicitly selects AI-generated
+ * visuals. The generated file is copied into the session workspace, so the
+ * renderer never depends on the global image-output directory.
+ */
+export async function resolveGeneratedAssetQueries(
+	options: GenerateResolveOptions,
+): Promise<ResolveResult> {
+	const root = isRecord(options.parsed) ? options.parsed : {};
+	const frames = Array.isArray(root.frames)
+		? root.frames
+		: Array.isArray(root.scenes)
+			? root.scenes
+			: [];
+	const requests = collectAssetQueries(frames);
+	if (!requests.length) return { assets: [], warnings: [] };
+
+	const assets: ResolvedAsset[] = [];
+	const warnings: string[] = [];
+	const byQuery = new Map<string, ResolvedAsset>();
+
+	for (const request of requests) {
+		if (options.signal?.aborted) break;
+		const frame = frames[request.index];
+		if (!isRecord(frame)) continue;
+		const key = request.query.toLowerCase();
+		const cached = byQuery.get(key);
+		if (cached) {
+			frame.assetId = cached.id;
+			continue;
+		}
+		if (assets.length >= LIMITS.maxAssets) {
+			warnings.push(
+				`Frame ${request.index + 1} asked for a generated image, but the video already uses the ${LIMITS.maxAssets} it is allowed.`,
+			);
+			continue;
+		}
+
+		const id = `asset-${assets.length + 1}`;
+		try {
+			options.onNote?.(`Generating a visual: ${request.query}`);
+			const generated = await generateImage(request.query, {
+				aspectRatio: options.aspectRatio ?? "16:9",
+				count: 1,
+			});
+			if (!generated.success || !generated.imagePaths?.[0]) {
+				throw new Error(generated.error ?? "The image provider returned no image.");
+			}
+			const sourcePath = generated.imagePaths[0];
+			const sizeBytes = fs.statSync(sourcePath).size;
+			if (sizeBytes <= 0 || sizeBytes > LIMITS.maxBytes) {
+				throw new Error("The generated image exceeded the session size limit.");
+			}
+			fs.mkdirSync(options.destDir, { recursive: true });
+			const filePath = path.join(options.destDir, `${id}.png`);
+			fs.copyFileSync(sourcePath, filePath);
+			const asset: ResolvedAsset = {
+				id,
+				query: request.query,
+				path: filePath,
+				label: `Generated visual: ${request.query}`,
+				attribution: "AI-generated with MiniMax image-01",
+				sourceUrl: "",
+				provider: "minimax",
+				model: "image-01",
+				generated: true,
+				prompt: request.query,
+				generatedAt: new Date().toISOString(),
+				settings: { aspectRatio: options.aspectRatio ?? "16:9" },
+				sourceAssetIds: [],
+			};
+			assets.push(asset);
+			byQuery.set(key, asset);
+			frame.assetId = id;
+			options.onNote?.(`Generated a visual for ${request.query}`);
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			warnings.push(
+				`Could not generate an image for "${request.query}" — ${reason}. Frame ${request.index + 1} became a text frame.`,
 			);
 		}
 	}

@@ -24,6 +24,10 @@ export default defineConfig({
 								"@remotion/renderer",
 								"@remotion/cli",
 								"googleapis",
+								// Sharp is a CommonJS/native package. Keep it at the Node
+								// package boundary; bundling its helper files into the ESM
+								// Electron chunk breaks their __dirname-based resolution.
+								"sharp",
 							],
 						},
 					},

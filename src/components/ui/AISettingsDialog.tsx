@@ -69,8 +69,6 @@ const BASE_URL_HINTS: Partial<Record<AIProvider, string>> = {
 	deepseek: "Leave empty for api.deepseek.com.",
 };
 
-const ELEVENLABS_KEY_URL = "https://elevenlabs.io/app/settings/api-keys";
-
 function openLink(url: string) {
 	void window.electronAPI?.openExternalUrl?.(url);
 }
@@ -144,7 +142,7 @@ export function AISettingsDialog({
 	preflightMessage,
 }: AISettingsDialogProps) {
 	const [tab, setTab] = useState<AISettingsTab>(initialTab);
-	const [provider, setProvider] = useState<AIProvider>("openai");
+	const [provider, setProvider] = useState<AIProvider>("minimax");
 	// Keys and models are kept per provider so switching the picker below
 	// doesn't discard what was typed for another one.
 	const [keys, setKeys] = useState<Record<string, string>>({});
@@ -512,36 +510,24 @@ export function AISettingsDialog({
 					) : (
 						<div className="flex flex-col gap-4">
 							<p className="text-[11px] leading-relaxed text-white/45">
-								Narration, music, sound effects and generated images use your keys too. Each one is
-								optional — skip it and that feature stays off.
+								One MiniMax key powers the complete core workflow: AI Chat, video understanding,
+								generated images, generated video, music, and narration. You do not need separate
+								keys for those features.
 							</p>
 
 							<KeyInput
-								label="ElevenLabs API key"
-								value={elevenLabsKey}
-								onChange={setElevenLabsKey}
-								placeholder="sk_…"
-								keyUrl={ELEVENLABS_KEY_URL}
-								hint="Music beds and sound effects."
-							/>
-
-							<KeyInput
-								label="MiniMax API key"
+								label="Unified AI key (MiniMax)"
 								value={keys.minimax ?? ""}
 								onChange={(value) => setKeys((prev) => ({ ...prev, minimax: value }))}
 								placeholder={PROVIDER_HELP.minimax.placeholder}
 								keyUrl={PROVIDER_HELP.minimax.keyUrl}
-								hint="Narration voices, generated images and music. Same key as the MiniMax chat provider."
+								hint="One key for chat, video understanding, images, video, music, and narration."
 							/>
 
-							<KeyInput
-								label="OpenAI API key"
-								value={keys.openai ?? ""}
-								onChange={(value) => setKeys((prev) => ({ ...prev, openai: value }))}
-								placeholder={PROVIDER_HELP.openai.placeholder}
-								keyUrl={PROVIDER_HELP.openai.keyUrl}
-								hint="Doubles as the narration voice when MiniMax isn't set. Same key as the OpenAI chat provider."
-							/>
+							<div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-[10px] leading-relaxed text-white/40">
+								Optional advanced integration: ElevenLabs can be added later for alternate sound
+								effects or music, but it is not required for the core AI video workflow.
+							</div>
 
 							<div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-[10px] leading-relaxed text-white/40">
 								No keys at all? Narration still works offline through local Piper voices, and

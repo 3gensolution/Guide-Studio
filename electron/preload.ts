@@ -215,6 +215,21 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	openVideoFilePicker: () => {
 		return ipcRenderer.invoke("open-video-file-picker");
 	},
+	openAIReferenceFilePicker: () => {
+		return ipcRenderer.invoke("open-ai-reference-file-picker");
+	},
+	analyzeAIReferenceAssets: (assetIds: string[]) => {
+		return ipcRenderer.invoke("analyze-ai-reference-assets", assetIds);
+	},
+	getAIReferenceVisionData: (assetId: string, timeSeconds?: number) => {
+		return ipcRenderer.invoke("get-ai-reference-vision-data", assetId, timeSeconds);
+	},
+	getAIReferenceContactSheet: (assetId: string, frameCount?: number) => {
+		return ipcRenderer.invoke("get-ai-reference-contact-sheet", assetId, frameCount);
+	},
+	releaseAIReferenceAssets: (assetIds: string[]) => {
+		return ipcRenderer.invoke("release-ai-reference-assets", assetIds);
+	},
 	remuxVideo: (inputPath: string) => {
 		return ipcRenderer.invoke("remux-video", inputPath);
 	},
@@ -224,6 +239,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	saveNarrationAudio: (data: ArrayBuffer) => {
 		return ipcRenderer.invoke("save-narration-audio", data);
 	},
+	openAudioFilePicker: () => ipcRenderer.invoke("open-audio-file-picker"),
 	muxNarrationAudio: (
 		videoPath: string,
 		segments: Array<{ audioPath: string; offsetMs: number }>,
@@ -233,8 +249,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
 			duckWindows: Array<{ startMs: number; endMs: number }>;
 		} | null,
 		muteOriginal?: boolean,
+		sfx?: Array<{ audioPath: string; offsetMs: number; volume?: number }>,
 	) => {
-		return ipcRenderer.invoke("mux-narration-audio", videoPath, segments, music, muteOriginal);
+		return ipcRenderer.invoke("mux-narration-audio", videoPath, segments, music, muteOriginal, sfx);
 	},
 	setCurrentVideoPath: (path: string) => {
 		return ipcRenderer.invoke("set-current-video-path", path);
@@ -812,13 +829,24 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		targetSeconds?: number;
 		model?: string;
 		look?: "motion" | "cards" | "whiteboard";
+		creativeSkill?: "explainer-motion" | "product-launch" | "product-update" | "brand-reveal";
+		visualSource?: "stock" | "generated";
+		referenceAssetIds?: string[];
 	}) => ipcRenderer.invoke("claude-plan", input),
 	claudePreview: (sessionId: string) => ipcRenderer.invoke("claude-preview", sessionId),
+	claudeReviewShots: (sessionId: string, updates: unknown) =>
+		ipcRenderer.invoke("claude-review-shots", sessionId, updates),
+	claudeSetFinishing: (sessionId: string, input: unknown) =>
+		ipcRenderer.invoke("claude-set-finishing", sessionId, input),
 	claudeRender: (sessionId: string) => ipcRenderer.invoke("claude-render", sessionId),
+	claudeCreateMaster: (sessionId: string) => ipcRenderer.invoke("claude-create-master", sessionId),
+	claudeCreateInterchange: (sessionId: string) =>
+		ipcRenderer.invoke("claude-create-interchange", sessionId),
 	claudeSession: (sessionId: string) => ipcRenderer.invoke("claude-session", sessionId),
 	claudeSessions: () => ipcRenderer.invoke("claude-sessions"),
 	claudeCancel: (sessionId: string) => ipcRenderer.invoke("claude-cancel", sessionId),
 	claudeDiscard: (sessionId: string) => ipcRenderer.invoke("claude-discard", sessionId),
+	claudeClearMedia: (sessionId: string) => ipcRenderer.invoke("claude-clear-media", sessionId),
 	claudeInsertIntoEditor: (sessionId: string) =>
 		ipcRenderer.invoke("claude-insert-into-editor", sessionId),
 	onClaudeActivity: (
