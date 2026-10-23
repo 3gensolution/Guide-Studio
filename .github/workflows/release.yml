@@ -104,6 +104,11 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=6144
 
+      # The Animated look renders with a self-contained hyperframes CLI,
+      # shipped per architecture as the hyperframes extraResource.
+      - name: Bundle the HyperFrames CLI
+        run: node scripts/bundle-hyperframes.mjs ${{ matrix.arch }}
+
       # The Swift ScreenCaptureKit + cursor helpers must exist before packaging
       # or the app ships without them (no recording, missing cursor helper).
       - name: Build native macOS helpers

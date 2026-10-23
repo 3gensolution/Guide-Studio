@@ -24,15 +24,52 @@ function sceneLabel(scene: {
 	return scene.headline ?? scene.text ?? scene.tagline ?? scene.kind ?? "Scene";
 }
 
+interface InterchangeScene {
+	kind?: string;
+	headline?: string;
+	text?: string;
+	tagline?: string;
+	durationSeconds: number;
+}
+
+/**
+ * The scenes in play order, whichever look made them. An animated scene's
+ * label is its first piece of copy; its file stays the editable source.
+ */
+function interchangeScenes(session: CreatorSession): InterchangeScene[] {
+	if (session.animated) {
+		return session.animated.summary.scenes.map((scene) => {
+			const copy = scene.variables.find((variable) => variable.type === "string")?.value;
+			return {
+				kind: "animated",
+				id: scene.id,
+				file: scene.file,
+				...(typeof copy === "string" && copy ? { headline: copy } : {}),
+				durationSeconds: scene.durationSeconds,
+			};
+		});
+	}
+	return session.motion?.scenes ?? session.storyboard?.frames ?? [];
+}
+
+function interchangeTitle(session: CreatorSession, fallback: string): string {
+	return (
+		session.motion?.title ??
+		session.storyboard?.title ??
+		(session.animated ? session.request.split("\n")[0]?.slice(0, 80) : undefined) ??
+		fallback
+	);
+}
+
 /** A stable, editable description of the generated plan for future timeline tooling. */
 export function buildCreatorProjectManifest(session: CreatorSession): string {
-	const scenes = session.motion?.scenes ?? session.storyboard?.frames ?? [];
+	const scenes = interchangeScenes(session);
 	let offsetSeconds = 0;
 	const manifest = {
 		schema: "guide-studio-creator-project",
 		version: 1,
 		sessionId: session.id,
-		title: session.motion?.title ?? session.storyboard?.title ?? "Guide Studio video",
+		title: interchangeTitle(session, "Guide Studio video"),
 		format: session.format,
 		creativeSkill: session.creativeSkill,
 		request: session.request,
@@ -78,8 +115,8 @@ export function buildCreatorProjectManifest(session: CreatorSession): string {
  * while the JSON companion retains the full editable scene/layer contract.
  */
 export function buildCreatorFcpXml(session: CreatorSession): string {
-	const scenes = session.motion?.scenes ?? session.storyboard?.frames ?? [];
-	const title = session.motion?.title ?? session.storyboard?.title ?? "Guide Studio video";
+	const scenes = interchangeScenes(session);
+	const title = interchangeTitle(session, "Guide Studio video");
 	const durationSeconds = scenes.reduce((total, scene) => total + scene.durationSeconds, 0);
 	const width = session.format === "landscape" ? 1920 : 1080;
 	const height = session.format === "vertical" ? 1920 : 1080;
@@ -124,7 +161,7 @@ export function writeCreatorInterchange(
 ): { manifestPath: string; fcpxmlPath: string } {
 	fs.mkdirSync(workspaceRenderDir, { recursive: true });
 	const baseName =
-		(session.motion?.title ?? session.storyboard?.title ?? "guide-video")
+		interchangeTitle(session, "guide-video")
 			.toLowerCase()
 			.replace(/[^a-z0-9]+/g, "-")
 			.replace(/^-|-$/g, "")

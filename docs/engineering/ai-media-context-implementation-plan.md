@@ -20,7 +20,11 @@ rendering, provenance, and export quality.
 2. Agents never receive arbitrary paths from the renderer. They receive a
    session-local staged copy and an asset manifest containing stable ids.
 3. No model-authored code is compiled for the fixed creator renderer. Models
-   select audited scene components and bounded parameters.
+   select audited scene components and bounded parameters. (Deliberate
+   exception, 2026-10-23: the Animated look renders agent-written HyperFrames
+   HTML in headless Chrome behind a safety gate — see
+   `docs/architecture/animated-look.md`. The fixed Remotion renderer is
+   unchanged.)
 4. User media is not uploaded implicitly. Cloud analysis or generation must be
    an explicit provider action with a visible asset and privacy notice.
 5. Every generated asset records its source assets, prompt, provider, model,

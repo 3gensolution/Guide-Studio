@@ -41,6 +41,12 @@ export interface RunClaudeOptions {
 	timeoutMs?: number;
 	signal?: AbortSignal;
 	onActivity?: (activity: ClaudeActivity) => void;
+	/**
+	 * Narrow shell grants such as `Bash(./hf:*)`. Granting one lifts the blanket
+	 * Bash denial — Claude Code's deny list outranks its allow list — but every
+	 * command outside the listed prefixes is still refused in print mode.
+	 */
+	extraAllowedTools?: string[];
 }
 
 /** What a parser does with a chunk: emit activities, keep the partial line. */
@@ -75,7 +81,13 @@ export interface RunClaudeResult {
 }
 
 /** Build the argument list. Pure, so the shape is unit-testable. */
-export function buildArgs(prompt: string, workspaceRoot: string, model: string): string[] {
+export function buildArgs(
+	prompt: string,
+	workspaceRoot: string,
+	model: string,
+	extraAllowedTools: string[] = [],
+): string[] {
+	const grantsShell = extraAllowedTools.some((tool) => tool.startsWith("Bash("));
 	return [
 		"-p",
 		prompt,
@@ -92,8 +104,9 @@ export function buildArgs(prompt: string, workspaceRoot: string, model: string):
 		"acceptEdits",
 		"--allowedTools",
 		...ALLOWED_TOOLS,
+		...extraAllowedTools,
 		"--disallowedTools",
-		...DENIED_TOOLS,
+		...DENIED_TOOLS.filter((tool) => !(grantsShell && tool === "Bash")),
 		"--add-dir",
 		workspaceRoot,
 	];
@@ -237,7 +250,7 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
 	return await runAgentProcess({
 		agent: "claude",
 		binaryPath: options.binaryPath,
-		args: buildArgs(options.prompt, options.workspace.root, model),
+		args: buildArgs(options.prompt, options.workspace.root, model, options.extraAllowedTools),
 		cwd: options.workspace.root,
 		consume: consumeChunk,
 		timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,

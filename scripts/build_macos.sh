@@ -155,6 +155,16 @@ if [ ! -d "${PROJECT_ROOT}/dist-remotion" ]; then
 fi
 print_ok "Remotion bundle built"
 
+# dist-hyperframes/<arch>/ ships as the Animated look's renderer (see
+# electron-builder.json5); one production install per CPU architecture.
+print_step "Bundling the HyperFrames CLI..."
+node scripts/bundle-hyperframes.mjs
+if [ ! -d "${PROJECT_ROOT}/dist-hyperframes" ]; then
+    print_err "dist-hyperframes/ was not produced; the Animated look would have no renderer."
+    exit 1
+fi
+print_ok "HyperFrames CLI bundled"
+
 # ── Package, Sign, Notarize per Architecture ─────────────────────────
 for ARCH in "${ARCHS[@]}"; do
     echo ""

@@ -121,6 +121,9 @@ jobs:
         env:
           GUIDE_MAC_HELPER_ARCHS: ${{ matrix.arch }}
 
+      - name: Bundle the HyperFrames CLI
+        run: node scripts/bundle-hyperframes.mjs ${{ matrix.arch }}
+
       # ─── Package with electron-builder (unsigned) ─────────────
       # No Apple Developer certificate is configured, so build an unsigned
       # bundle. CSC_IDENTITY_AUTO_DISCOVERY=false stops electron-builder from

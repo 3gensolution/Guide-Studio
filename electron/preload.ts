@@ -828,7 +828,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		format?: "landscape" | "vertical" | "square";
 		targetSeconds?: number;
 		model?: string;
-		look?: "motion" | "cards" | "whiteboard";
+		look?: "animated" | "motion" | "cards" | "whiteboard";
 		creativeSkill?: "explainer-motion" | "product-launch" | "product-update" | "brand-reveal";
 		visualSource?: "stock" | "generated";
 		referenceAssetIds?: string[];
@@ -836,6 +836,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	claudePreview: (sessionId: string) => ipcRenderer.invoke("claude-preview", sessionId),
 	claudeReviewShots: (sessionId: string, updates: unknown) =>
 		ipcRenderer.invoke("claude-review-shots", sessionId, updates),
+	claudeAnimatedRevise: (sessionId: string, input: { instruction: string; sceneId?: string }) =>
+		ipcRenderer.invoke("claude-animated-revise", sessionId, input),
+	claudeAnimatedSetValues: (
+		sessionId: string,
+		input: { sceneId?: string; values: Record<string, string | number | boolean> },
+	) => ipcRenderer.invoke("claude-animated-set-values", sessionId, input),
 	claudeSetFinishing: (sessionId: string, input: unknown) =>
 		ipcRenderer.invoke("claude-set-finishing", sessionId, input),
 	claudeRender: (sessionId: string) => ipcRenderer.invoke("claude-render", sessionId),

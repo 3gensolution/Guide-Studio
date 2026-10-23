@@ -74,3 +74,6 @@ dist-remotion
 # Local scratch notes
 /permission_issue.txt
 developerID_application.cer
+
+# HyperFrames CLI production installs (scripts/bundle-hyperframes.mjs)
+/dist-hyperframes

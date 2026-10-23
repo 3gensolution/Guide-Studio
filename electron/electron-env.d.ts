@@ -888,13 +888,23 @@ interface Window {
 			format?: "landscape" | "vertical" | "square";
 			targetSeconds?: number;
 			model?: string;
-			look?: "motion" | "cards" | "whiteboard";
+			look?: "animated" | "motion" | "cards" | "whiteboard";
 			creativeSkill?: "explainer-motion" | "product-launch" | "product-update" | "brand-reveal";
 			visualSource?: "stock" | "generated";
 			referenceAssetIds?: string[];
 		}) => Promise<ClaudeSessionResult>;
 		claudePreview: (sessionId: string) => Promise<ClaudeSessionResult>;
 		claudeReviewShots: (sessionId: string, updates: unknown) => Promise<ClaudeSessionResult>;
+		/** Ask the agent to change the animated video, optionally one scene only. */
+		claudeAnimatedRevise: (
+			sessionId: string,
+			input: { instruction: string; sceneId?: string },
+		) => Promise<ClaudeSessionResult>;
+		/** Edit an animated scene's copy (or, without sceneId, the video's brand colours). */
+		claudeAnimatedSetValues: (
+			sessionId: string,
+			input: { sceneId?: string; values: Record<string, string | number | boolean> },
+		) => Promise<ClaudeSessionResult>;
 		claudeSetFinishing: (sessionId: string, input: unknown) => Promise<ClaudeSessionResult>;
 		claudeRender: (sessionId: string) => Promise<ClaudeSessionResult>;
 		claudeCreateMaster: (sessionId: string) => Promise<ClaudeSessionResult>;

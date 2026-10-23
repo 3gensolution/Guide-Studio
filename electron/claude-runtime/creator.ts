@@ -45,7 +45,29 @@ import {
 	type NarrationMuxSegment,
 	type SfxMuxCue,
 } from "../ffmpeg";
-import { AGENTS, type AgentId } from "./agents";
+import {
+	type AnimatedAssetBrief,
+	buildAnimatedAgentsDoc,
+	buildAnimatedBrief,
+	buildAnimatedPrompt,
+	buildRepairPrompt,
+	buildRevisionPrompt,
+} from "../hyperframes/brief";
+import { ensureHyperframesBrowser } from "../hyperframes/cli";
+import {
+	canGenerateAudio,
+	renderAnimatedProject,
+	runGate,
+	snapshotScenes,
+	summarizeAnimatedProject,
+} from "../hyperframes/pipeline";
+import { readSfxLibrary, scaffoldAnimatedProject } from "../hyperframes/project";
+import {
+	type AnimatedProjectSummary,
+	applyVariableValues,
+	coerceVariableValue,
+} from "../hyperframes/scenes";
+import { AGENTS, type AgentId, agentLabel } from "./agents";
 import { type ResolvedAsset, resolveAssetQueries, resolveGeneratedAssetQueries } from "./assets";
 import { runCodex } from "./codexSession";
 import { type CreativeSkillId, getCreativeSkill } from "./creativeSkills";
@@ -135,11 +157,24 @@ export type CreatorStatus = "planning" | "planned" | "rendering" | "rendered" | 
 /**
  * Which visual library the agent plans against.
  *
+ *   animated   — the agent writes a HyperFrames project (HTML + GSAP), which
+ *                Guide Studio gates, snapshots and renders (`../hyperframes`)
  *   motion     — animated backdrops and kinetic typography (`MotionGraphics`)
  *   cards      — clean HyperFrame layout cards
  *   whiteboard — every frame hand-written on a board by an animated hand
  */
-export type CreatorLook = "motion" | "cards" | "whiteboard";
+export type CreatorLook = "animated" | "motion" | "cards" | "whiteboard";
+
+/** What Guide Studio knows about an agent-built HyperFrames project. */
+export interface AnimatedSessionState {
+	summary: AnimatedProjectSummary;
+	/** Non-blocking findings from the last gate run. */
+	warnings: string[];
+	/** Audio Guide Studio filled in for the agent. */
+	notes: string[];
+	/** The user's chat edits, newest last. */
+	revisions: Array<{ instruction: string; sceneId?: string; at: number }>;
+}
 export type CreatorVisualSource = "stock" | "generated";
 
 function requestCallsForLogo(request: string): boolean {
@@ -196,6 +231,8 @@ export interface CreatorSession {
 	storyboard?: HyperFrameStoryboard;
 	/** Set when look is "motion". */
 	motion?: MotionProject;
+	/** Set when look is "animated"; the project itself lives in the workspace. */
+	animated?: AnimatedSessionState;
 	/** Stock images fetched for the frames that asked for one. */
 	assets?: ResolvedAsset[];
 	/** User-supplied references staged into this session workspace. */
@@ -486,7 +523,10 @@ function restoreSession(rootDir: string, value: unknown): CreatorSession | undef
 	if (!isRecord(value) || typeof value.id !== "string") return undefined;
 	if (!/^[a-zA-Z0-9-]{1,100}$/.test(value.id)) return undefined;
 	const root = path.join(rootDir, value.id);
-	if (!fs.existsSync(root) || (!isRecord(value.storyboard) && !isRecord(value.motion)))
+	if (
+		!fs.existsSync(root) ||
+		(!isRecord(value.storyboard) && !isRecord(value.motion) && !isRecord(value.animated))
+	)
 		return undefined;
 	if (
 		value.status !== "planning" &&
@@ -749,8 +789,10 @@ export async function planStoryboard(
 	// The contract is generated from the same constants the validator enforces,
 	// so what the agent is told and what is accepted can never drift apart.
 	const whiteboard = look === "whiteboard";
-	const contract =
-		look === "motion"
+	const animated = look === "animated";
+	const contract = animated
+		? ""
+		: look === "motion"
 			? motionSystemPrompt({
 					creativeSkill: creativeSkill.id,
 					format,
@@ -785,6 +827,8 @@ export async function planStoryboard(
 		contract,
 		format,
 		targetSeconds,
+		// The Animated look brings HyperFrames' own skills instead of ours.
+		...(animated ? { skills: [] } : {}),
 	});
 	workspaces.set(id, workspace);
 	persistSessions();
@@ -867,6 +911,71 @@ export async function planStoryboard(
 				};
 			}),
 		);
+
+		if (animated) {
+			const assetBriefs: AnimatedAssetBrief[] = analyzedReferenceAssets.flatMap((asset) => {
+				if (!asset.previewPath) return [];
+				const summary = referenceSummaries.find((candidate) => candidate.id === asset.id);
+				return [
+					{
+						id: asset.id,
+						kind: asset.kind,
+						label: asset.label,
+						file: `assets/${path.basename(asset.previewPath)}`,
+						role: asset.role,
+						...(summary?.shows ? { shows: summary.shows } : {}),
+						...(asset.visualSummary ? { visualSummary: asset.visualSummary } : {}),
+						...(asset.ocrText?.length ? { ocrText: asset.ocrText } : {}),
+						...(asset.transcriptExcerpt ? { transcriptExcerpt: asset.transcriptExcerpt } : {}),
+						...(asset.shotSegments?.length ? { shotSegments: asset.shotSegments } : {}),
+						...(summary?.contactSheetFileName
+							? { contactSheetFile: summary.contactSheetFileName }
+							: {}),
+						...(summary?.contactSheetTimesSeconds
+							? { contactSheetTimesSeconds: summary.contactSheetTimesSeconds }
+							: {}),
+						...(asset.hasAudio !== undefined ? { hasAudio: asset.hasAudio } : {}),
+						...(asset.id === inferredLogoReference?.id ? { isLogo: true } : {}),
+					},
+				];
+			});
+			scaffoldAnimatedProject({
+				root: workspace.root,
+				sessionId: id,
+				title: input.request,
+				format,
+				targetSeconds,
+			});
+			fs.writeFileSync(
+				workspace.briefPath,
+				buildAnimatedBrief({
+					agent,
+					request: input.request,
+					format,
+					targetSeconds,
+					direction: `${creativeSkill.name} — ${creativeSkill.opening} ${creativeSkill.middle} ${creativeSkill.closing}`,
+					assets: assetBriefs,
+					sfxLibrary: readSfxLibrary(),
+					canGenerateAudio: await canGenerateAudio(),
+					workspaceRoot: workspace.root,
+				}),
+				"utf8",
+			);
+			fs.writeFileSync(workspace.agentsDocPath, buildAnimatedAgentsDoc(workspace.root), "utf8");
+			onActivity?.({ kind: "log", text: "Preparing the HyperFrames renderer…" });
+			await ensureHyperframesBrowser(workspace.root, controller.signal);
+			await buildAnimatedProject(session, workspace, {
+				binaryPath: installation.binaryPath,
+				prompt: buildAnimatedPrompt(workspace.root),
+				signal: controller.signal,
+				...(onActivity ? { onActivity } : {}),
+			});
+			session.shotReviews = createPendingShotReviews(session.animated?.summary.scenes.length ?? 0);
+			session.warnings = [...referenceWarnings, ...(session.animated?.warnings ?? [])];
+			session.status = "planned";
+			return session;
+		}
+
 		const analyzedContract =
 			look === "motion"
 				? motionSystemPrompt({
@@ -1068,6 +1177,238 @@ export async function planStoryboard(
 	}
 }
 
+/** HyperFrames authoring runs a check/snapshot loop, so it gets longer than a JSON plan. */
+const ANIMATED_AGENT_TIMEOUT_MS = 30 * 60 * 1000;
+/** Gate failures handed back to the agent before the session is failed. */
+const MAX_ANIMATED_REPAIR_ROUNDS = 2;
+
+interface AnimatedRunOptions {
+	binaryPath: string;
+	prompt: string;
+	signal: AbortSignal;
+	onActivity?: (activity: ClaudeActivity) => void;
+}
+
+async function runAnimatedAgent(
+	session: CreatorSession,
+	workspace: WorkspacePaths,
+	options: AnimatedRunOptions,
+) {
+	const runOptions = {
+		binaryPath: options.binaryPath,
+		workspace,
+		prompt: options.prompt,
+		model: session.model,
+		signal: options.signal,
+		timeoutMs: ANIMATED_AGENT_TIMEOUT_MS,
+		...(options.onActivity ? { onActivity: options.onActivity } : {}),
+	};
+	const run =
+		session.agent === "codex"
+			? await runCodex(runOptions)
+			: await runClaude({ ...runOptions, extraAllowedTools: ["Bash(./hf:*)"] });
+	if (run.costUsd !== undefined) session.costUsd = (session.costUsd ?? 0) + run.costUsd;
+	if (run.cancelled) throw new Error("Cancelled.");
+	return run;
+}
+
+/**
+ * One agent turn plus Guide Studio's gate, with up to two repair turns. The
+ * agent's own exit status is advisory: a run that timed out after writing a
+ * clean project is still a clean project, and one that "succeeded" without
+ * passing the gate is not.
+ */
+async function buildAnimatedProject(
+	session: CreatorSession,
+	workspace: WorkspacePaths,
+	options: AnimatedRunOptions,
+): Promise<void> {
+	const run = await runAnimatedAgent(session, workspace, options);
+	if (!run.ok && !fs.existsSync(path.join(workspace.root, "compositions"))) {
+		throw new Error(run.error ?? `${agentLabel(session.agent)} did not build the video.`);
+	}
+	let gate = await runGate(workspace.root, options.signal);
+	for (let round = 0; !gate.ok && round < MAX_ANIMATED_REPAIR_ROUNDS; round += 1) {
+		options.onActivity?.({
+			kind: "log",
+			text: `Guide Studio's check found ${gate.problems.length} problem${gate.problems.length === 1 ? "" : "s"}; asking ${agentLabel(session.agent)} to fix ${gate.problems.length === 1 ? "it" : "them"}.`,
+		});
+		await runAnimatedAgent(session, workspace, {
+			...options,
+			prompt: buildRepairPrompt(workspace.root, gate.problems),
+		});
+		gate = await runGate(workspace.root, options.signal);
+	}
+	if (!gate.ok) {
+		throw new Error(
+			`The video did not pass Guide Studio's checks:\n${gate.problems.slice(0, 8).join("\n")}`,
+		);
+	}
+	const summary = await summarizeAnimatedProject(workspace.root, options.signal);
+	if (!summary.scenes.length) {
+		throw new Error(
+			"The video has no scenes Guide Studio can edit: each scene must be its own file in compositions/.",
+		);
+	}
+	session.animated = {
+		summary,
+		warnings: gate.warnings,
+		notes: gate.notes,
+		revisions: session.animated?.revisions ?? [],
+	};
+	session.durationSeconds = summary.durationSeconds;
+	session.craftWarnings = [];
+}
+
+/** Anything that changes the project makes every rendered artifact stale. */
+function invalidateRenders(session: CreatorSession): void {
+	session.videoPath = undefined;
+	session.masterPath = undefined;
+	session.interchange = undefined;
+	session.previewPaths = undefined;
+}
+
+/**
+ * Re-approve only what could have changed: the revised scene, or every scene
+ * when the request was not scoped to one or the scene list itself changed.
+ */
+function resetAnimatedReviews(
+	session: CreatorSession,
+	previousSceneIds: string[],
+	changedSceneId?: string,
+): void {
+	const scenes = session.animated?.summary.scenes ?? [];
+	const sameScenes =
+		scenes.length === previousSceneIds.length &&
+		scenes.every((scene, index) => scene.id === previousSceneIds[index]);
+	const pending = createPendingShotReviews(scenes.length);
+	session.shotReviews =
+		sameScenes && changedSceneId
+			? pending.map((review, index) =>
+					scenes[index]?.id === changedSceneId ? review : (session.shotReviews?.[index] ?? review),
+				)
+			: pending;
+}
+
+/** Ask the agent to change the video, optionally one scene only, then gate it again. */
+export async function reviseAnimatedSession(
+	id: string,
+	input: { instruction: unknown; sceneId?: unknown },
+	onActivity?: (activity: ClaudeActivity) => void,
+): Promise<CreatorSession> {
+	const session = sessions.get(id);
+	const workspace = workspaces.get(id);
+	if (!session || !workspace || !session.animated) {
+		throw new Error("That animated session is no longer available.");
+	}
+	if (session.status === "planning" || session.status === "rendering") {
+		throw new Error("Wait for the current run to finish before asking for changes.");
+	}
+	const instruction =
+		typeof input.instruction === "string" ? input.instruction.trim().slice(0, 2000) : "";
+	if (!instruction) throw new Error("Say what should change.");
+	const scene =
+		typeof input.sceneId === "string"
+			? session.animated.summary.scenes.find((candidate) => candidate.id === input.sceneId)
+			: undefined;
+	if (input.sceneId !== undefined && !scene) throw new Error("That scene no longer exists.");
+
+	const installation = await detectAgent(session.agent);
+	if (!installation.installed || !installation.binaryPath || installation.error) {
+		throw new Error(installation.error ?? notInstalledMessage(session.agent));
+	}
+	const previousSceneIds = session.animated.summary.scenes.map((candidate) => candidate.id);
+	const controller = new AbortController();
+	running.set(id, controller);
+	session.status = "planning";
+	session.error = undefined;
+	persistSessions();
+	try {
+		await buildAnimatedProject(session, workspace, {
+			binaryPath: installation.binaryPath,
+			prompt: buildRevisionPrompt({
+				workspaceRoot: workspace.root,
+				instruction,
+				...(scene ? { sceneId: scene.id, sceneFile: scene.file } : {}),
+			}),
+			signal: controller.signal,
+			...(onActivity ? { onActivity } : {}),
+		});
+		session.animated.revisions.push({
+			instruction,
+			...(scene ? { sceneId: scene.id } : {}),
+			at: Date.now(),
+		});
+		session.warnings = session.animated.warnings;
+		resetAnimatedReviews(session, previousSceneIds, scene?.id);
+		invalidateRenders(session);
+		session.status = "planned";
+	} catch (error) {
+		// The previous project may be half-edited; it is still on disk for the
+		// next revision to fix, but it must not be rendered as approved.
+		session.status = "failed";
+		session.error = error instanceof Error ? error.message : String(error);
+		invalidateRenders(session);
+	} finally {
+		running.delete(id);
+		persistSessions();
+	}
+	return session;
+}
+
+/**
+ * Apply the user's direct edits to copy and colours. Values are coerced to
+ * each variable's declared type before they touch a file, then the project
+ * is gated again — long copy can push text off the frame.
+ */
+export async function updateAnimatedVariables(
+	id: string,
+	input: { sceneId?: unknown; values?: unknown },
+): Promise<CreatorSession> {
+	const session = sessions.get(id);
+	const workspace = workspaces.get(id);
+	if (!session || !workspace || !session.animated) {
+		throw new Error("That animated session is no longer available.");
+	}
+	if (session.status === "planning" || session.status === "rendering") {
+		throw new Error("Wait for the current run to finish before editing.");
+	}
+	if (!isRecord(input.values)) throw new Error("No values to apply.");
+	const scene =
+		typeof input.sceneId === "string"
+			? session.animated.summary.scenes.find((candidate) => candidate.id === input.sceneId)
+			: undefined;
+	if (input.sceneId !== undefined && !scene) throw new Error("That scene no longer exists.");
+	const declarations = scene ? scene.variables : session.animated.summary.globalVariables;
+	const file = path.join(workspace.root, scene ? scene.file : "index.html");
+	const values: Record<string, string | number | boolean> = {};
+	for (const [key, raw] of Object.entries(input.values)) {
+		const declaration = declarations.find((variable) => variable.id === key);
+		if (!declaration) throw new Error(`"${key}" is not an editable value of this scene.`);
+		values[key] = coerceVariableValue(declaration, raw);
+	}
+
+	const before = fs.readFileSync(file, "utf8");
+	fs.writeFileSync(file, applyVariableValues(before, values), "utf8");
+	const gate = await runGate(workspace.root);
+	if (!gate.ok) {
+		fs.writeFileSync(file, before, "utf8");
+		throw new Error(
+			`That edit would break the video, so it was not applied:\n${gate.problems.slice(0, 4).join("\n")}`,
+		);
+	}
+	const previousSceneIds = session.animated.summary.scenes.map((candidate) => candidate.id);
+	session.animated.summary = await summarizeAnimatedProject(workspace.root);
+	session.animated.warnings = gate.warnings;
+	session.warnings = gate.warnings;
+	// A brand colour touches every scene; a scene's copy touches only that scene.
+	resetAnimatedReviews(session, previousSceneIds, scene?.id);
+	invalidateRenders(session);
+	session.status = "planned";
+	persistSessions();
+	return session;
+}
+
 /** The fetched images as the renderer wants them: an id and a local file. */
 function imageAssetsFor(session: CreatorSession) {
 	return [
@@ -1134,6 +1475,12 @@ function assertMotionAssetsResolvable(session: CreatorSession, scenes: MotionSce
 }
 
 function reviewableShots(session: CreatorSession): ReviewableShot[] {
+	if (session.animated) {
+		return session.animated.summary.scenes.map((scene) => ({
+			kind: "animated",
+			durationSeconds: scene.durationSeconds,
+		}));
+	}
 	return session.motion ? session.motion.scenes : (session.storyboard?.frames ?? []);
 }
 
@@ -1142,6 +1489,9 @@ function reviewLimits(session: CreatorSession): ShotReviewDurationLimits {
 }
 
 function durationWithReviews(session: CreatorSession): number {
+	// An animated scene's timing lives in its composition, not in a review
+	// override, so the project's own length is the truth.
+	if (session.animated) return session.animated.summary.durationSeconds;
 	return applyShotDurationOverrides(reviewableShots(session), session.shotReviews).reduce(
 		(total, shot) => total + shot.durationSeconds,
 		0,
@@ -1171,7 +1521,13 @@ export function reviewSessionShots(id: string, updates: unknown): CreatorSession
 	const shots = reviewableShots(session);
 	const nextReviews = applyShotReviewUpdates(
 		session.shotReviews,
-		updates,
+		// Retiming an animated scene is an edit to its composition (ask the
+		// agent), never a review override the renderer would not honour.
+		session.animated && Array.isArray(updates)
+			? updates.map((update) =>
+					isRecord(update) ? { ...update, durationSeconds: undefined } : update,
+				)
+			: updates,
 		shots.length,
 		reviewLimits(session),
 	);
@@ -1315,7 +1671,9 @@ async function finishRenderedVideo(session: CreatorSession, outputPath: string):
 		narration,
 		temporaryPath,
 		music,
-		finishing.muteOriginalAudio,
+		// An animated cut's own audio is designed sound (effects, ducked bed,
+		// footage speech), not a scratch track to replace.
+		session.animated ? false : finishing.muteOriginalAudio,
 		sfx,
 	);
 	if (!result.success) {
@@ -1335,6 +1693,19 @@ export async function previewStoryboard(id: string): Promise<CreatorSession> {
 		const step = Math.max(1, Math.ceil(length / MAX_PREVIEW_STILLS));
 		return Array.from({ length }, (_, index) => index).filter((index) => index % step === 0);
 	};
+
+	if (session.animated) {
+		const stills = await snapshotScenes(
+			workspace.root,
+			session.animated.summary,
+			path.join(workspace.previewDir, "animated"),
+		);
+		session.previewPaths = stills.flatMap((stillPath, frameIndex) =>
+			stillPath ? [{ frameIndex, path: stillPath }] : [],
+		);
+		persistSessions();
+		return session;
+	}
 
 	if (session.motion) {
 		const scenes = applyShotDurationOverrides(session.motion.scenes, session.shotReviews);
@@ -1389,7 +1760,8 @@ export async function renderStoryboard(
 	const workspace = workspaces.get(id);
 	if (!session || !workspace) throw new Error("That session is no longer available.");
 	const plan = session.motion ?? session.storyboard;
-	if (!plan) throw new Error("This session has nothing to render.");
+	const title = plan?.title ?? (session.animated ? session.request.slice(0, 80) : undefined);
+	if (title === undefined) throw new Error("This session has nothing to render.");
 	assertReviewComplete(session);
 
 	const controller = new AbortController();
@@ -1399,7 +1771,7 @@ export async function renderStoryboard(
 	session.interchange = undefined;
 
 	const safeName =
-		plan.title
+		title
 			.toLowerCase()
 			.replace(/[^a-z0-9]+/g, "-")
 			.replace(/^-|-$/g, "")
@@ -1409,7 +1781,22 @@ export async function renderStoryboard(
 
 	try {
 		fs.mkdirSync(workspace.renderDir, { recursive: true });
-		if (session.motion) {
+		if (session.animated) {
+			// The user may have edited files since the last gate; render only
+			// what passes it now.
+			const gate = await runGate(workspace.root, controller.signal);
+			if (!gate.ok) {
+				throw new Error(
+					`The video no longer passes Guide Studio's checks:\n${gate.problems.slice(0, 6).join("\n")}`,
+				);
+			}
+			await renderAnimatedProject({
+				root: workspace.root,
+				outputPath,
+				signal: controller.signal,
+				...(onProgress ? { onProgress } : {}),
+			});
+		} else if (session.motion) {
 			const scenes = applyShotDurationOverrides(session.motion.scenes, session.shotReviews);
 			assertMotionAssetsResolvable(session, scenes);
 			const brandPalette = await ensureMotionBrandPalette(session);
@@ -1461,7 +1848,9 @@ export async function renderStoryboard(
 			session.finishing?.musicPath ||
 			session.finishing?.sfx?.length
 				? { requireAudio: true, integratedLufsRange: [-23, -12] as const }
-				: {}),
+				: session.animated?.summary.audio.length
+					? { requireAudio: true }
+					: {}),
 		});
 		session.videoPath = outputPath;
 		session.status = "rendered";

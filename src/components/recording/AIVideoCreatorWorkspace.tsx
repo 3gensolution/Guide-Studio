@@ -39,9 +39,10 @@ import { toFileUrl } from "@/components/video-editor/projectPersistence";
 import type { MediaContextAsset } from "@/lib/ai/mediaContext";
 import { VOICE_OPTIONS } from "@/lib/ai/polishTemplates";
 import { aiService } from "@/lib/api/ai";
+import { AnimatedScenesPanel, type AnimatedStateView } from "./AnimatedScenesPanel";
 
 type Format = "landscape" | "vertical" | "square";
-type Look = "motion" | "cards" | "whiteboard";
+type Look = "animated" | "motion" | "cards" | "whiteboard";
 type CreativeSkillId = "explainer-motion" | "product-launch" | "product-update" | "brand-reveal";
 type AgentId = "claude" | "codex";
 
@@ -90,6 +91,8 @@ interface CreatorSession {
 	visualSource?: "stock" | "generated";
 	storyboard?: { title: string; accent: string; frames: PlanScene[] };
 	motion?: { title: string; accent: string; scenes: PlanScene[] };
+	/** The Animated look: an agent-built HyperFrames project, summarized. */
+	animated?: AnimatedStateView;
 	assets?: CreatorAsset[];
 	referenceAssets?: MediaContextAsset[];
 	warnings?: string[];
@@ -154,13 +157,18 @@ const FORMATS: Array<{ id: Format; label: string; hint: string }> = [
 	{ id: "square", label: "1:1", hint: "Square" },
 ];
 
-// Motion can use supplied, stock, or generated stills with deterministic
-// camera movement. Cards remain the richer layout-first option.
+// Animated has the agent write real HyperFrames compositions (HTML + GSAP)
+// with sound design. Motion templates and cards pick from our fixed library.
 const LOOKS: Array<{ id: Look; label: string; hint: string }> = [
 	{
+		id: "animated",
+		label: "Animated (HyperFrames)",
+		hint: "Custom motion graphics, sound effects and music over your footage — every scene editable",
+	},
+	{
 		id: "motion",
-		label: "Motion graphics",
-		hint: "Animated images, camera movement, and kinetic typography",
+		label: "Motion templates",
+		hint: "Animated images, camera movement, and kinetic typography from a fixed library",
 	},
 	{ id: "cards", label: "Clean cards", hint: "Layout cards with product imagery and footage" },
 	{
@@ -256,7 +264,7 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 	const [agent, setAgent] = useState<AgentId>("claude");
 	const [format, setFormat] = useState<Format>("landscape");
 	const [targetSeconds, setTargetSeconds] = useState(45);
-	const [look, setLook] = useState<Look>("motion");
+	const [look, setLook] = useState<Look>("animated");
 	const [creativeSkill, setCreativeSkill] = useState<CreativeSkillId>("explainer-motion");
 	const [visualSource, setVisualSource] = useState<"stock" | "generated">("stock");
 	const [model, setModel] = useState(AGENT_UI.claude.models[0].id);
@@ -265,9 +273,18 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 	const [session, setSession] = useState<CreatorSession | null>(null);
 	const [activities, setActivities] = useState<Activity[]>([]);
 	const [busy, setBusy] = useState<
-		"planning" | "previewing" | "reviewing" | "rendering" | "clearing" | null
+		| "planning"
+		| "previewing"
+		| "reviewing"
+		| "rendering"
+		| "clearing"
+		| "revising"
+		| "editing"
+		| null
 	>(null);
 	const [renderPercent, setRenderPercent] = useState(0);
+	/** The animated scene (or "video") a revision or edit is running for. */
+	const [workingOn, setWorkingOn] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [inserted, setInserted] = useState(false);
 	const [durationDrafts, setDurationDrafts] = useState<Record<number, string>>({});
@@ -753,6 +770,63 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 		setInterchangeBusy(false);
 	}, [session, interchangeBusy]);
 
+	const handleAnimatedSetValues = useCallback(
+		async (sceneId: string | undefined, values: Record<string, string | number | boolean>) => {
+			if (!session || busy) return;
+			setBusy("editing");
+			setWorkingOn(sceneId ?? "video");
+			setError(null);
+			const result = await window.electronAPI.claudeAnimatedSetValues(session.id, {
+				...(sceneId ? { sceneId } : {}),
+				values,
+			});
+			if (!result.success || !result.session) {
+				setError(result.error ?? "Could not apply that edit.");
+			} else {
+				setSession(result.session as unknown as CreatorSession);
+				const preview = await window.electronAPI.claudePreview(session.id);
+				if (preview.success && preview.session) {
+					setSession(preview.session as unknown as CreatorSession);
+				}
+			}
+			setWorkingOn(null);
+			setBusy(null);
+		},
+		[session, busy],
+	);
+
+	const handleAnimatedRevise = useCallback(
+		async (instruction: string, sceneId?: string) => {
+			if (!session || busy) return;
+			setBusy("revising");
+			setWorkingOn(sceneId ?? "video");
+			setError(null);
+			setActivities([]);
+			const result = await window.electronAPI.claudeAnimatedRevise(session.id, {
+				instruction,
+				...(sceneId ? { sceneId } : {}),
+			});
+			if (!result.success || !result.session) {
+				setError(result.error ?? `${agentLabel} could not make that change.`);
+			} else {
+				const revised = result.session as unknown as CreatorSession;
+				setSession(revised);
+				if (revised.status === "failed") {
+					setError(revised.error ?? `${agentLabel} could not make that change.`);
+				} else {
+					setBusy("previewing");
+					const preview = await window.electronAPI.claudePreview(revised.id);
+					if (preview.success && preview.session) {
+						setSession(preview.session as unknown as CreatorSession);
+					}
+				}
+			}
+			setWorkingOn(null);
+			setBusy(null);
+		},
+		[session, busy, agentLabel],
+	);
+
 	const handleCancel = useCallback(async () => {
 		if (!session) return;
 		await window.electronAPI.claudeCancel(session.id);
@@ -781,15 +855,29 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 
 	// A motion project names its scene list differently from a storyboard; the
 	// view treats them alike.
-	const plan: { title: string; accent: string; scenes: PlanScene[] } | undefined = session?.motion
-		? session.motion
-		: session?.storyboard
-			? {
-					title: session.storyboard.title,
-					accent: session.storyboard.accent,
-					scenes: session.storyboard.frames,
-				}
-			: undefined;
+	const plan: { title: string; accent: string; scenes: PlanScene[] } | undefined = session?.animated
+		? {
+				title: session.request.split("\n")[0]?.slice(0, 80) || "Animated video",
+				accent: "HyperFrames",
+				scenes: session.animated.summary.scenes.map((scene) => ({
+					id: scene.id,
+					kind: "animated",
+					durationSeconds: scene.durationSeconds,
+					headline: String(
+						scene.variables.find((variable) => variable.type === "string")?.value ?? scene.id,
+					),
+					scene: scene.id,
+				})),
+			}
+		: session?.motion
+			? session.motion
+			: session?.storyboard
+				? {
+						title: session.storyboard.title,
+						accent: session.storyboard.accent,
+						scenes: session.storyboard.frames,
+					}
+				: undefined;
 	const scenes: PlanScene[] = plan?.scenes ?? [];
 	const approvedCount =
 		session?.shotReviews?.filter((review) => review.status === "approved").length ?? 0;
@@ -922,7 +1010,11 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 								);
 							})}
 						</div>
-						<p className="mt-1.5 text-[10px] text-white/30">{agentUi.scope}</p>
+						<p className="mt-1.5 text-[10px] text-white/30">
+							{look === "animated" && agent === "claude"
+								? "File tools plus the HyperFrames checker (./hf), scoped to the session folder."
+								: agentUi.scope}
+						</p>
 					</Field>
 
 					<Field label="Story skill">
@@ -1121,8 +1213,9 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 							{session?.warnings && session.warnings.length > 0 && (
 								<details className="rounded-xl border border-amber-500/20 bg-amber-500/[0.07] px-3.5 py-2.5">
 									<summary className="cursor-pointer text-[11px] font-medium text-amber-200/90">
-										Guide Studio corrected {session.warnings.length}{" "}
-										{session.warnings.length === 1 ? "thing" : "things"} in the agent's plan
+										{session.animated
+											? `${session.warnings.length} ${session.warnings.length === 1 ? "note" : "notes"} from Guide Studio's checks`
+											: `Guide Studio corrected ${session.warnings.length} ${session.warnings.length === 1 ? "thing" : "things"} in the agent's plan`}
 									</summary>
 									<ul className="mt-2 space-y-1">
 										{session.warnings.map((warning) => (
@@ -1157,10 +1250,9 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 											Production finishing
 										</h3>
 										<p className="mt-0.5 text-[11px] leading-relaxed text-white/45">
-											Optional but recommended for a launch cut: one narration paragraph per shot
-											becomes voiceover. Captions are limited to text/card beats and never cover
-											supplied imagery, product footage, or the logo. Music is ducked under
-											dialogue.
+											{session?.animated
+												? "Optional: one narration paragraph per scene becomes voiceover, mixed over the animated cut's own effects and music (which are kept). Captions are not burned into animated cuts."
+												: "Optional but recommended for a launch cut: one narration paragraph per shot becomes voiceover. Captions are limited to text/card beats and never cover supplied imagery, product footage, or the logo. Music is ducked under dialogue."}
 										</p>
 									</div>
 									{session?.finishing ? (
@@ -1258,7 +1350,18 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 								</div>
 							</div>
 
-							{session?.previewPaths && session.previewPaths.length > 0 && (
+							{session?.animated && (
+								<AnimatedScenesPanel
+									animated={session.animated}
+									{...(session.previewPaths ? { previewPaths: session.previewPaths } : {})}
+									disabled={busy !== null}
+									working={workingOn}
+									onSetValues={handleAnimatedSetValues}
+									onRevise={handleAnimatedRevise}
+								/>
+							)}
+
+							{!session?.animated && session?.previewPaths && session.previewPaths.length > 0 && (
 								<div className="flex flex-col gap-2.5">
 									<div className="grid grid-cols-2 gap-2.5 lg:grid-cols-3">
 										{session.previewPaths.map((still) => (
@@ -1372,24 +1475,31 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 														{frame.textScene || frame.backdrop || frame.kind}
 													</p>
 												</div>
-												<label className="flex items-center gap-1 text-[10px] text-white/40">
-													<span className="sr-only">Shot {index + 1} duration in seconds</span>
-													<input
-														type="number"
-														min={1.5}
-														max={session?.motion ? 12 : 20}
-														step={0.1}
-														value={draftDuration}
-														onChange={(event) =>
-															setDurationDrafts((current) => ({
-																...current,
-																[index]: event.target.value,
-															}))
-														}
-														className="w-16 rounded border border-white/10 bg-white/[0.05] px-1.5 py-1 text-right text-[10px] text-white/80 outline-none focus:border-[#6E6BFF]"
-													/>
-													<span>s</span>
-												</label>
+												{/* An animated scene is retimed by asking for a change. */}
+												{session?.animated ? (
+													<span className="text-[10px] tabular-nums text-white/40">
+														{frame.durationSeconds}s
+													</span>
+												) : (
+													<label className="flex items-center gap-1 text-[10px] text-white/40">
+														<span className="sr-only">Shot {index + 1} duration in seconds</span>
+														<input
+															type="number"
+															min={1.5}
+															max={session?.motion ? 12 : 20}
+															step={0.1}
+															value={draftDuration}
+															onChange={(event) =>
+																setDurationDrafts((current) => ({
+																	...current,
+																	[index]: event.target.value,
+																}))
+															}
+															className="w-16 rounded border border-white/10 bg-white/[0.05] px-1.5 py-1 text-right text-[10px] text-white/80 outline-none focus:border-[#6E6BFF]"
+														/>
+														<span>s</span>
+													</label>
+												)}
 												<button
 													type="button"
 													onClick={() => void handleShotReview(index, "approved")}
@@ -1412,40 +1522,42 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 								</div>
 							</div>
 
-							<ol className="flex flex-col gap-1.5">
-								{scenes.map((frame, index) => (
-									<li
-										key={frame.id || index}
-										className="flex items-start gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2"
-									>
-										<span className="mt-0.5 w-5 flex-shrink-0 text-[10px] tabular-nums text-white/30">
-											{index + 1}
-										</span>
-										<span className="mt-0.5 flex-shrink-0 rounded bg-white/[0.06] px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-white/50">
-											{frame.textScene ?? frame.backdrop ?? frame.scene ?? frame.kind}
-										</span>
-										<div className="min-w-0 flex-1">
-											{frame.text && (
-												<p className="truncate text-[12px] text-white/90">{frame.text}</p>
-											)}
-											{frame.headline && (
-												<p className="truncate text-[12px] text-white/90">{frame.headline}</p>
-											)}
-											{frame.subhead && (
-												<p className="truncate text-[11px] text-white/45">{frame.subhead}</p>
-											)}
-											{frame.bullets?.map((bullet) => (
-												<p key={bullet} className="truncate text-[11px] text-white/45">
-													• {bullet}
-												</p>
-											))}
-										</div>
-										<span className="mt-0.5 flex-shrink-0 text-[10px] tabular-nums text-white/30">
-											{frame.durationSeconds}s
-										</span>
-									</li>
-								))}
-							</ol>
+							{!session?.animated && (
+								<ol className="flex flex-col gap-1.5">
+									{scenes.map((frame, index) => (
+										<li
+											key={frame.id || index}
+											className="flex items-start gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2"
+										>
+											<span className="mt-0.5 w-5 flex-shrink-0 text-[10px] tabular-nums text-white/30">
+												{index + 1}
+											</span>
+											<span className="mt-0.5 flex-shrink-0 rounded bg-white/[0.06] px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-white/50">
+												{frame.textScene ?? frame.backdrop ?? frame.scene ?? frame.kind}
+											</span>
+											<div className="min-w-0 flex-1">
+												{frame.text && (
+													<p className="truncate text-[12px] text-white/90">{frame.text}</p>
+												)}
+												{frame.headline && (
+													<p className="truncate text-[12px] text-white/90">{frame.headline}</p>
+												)}
+												{frame.subhead && (
+													<p className="truncate text-[11px] text-white/45">{frame.subhead}</p>
+												)}
+												{frame.bullets?.map((bullet) => (
+													<p key={bullet} className="truncate text-[11px] text-white/45">
+														• {bullet}
+													</p>
+												))}
+											</div>
+											<span className="mt-0.5 flex-shrink-0 text-[10px] tabular-nums text-white/30">
+												{frame.durationSeconds}s
+											</span>
+										</li>
+									))}
+								</ol>
+							)}
 
 							{session?.videoPath ? (
 								<div className="flex flex-col gap-3">

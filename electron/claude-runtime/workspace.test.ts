@@ -117,6 +117,25 @@ describe("buildArgs", () => {
 		const denied = args.slice(args.indexOf("--disallowedTools") + 1);
 		for (const tool of DENIED_TOOLS) expect(denied).toContain(tool);
 	});
+
+	it("grants one narrow shell prefix by lifting only the blanket Bash denial", () => {
+		// A deny rule outranks an allow rule, so Bash(./hf:*) would be dead
+		// while "Bash" stayed denied.
+		const granted = buildArgs("x", "/sessions/s1", "claude-opus-5", ["Bash(./hf:*)"]);
+		const allowed = granted.slice(
+			granted.indexOf("--allowedTools") + 1,
+			granted.indexOf("--disallowedTools"),
+		);
+		const denied = granted.slice(
+			granted.indexOf("--disallowedTools") + 1,
+			granted.indexOf("--add-dir"),
+		);
+		expect(allowed).toContain("Bash(./hf:*)");
+		expect(denied).not.toContain("Bash");
+		for (const tool of DENIED_TOOLS.filter((tool) => tool !== "Bash")) {
+			expect(denied).toContain(tool);
+		}
+	});
 });
 
 describe("childEnv", () => {

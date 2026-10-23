@@ -102,7 +102,9 @@ Captions (on-device Whisper) and local Piper narration voices need no key and wo
 
 ### AI Video Creator
 
-Describe a video and Guide Studio designs and renders the scenes for you — no recording required. Pick a look (motion graphics or clean cards), a shape (16:9, 9:16, or 1:1), and a target length, and you get a storyboard to review before anything renders.
+Describe a video and Guide Studio designs and renders the scenes for you — no recording required. Pick a look, a shape (16:9, 9:16, or 1:1), and a target length, and you get scenes to review before anything renders.
+
+The default **Animated** look has the agent write real [HyperFrames](https://github.com/heygen-com/hyperframes) compositions — HTML and GSAP animation over your screenshots and footage, with sound effects and (with an ElevenLabs key) a ducked music bed. Every scene stays editable: change its copy or brand colours directly, or ask the agent to change one scene. Guide Studio checks each change and renders locally; the first Animated render downloads a headless Chrome (~100 MB). The **Motion templates**, **Clean cards** and **Whiteboard** looks pick from Guide Studio's fixed scene library instead.
 
 This runs through **your own Claude Code install**, on your existing Claude subscription — Guide Studio does not proxy your prompts through a server of ours. Install [Claude Code](https://claude.com/claude-code) and sign in, and the AI Video Creator picks it up automatically.
 
@@ -245,6 +247,8 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md).
 ## Acknowledgements
 
 Guide Studio is built on [OpenScreen](https://github.com/siddharthvaddem/openscreen) by Siddharth Vaddem, used under the MIT License.
+
+The AI Video Creator's Animated look renders with [HyperFrames](https://github.com/heygen-com/hyperframes) by HeyGen and ships its agent skills and sound-effect library, used under the Apache License 2.0 (sound effects under the Pixabay Content License). See [vendor/hyperframes/NOTICE.md](./vendor/hyperframes/NOTICE.md).
 
 
 ## About

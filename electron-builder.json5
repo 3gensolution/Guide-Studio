@@ -84,7 +84,10 @@
     "!node_modules/gif.js/**/*",
     "!node_modules/@remotion/web-renderer/**/*",
     "!node_modules/@remotion/media-utils/**/*",
-    "!node_modules/react-dom/**/*"
+    "!node_modules/react-dom/**/*",
+    // Shipped as the dist-hyperframes extraResource instead; the asar copy is unused.
+    "!node_modules/hyperframes/**/*",
+    "!node_modules/@hyperframes/**/*"
   ],
   "extraResources": [
     {
@@ -106,6 +109,24 @@
     {
       "from": "dist-remotion",
       "to": "remotion-bundle"
+    },
+    {
+      // The Animated look's renderer: a self-contained production install of
+      // the pinned hyperframes CLI, per architecture (scripts/bundle-hyperframes.mjs).
+      // It runs on Electron's Node and cannot load from inside app.asar.
+      "from": "dist-hyperframes/${arch}",
+      "to": "hyperframes"
+    },
+    {
+      // HyperFrames' agent skills and sound-effect library (vendor/hyperframes,
+      // Apache-2.0 / Pixabay licence — see vendor/hyperframes/NOTICE.md).
+      "from": "vendor/hyperframes",
+      "to": "hyperframes-vendor"
+    },
+    {
+      // GSAP for compositions, served from the session folder instead of a CDN.
+      "from": "node_modules/gsap/dist/gsap.min.js",
+      "to": "hyperframes-vendor/gsap.min.js"
     }
   ],
 

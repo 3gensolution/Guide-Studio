@@ -32,6 +32,7 @@ npx tsc
 npx rimraf dist-electron
 npx vite build
 node scripts/bundle-remotion.mjs
+node scripts/bundle-hyperframes.mjs
 
 # mac.notarize is false in electron-builder.json5, so this signs the app for
 # local development without submitting it to Apple's notarization service.

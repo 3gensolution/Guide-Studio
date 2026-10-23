@@ -30,7 +30,9 @@ import {
 	previewStoryboard,
 	renderStoryboard,
 	reviewSessionShots,
+	reviseAnimatedSession,
 	setSessionFinishing,
+	updateAnimatedVariables,
 } from "../claude-runtime/creator";
 import { detectAgents } from "../claude-runtime/detect";
 import type { ClaudeActivity } from "../claude-runtime/events";
@@ -83,7 +85,7 @@ export function registerClaudeHandlers(): void {
 				format?: "landscape" | "vertical" | "square";
 				targetSeconds?: number;
 				model?: string;
-				look?: "motion" | "cards" | "whiteboard";
+				look?: "animated" | "motion" | "cards" | "whiteboard";
 				creativeSkill?: CreativeSkillId;
 				visualSource?: "stock" | "generated";
 				referenceAssetIds?: string[];
@@ -95,7 +97,14 @@ export function registerClaudeHandlers(): void {
 			try {
 				// The agent decides which binary gets spawned, so it is narrowed
 				// here rather than trusted from the renderer.
-				const plan = { ...input, agent: toAgentId(input.agent) };
+				const plan = {
+					...input,
+					agent: toAgentId(input.agent),
+					look:
+						input.look === "animated" || input.look === "cards" || input.look === "whiteboard"
+							? input.look
+							: ("motion" as const),
+				};
 				const session = await planStoryboard(baseDir(), plan, (activity: ClaudeActivity) => {
 					broadcast("claude-activity", activity);
 				});
@@ -126,6 +135,45 @@ export function registerClaudeHandlers(): void {
 			return fail(error);
 		}
 	});
+
+	// ── Stage 2.6: animated scene edits ──
+	ipcMain.handle(
+		"claude-animated-revise",
+		async (_event, sessionId: string, input: { instruction?: unknown; sceneId?: unknown }) => {
+			if (typeof sessionId !== "string" || sessionId.length > 100) {
+				return { success: false, error: "That session id is invalid." };
+			}
+			try {
+				const session = await reviseAnimatedSession(
+					sessionId,
+					{ instruction: input?.instruction, sceneId: input?.sceneId },
+					(activity: ClaudeActivity) => broadcast("claude-activity", activity),
+				);
+				return ok(session);
+			} catch (error) {
+				return fail(error);
+			}
+		},
+	);
+
+	ipcMain.handle(
+		"claude-animated-set-values",
+		async (_event, sessionId: string, input: { sceneId?: unknown; values?: unknown }) => {
+			if (typeof sessionId !== "string" || sessionId.length > 100) {
+				return { success: false, error: "That session id is invalid." };
+			}
+			try {
+				return ok(
+					await updateAnimatedVariables(sessionId, {
+						sceneId: input?.sceneId,
+						values: input?.values,
+					}),
+				);
+			} catch (error) {
+				return fail(error);
+			}
+		},
+	);
 
 	// ── Stage 2.75: production finishing ──
 	ipcMain.handle("claude-set-finishing", async (_event, sessionId: string, input: unknown) => {
