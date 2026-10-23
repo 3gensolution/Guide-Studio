@@ -247,8 +247,11 @@ export function preferredContactSheetFrameTimes(
 	if (!safeSegments.length) return evenlySpaced;
 
 	const count = evenlySpaced.length;
-	const selected = Array.from({ length: Math.min(count, safeSegments.length) }, (_, index) => {
-		const segmentIndex = Math.round((index * (safeSegments.length - 1)) / Math.max(1, count - 1));
+	const shotCount = Math.min(count, safeSegments.length);
+	const selected = Array.from({ length: shotCount }, (_, index) => {
+		const segmentIndex = Math.round(
+			(index * (safeSegments.length - 1)) / Math.max(1, shotCount - 1),
+		);
 		return safeSegments[segmentIndex]?.midpointSeconds ?? 0;
 	});
 	if (selected.length >= count) return selected;

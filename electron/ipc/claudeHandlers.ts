@@ -91,8 +91,8 @@ export function registerClaudeHandlers(): void {
 				referenceAssetIds?: string[];
 			},
 		) => {
-			if (!input?.request?.trim()) {
-				return { success: false, error: "Describe the video you want first." };
+			if (typeof input?.request !== "string") {
+				return { success: false, error: "The video brief must be text." };
 			}
 			try {
 				// The agent decides which binary gets spawned, so it is narrowed

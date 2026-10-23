@@ -409,13 +409,13 @@ export async function getMediaContextContactSheet(
 			shotSegments ?? registered.asset.shotSegments ?? [],
 		);
 		const columns = Math.min(4, Math.ceil(Math.sqrt(count)));
-		const rows = Math.ceil(count / columns);
 		const perFrameWidth = 640;
 		const perFrameHeight = 360;
 		const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "guide-contact-sheet-"));
 		let bytes: Buffer;
 		try {
 			const framePaths: string[] = [];
+			const capturedTimes: number[] = [];
 			for (const [index, timeSeconds] of frameTimesSeconds.entries()) {
 				const result = await execFile(
 					ffmpegPath,
@@ -453,12 +453,19 @@ export async function getMediaContextContactSheet(
 				const framePath = path.join(temporaryDirectory, `frame-${index}.jpg`);
 				await fs.writeFile(framePath, frame, { mode: 0o600 });
 				framePaths.push(framePath);
+				capturedTimes.push(timeSeconds);
 			}
 			if (framePaths.length === 0) {
 				return { success: false, error: "The video contact sheet frames were empty." };
 			}
 			const inputs = framePaths.flatMap((framePath) => ["-i", framePath]);
 			const labels = framePaths.map((_, index) => `[${index}:v]`).join("");
+			const layout = framePaths
+				.map(
+					(_, index) =>
+						`${8 + (index % columns) * (perFrameWidth + 8)}_${8 + Math.floor(index / columns) * (perFrameHeight + 8)}`,
+				)
+				.join("|");
 			const result = await execFile(
 				ffmpegPath,
 				[
@@ -467,7 +474,9 @@ export async function getMediaContextContactSheet(
 					"error",
 					...inputs,
 					"-filter_complex",
-					`${labels}tile=${columns}x${rows}:padding=8:margin=8`,
+					framePaths.length === 1
+						? "[0:v]pad=iw+16:ih+16:8:8:color=black"
+						: `${labels}xstack=inputs=${framePaths.length}:layout=${layout}:fill=black`,
 					"-frames:v",
 					"1",
 					"-f",
@@ -484,6 +493,8 @@ export async function getMediaContextContactSheet(
 				},
 			);
 			bytes = Buffer.isBuffer(result.stdout) ? result.stdout : Buffer.from(result.stdout);
+			// Keep the time labels aligned if a decoder skipped an empty frame.
+			frameTimesSeconds.splice(0, frameTimesSeconds.length, ...capturedTimes);
 		} finally {
 			await fs.rm(temporaryDirectory, { recursive: true, force: true });
 		}

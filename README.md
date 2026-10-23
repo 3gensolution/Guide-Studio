@@ -106,6 +106,8 @@ Describe a video and Guide Studio designs and renders the scenes for you — no 
 
 The default **Animated** look has the agent write real [HyperFrames](https://github.com/heygen-com/hyperframes) compositions — HTML and GSAP animation over your screenshots and footage, with sound effects and (with an ElevenLabs key) a ducked music bed. Every scene stays editable: change its copy or brand colours directly, or ask the agent to change one scene. Guide Studio checks each change and renders locally; the first Animated render downloads a headless Chrome (~100 MB). The **Motion templates**, **Clean cards** and **Whiteboard** looks pick from Guide Studio's fixed scene library instead.
 
+For a video-only promo, choose **Animated**, attach raw screen footage under **References**, select the output shape and length, and leave the brief empty. The agent uses a sequence of video frames, readable text and available speech to infer a hook, product proof and ending, then adds editable headlines and motion around the real footage. Add a brief if you want to specify the audience or message. Review the scene previews before rendering; a complete brand kit and music are not inferred from a silent recording.
+
 This runs through **your own Claude Code install**, on your existing Claude subscription — Guide Studio does not proxy your prompts through a server of ours. Install [Claude Code](https://claude.com/claude-code) and sign in, and the AI Video Creator picks it up automatically.
 
 <p align="center">

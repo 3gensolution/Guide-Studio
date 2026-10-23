@@ -46,6 +46,17 @@ describe("media context contract", () => {
 		expect(preferredContactSheetFrameTimes(12, 4)).toEqual(contactSheetFrameTimes(12, 4));
 	});
 
+	it("retains the last shot when there are fewer shots than overview slots", () => {
+		const times = preferredContactSheetFrameTimes(26.5, 6, [
+			{ startSeconds: 0, endSeconds: 6, midpointSeconds: 3 },
+			{ startSeconds: 6, endSeconds: 21, midpointSeconds: 13.5 },
+			{ startSeconds: 21, endSeconds: 26.5, midpointSeconds: 23.75 },
+		]);
+		expect(times).toHaveLength(6);
+		expect(times).toEqual([...times].sort((a, b) => a - b));
+		expect(times).toEqual(expect.arrayContaining([3, 13.5, 23.75]));
+	});
+
 	it("allows approved image/video extensions and rejects executables", () => {
 		expect(getMediaContextFileType("/tmp/SPACEMAIL-LOGO.SVG")).toEqual({
 			kind: "image",

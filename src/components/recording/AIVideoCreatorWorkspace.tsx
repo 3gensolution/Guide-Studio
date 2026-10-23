@@ -376,7 +376,7 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 	}, []);
 
 	const handlePlan = useCallback(async () => {
-		if (!request.trim() || busy) return;
+		if ((!request.trim() && !references.some((asset) => asset.kind === "video")) || busy) return;
 		setBusy("planning");
 		setError(null);
 		setActivities([]);
@@ -918,7 +918,7 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 							htmlFor="creator-request"
 							className="mb-1.5 block text-[11px] font-medium text-white/60"
 						>
-							What should the video say?
+							What should the video say? (optional with a video)
 						</label>
 						<textarea
 							id="creator-request"
@@ -930,8 +930,8 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 							className="w-full resize-none rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-[13px] leading-relaxed text-white placeholder:text-white/25 focus:border-[#6E6BFF]/60 focus:outline-none disabled:opacity-50"
 						/>
 						<p className="mt-1.5 text-[10px] text-white/30">
-							Specifics beat adjectives — name the audience, the outcome, and anything the agent
-							should not invent.
+							Attach a video to let AI infer the story, or add direction about the audience and
+							outcome. Choose Animated for custom motion graphics like a finished product promo.
 						</p>
 					</div>
 
@@ -1144,7 +1144,10 @@ export function AIVideoCreatorWorkspace({ onClose }: { onClose: () => void }) {
 					<button
 						type="button"
 						onClick={handlePlan}
-						disabled={!request.trim() || busy !== null}
+						disabled={
+							(!request.trim() && !references.some((asset) => asset.kind === "video")) ||
+							busy !== null
+						}
 						className="mt-auto flex items-center justify-center gap-2 rounded-xl bg-[#6E6BFF] px-4 py-2.5 text-[13px] font-medium text-white transition-colors hover:bg-[#5B58E6] disabled:cursor-not-allowed disabled:opacity-40"
 					>
 						{busy === "planning" || busy === "previewing" ? (

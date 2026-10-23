@@ -17,6 +17,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { resolveCreatorRequest } from "../../src/lib/ai/creatorRequest";
 import type { MediaContextAsset } from "../../src/lib/ai/mediaContext";
 import type { HyperFrameFormat } from "../../src/lib/remotion/HyperFrameComposition";
 import type {
@@ -737,6 +738,11 @@ export async function planStoryboard(
 	input: PlanInput,
 	onActivity?: (activity: ClaudeActivity) => void,
 ): Promise<CreatorSession> {
+	const referenceAssets = (input.referenceAssetIds ?? [])
+		.map((id) => getRegisteredMediaContextAsset(id))
+		.filter((asset): asset is MediaContextAsset => Boolean(asset))
+		.slice(0, 12);
+	input = { ...input, request: resolveCreatorRequest(input.request, referenceAssets) };
 	initializeCreatorStore(baseDir);
 	const agent: AgentId = input.agent ?? "claude";
 	const installation = await detectAgent(agent);
@@ -757,10 +763,6 @@ export async function planStoryboard(
 	const creativeSkill = getCreativeSkill(input.creativeSkill);
 	const visualSource: CreatorVisualSource =
 		input.visualSource === "generated" ? "generated" : "stock";
-	const referenceAssets = (input.referenceAssetIds ?? [])
-		.map((id) => getRegisteredMediaContextAsset(id))
-		.filter((asset): asset is MediaContextAsset => Boolean(asset))
-		.slice(0, 12);
 	const inferredLogoReference = inferLogoReference(referenceAssets, input.request);
 	let hasReferenceVideo = referenceAssets.some((asset) => asset.kind === "video");
 	let referenceSummaries: MotionAssetSummary[] = referenceAssets.map((asset) => ({
